@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn redaction() {
-        assert_eq!(redact_key("xyz*********abcdef"), "xyz…");
+        assert_eq!(redact_key("abc*********defghi"), "abc…");
         assert_eq!(redact_key("my-alias"), "my-alias");
         assert_eq!(redact_key("sk-abcdefghijklmnopqrstuvwxyz"), "sk-abc…");
         assert_eq!(redact_key("legacy:0123456789abcdef"), "legacy:012345…");

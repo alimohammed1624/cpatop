@@ -583,6 +583,9 @@ impl App {
                 self.epoch = epoch;
                 self.expired_sent = None;
                 self.screen = Screen::Dashboard;
+                if let Some(w) = self.warnings.first().cloned() {
+                    self.flash(format!("⚠ {w}"));
+                }
                 if role_changed {
                     self.data = Data::default();
                     self.live = LiveState::default();
