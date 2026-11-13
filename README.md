@@ -79,7 +79,7 @@ checks it against the release's `SHA256SUMS` and installs it to
 your `PATH`). Options:
 
 - `CPATOP_INSTALL_DIR=/some/dir` — install somewhere else.
-- `CPATOP_VERSION=v0.1.0` — install a specific release instead of the latest.
+- `CPATOP_VERSION=v0.2.0` — install a specific release instead of the latest.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/alimohammed1624/cpatop/main/install.sh | CPATOP_INSTALL_DIR=~/bin sh
@@ -175,7 +175,8 @@ Useful flags: `--range 7d` (or `--range custom:2026-11-01..2026-11-07`),
 `--refresh 5`, `--theme nord`, `--symbols block`, `--auth api-key` (prefer the
 key when both credentials exist), `--privacy` (hide e-mails, keys and IPs),
 `--no-mouse`, `--no-keyring`, `--fresh-session`, `--logout-on-exit`,
-`--no-update-check`.
+`--no-update-check`. Connection, credential and display flags may also follow a
+subcommand (`cpatop logout --base-url http://host:8318`).
 
 Sessions are remembered per server and role, and a stored session is checked
 with the server (`GET /auth/session`) and reused on the next start — cpatop
@@ -195,13 +196,13 @@ The focused pane lists its own keys in its bottom border; `?` shows them all.
 |---|---|
 | `Tab` / `Shift-Tab`, `←` `→` | Next / previous tab (or click a tab); `F2`…`F9` jump to a tab |
 | `f` / `F` | Focus the next / previous table or graph (or click a pane) |
-| `1`–`9` | Hide / show the pane with that number |
+| `1`–`9` | Hide / show the pane with that number (panes are numbered left to right, top to bottom) |
 | `p` / `l`, `P` | Next / previous layout preset |
 | `↑↓` `j`/`k`, `PgUp`/`PgDn`, `g`/`G` | Move the selection (mouse wheel scrolls) |
-| `Enter` | Every field of the selected row, untruncated (`↑↓` follow the table, `Esc` closes) |
+| `Enter` | Every field of the selected row's record, untruncated: `↑↓` `PgUp`/`PgDn` `Home`/`End` (or the wheel) scroll it, `[` `]` (or `Shift-↑↓`) step to the previous / next row, `Esc` closes |
 | `/` | Find in the focused table (`Enter` keeps, `Esc` clears) |
 | `s` / `S` | Sort by the next column / reverse |
-| `d` | Switch dimension: models, API keys, credentials, providers |
+| `d` | Switch dimension: models, API keys, credentials, AI providers (API-key providers) |
 | `←` `→`, `g` `G` (graph focused) | Move the graph cursor and read exact bucket values; `Esc` removes it |
 | `r` | Range picker: presets, custom days (YYYY-MM-DD), custom hours |
 | `[` `]` | Previous / next preset range |
@@ -256,7 +257,7 @@ Polling defaults: overview/realtime every 10 s (`+`/`-`, `--refresh`),
 analysis, credentials, quota and keys every 60 s (`slow_refresh_secs`),
 models on entry, range change or `R`; the request log is a live stream. The
 header shows the cadence of the tab on screen (`⟳ 10s`, `⟳ 1m`, `⟳ live`,
-`⟳ on R`) and turns the age amber when refreshes were missed; panes whose
+`⟳ manual (R)`) and turns the age amber when refreshes were missed; panes whose
 data is that old show `◌ stale`.
 
 ## Themes
@@ -329,6 +330,11 @@ complete starting point. A user theme with a built-in name replaces it.
   offset (+05:30) buckets start at :30 local time; the first `today` bucket
   holds only local midnight to the next UTC hour and is labelled `00:00`,
   and axis ticks sit on whole local hours.
+- Credentials that share a name carry their provider (`account-1 · claude`);
+  where space is short the provider is abbreviated so the name stays whole:
+  `cl` claude, `cx` codex, `ag` antigravity, `gm` gemini, `gc` gemini-cli,
+  `vx` vertex, `as` aistudio, `oa` openai, `oc` openai-compatibility, `qw`
+  qwen, `if` iflow, `km` kimi, `xa` xai (also listed in `?` help).
 - `--privacy` (or `x`) hides every e-mail address, every part of an API
   key and every IP address, in tables, details, pickers, error text and the
   login and offline screens — handy for screenshots and screen sharing.
@@ -336,9 +342,16 @@ complete starting point. A user theme with a built-in name replaces it.
   labels are the same in every run), keys as `key #id` (aliases hidden),
   IPs as `‹ip›`; the server is shown as scheme, host and port only (an IP
   host becomes `‹ip›`, the path is dropped). User agents keep only their
-  first product token and unknown endpoints read `‹hidden›`. As a last line
-  of defence every rendered frame is scanned for e-mails, IPs and long
-  opaque tokens, which are overwritten in place.
+  product tokens, endpoints lose their query string (`/v1/messages?…`) and
+  unknown endpoints read `‹hidden›`. Free text masks the whole run around
+  any `@`, URL query strings and fragments, and every token of 20+
+  `[A-Za-z0-9_.+/=-]` characters unless it is a model name the server
+  reported, a timestamp, an API route or a host name. As a last line of
+  defence every rendered frame is scanned the same way and overwritten in
+  place. Everything cpatop prints outside the UI — errors, hints, warnings,
+  reports, panics, argument errors — is scrubbed the same way, and file
+  paths are shown as `(‹path›)`, whenever privacy is on (`--privacy`, or
+  `privacy = true` in the config or saved state).
 
 ## Development
 

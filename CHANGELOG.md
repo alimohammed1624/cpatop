@@ -6,7 +6,31 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-13
+
+A polish and hardening release. Privacy mode now covers everything cpatop
+shows or prints; tables, graphs and panes use the whole terminal from 50×12
+to 220×60; every table row opens its full record; a wrong server URL can be
+fixed in the app; and cpatop tells you when a newer release is out.
+
 ### Added
+- Offline and login screens: change the server URL in the app (`b` on the
+  offline screen, `Ctrl-S` on the login screen). cpatop normalises the URL,
+  checks that it answers like a Keeper, switches to it (stopping every
+  request to the old server) and saves `base_url` to the config file,
+  keeping other settings and comments (created with mode 0600). A
+  `--base-url` flag or `CPATOP_BASE_URL` still wins next start, which the
+  message says. Privacy mode hides host, IP and path while you type.
+- Row popup (`Enter`) shows the whole record behind a row — every field
+  the server sends, not only the visible columns, with spelled-out names
+  (`priority`, `requests`) — and scrolls (`↑↓` `PgUp`/`PgDn` `Home`/`End`,
+  wheel); `[` `]` or `Shift-↑↓` step to the previous / next row; its border
+  shows `row 3/52` and how many lines are left.
+- Requests detail shows a failed request's error text, taken from its
+  credential's error log (admin).
+- Activity for custom and rolling ranges is cropped to the selected range
+  and titled with the server's longer window (`· server window 1y`).
+
 - Update notice: at most once a day, in the background, cpatop asks GitHub
   for its own latest release (only a `cpatop/<version>` User-Agent is sent;
   cached in the state directory). A newer stable release shows `↑ vX.Y.Z`
@@ -62,6 +86,40 @@ All notable changes to cpatop are documented here. The format follows
   binary (`cpatop-universal-apple-darwin.tar.gz`) for manual download.
 
 ### Changed
+- Privacy mode now also masks URL query strings and fragments (endpoints
+  read `/v1/messages?…`), the whole run around any `@` (every RFC
+  local-part character, quoted local parts, e-mails inside paths), and
+  every token of 20+ `[A-Za-z0-9_.+/=-]` characters that is not a model
+  name the server reported, a timestamp, an API route or a host name —
+  lower-case tokens are no longer exempt. Everything printed outside the UI
+  (errors, hints, warnings, verbose reports, panics, argument errors,
+  subcommand output) is scrubbed too, and file paths read `(‹path›)`.
+- Graph axes top out at the next of 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4,
+  5, 6, 7.5, 8, 10 × 10ⁿ, so the peak fills at least 80% (117M → 125M);
+  labels drop trailing zeros.
+- Wide terminals: tables fill their pane, the request detail uses two
+  columns, and panes with little content (speed, heatmap, server, recalc,
+  activity) leave their space to neighbours.
+- Realtime panes are numbered in reading order (share 4, speed 5, latency
+  6) like every other tab; saved hidden panes and sorts are migrated.
+- Credential names abbreviate the provider (`account-1 · ag`) instead of
+  cutting the account name; the abbreviations are listed in `?` help.
+- Narrow terminals: the tab strip scrolls to keep the active tab, with
+  `‹` `›` markers; the header shortens other fields first and keeps the
+  update badge (as `↑` at worst) and a steady refresh age.
+- The Overview "providers" dimension is named "AI providers", explains
+  when none are configured, and a saved choice of it falls back to models
+  once the data shows it is empty.
+- The Credentials plan column is filled from quota data when the
+  credential record has none (Claude `pro`/`team`).
+- Quota's chart title reads `no requests for account-1 · ag in 5h —
+  showing all credentials`, with totals on the right.
+- Models: flat prices show no rules column; the header cadence reads
+  `manual (R)`.
+- Connection, credential and display flags also work after a subcommand
+  (`cpatop logout --base-url …`).
+- The API-key role gets an "admin only" message for F5–F9; with
+  `NO_COLOR`, `t` says themes are disabled instead of changing nothing.
 - Privacy mode is enforced at the rendering boundary: account names,
   sources, key aliases, endpoints and user agents are replaced (not
   pattern-scrubbed); the base URL shows only scheme, host and port; free
@@ -158,8 +216,8 @@ All notable changes to cpatop are documented here. The format follows
 - With `--logout-on-exit` the help overlay said quitting keeps the server
   session; it now says `quit and log out on the server`.
 - Wording: counts are pluralised (`1 key × 3 models`, `1 row`); the
-  outcomes header says `fail rate`; pricing rules read `0 branches ·
-  0 conditions` instead of `0b · 0c`; the credentials priority column is
+  outcomes header says `fail rate`; pricing rules are spelled out
+  (`2 branches`) instead of `2b · 0c`; the credentials priority column is
   titled `prio` when the table has room; the Keys server pane shows the
   poller's last pull in plain words (`last pull  no new usage`).
 - Quota status contradicted its bars (`⚠ limit reached` next to 5h 93% /
