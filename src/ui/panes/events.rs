@@ -172,6 +172,11 @@ fn event_fields(app: &App, e: &UsageEvent, key: &str, source: &str) -> Vec<(&'st
     if e.is_delete {
         v.push(("identity", "deleted".into()));
     }
+    // A failed request's error text, as in the detail pane (untruncated).
+    if let Some(l) = error_line(app, e, 2000) {
+        let text: String = l.spans.iter().skip(1).map(|s| s.content.as_ref()).collect();
+        v.insert(10, ("error", text.trim_end().to_string()));
+    }
     v
 }
 

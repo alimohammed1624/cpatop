@@ -152,7 +152,8 @@ pub fn frame(
     bottom: Option<(String, String)>,
 ) -> Rect {
     let t = app.theme();
-    let (_, num, def) = layout::pane_def(id);
+    let (_, _, def) = layout::pane_def(id);
+    let num = app.pane_number(id);
     if def.table {
         let st = app.table(id);
         if !st.filter.is_empty() {
@@ -187,7 +188,8 @@ pub fn frame(
 /// A pane collapsed to a single title row for lack of space.
 pub fn collapsed(f: &mut Frame, app: &App, id: PaneId, area: Rect) {
     let t = app.theme();
-    let (_, num, def) = layout::pane_def(id);
+    let (_, _, def) = layout::pane_def(id);
+    let num = app.pane_number(id);
     let bs = Style::default().fg(t.border);
     let mut spans = vec![
         Span::styled("─", bs),
@@ -482,7 +484,17 @@ pub fn when(app: &App, s: Option<&str>) -> String {
         return String::new();
     };
     let now = app.clock.utc();
-    let full = app.privacy_text(&fmt::ts_fmt(s, "%Y-%m-%d %H:%M:%S %:z"));
+    // In the offset every other time is shown in (servers send some
+    // timestamps in UTC and others in their own zone).
+    let off = *app.server_now().offset();
+    let full = match fmt::parse_ts(s) {
+        Some(t) => t
+            .with_timezone(&off)
+            .format("%Y-%m-%d %H:%M:%S %:z")
+            .to_string(),
+        None => fmt::ts_fmt(s, "%Y-%m-%d %H:%M:%S %:z"),
+    };
+    let full = app.privacy_text(&full);
     match (fmt::since(s, now), fmt::until(s, now)) {
         (Some(a), _) if a > 0 => format!("{full} ({} ago)", fmt::age(a)),
         (_, Some(u)) if u > 0 => format!("{full} (in {})", fmt::secs(u as f64)),

@@ -574,14 +574,44 @@ impl App {
         self.hidden.get(&tab).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
+    /// Panes that make no sense for the role: the key viewer's composition
+    /// only repeats the models pane, and its key × model heatmap has a
+    /// single row.
+    fn role_excluded(&self, tab: Tab) -> &'static [PaneId] {
+        if tab == Tab::Analysis && self.role == Some(Role::KeyViewer) {
+            &[PaneId::AnComposition, PaneId::AnHeatmap]
+        } else {
+            &[]
+        }
+    }
+
+    /// The tab's panes the role can see, in reading order: their positions
+    /// are the numbers shown on pane borders and toggled with `1`–`9`.
+    pub fn role_panes(&self, tab: Tab) -> Vec<layout::PaneDef> {
+        let ex = self.role_excluded(tab);
+        layout::panes(tab)
+            .iter()
+            .filter(|d| !ex.contains(&d.id))
+            .copied()
+            .collect()
+    }
+
+    /// The number shown on a pane's border (see [`App::role_panes`]).
+    pub fn pane_number(&self, id: PaneId) -> usize {
+        let (tab, n, _) = layout::pane_def(id);
+        self.role_panes(tab)
+            .iter()
+            .position(|d| d.id == id)
+            .map(|i| i + 1)
+            .unwrap_or(n)
+    }
+
     /// Hidden panes plus panes that make no sense for the role: the key
     /// viewer's composition only repeats the models pane, and its key ×
     /// model heatmap has a single row.
     pub fn effective_hidden(&self, tab: Tab) -> Vec<PaneId> {
         let mut v = self.hidden(tab).to_vec();
-        if tab == Tab::Analysis && self.role == Some(Role::KeyViewer) {
-            v.extend([PaneId::AnComposition, PaneId::AnHeatmap]);
-        }
+        v.extend_from_slice(self.role_excluded(tab));
         v
     }
 

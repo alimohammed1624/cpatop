@@ -546,7 +546,7 @@ impl App {
     }
 
     fn toggle_pane(&mut self, n: usize) {
-        let ps = layout::panes(self.tab);
+        let ps = self.role_panes(self.tab);
         let Some(def) = ps.get(n.wrapping_sub(1)) else {
             return;
         };
@@ -625,7 +625,7 @@ impl App {
             self.flash("request filters cleared");
             return;
         }
-        self.flash("q quits · ? help");
+        self.flash("q quit · ? help");
     }
 
     fn on_dashboard_key(&mut self, k: KeyEvent) {
@@ -667,7 +667,7 @@ impl App {
             // The admin tabs' keys say why nothing happens for a key viewer.
             KeyCode::F(n) if !admin && (2..=layout::ALL_TABS.len() as u8 + 1).contains(&n) => {
                 let tab = layout::ALL_TABS[n as usize - 2];
-                self.flash(format!("{} tab: admin only", tab.title()));
+                self.flash(format!("admin only: {}", tab.title()));
             }
             KeyCode::Char(c @ '1'..='9') => self.toggle_pane(c as usize - '0' as usize),
             KeyCode::Char('f') => self.cycle_focus(true),

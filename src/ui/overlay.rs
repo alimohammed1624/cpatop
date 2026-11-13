@@ -313,10 +313,19 @@ pub fn help(f: &mut Frame, app: &App) {
         if x >= body.right() {
             break;
         }
-        Paragraph::new(lines).scroll((col_off, 0)).render(
-            Rect::new(x, body.y, col_w.min(body.right() - x), body.height),
-            f.buffer_mut(),
-        );
+        let w = col_w.min(body.right() - x);
+        // Narrow terminals: lines that do not fit end in `…`.
+        let lines: Vec<Line<'static>> = if w < col_w {
+            lines
+                .into_iter()
+                .map(|l| Line::from(super::panes::fit_spans(l.spans, w as usize)))
+                .collect()
+        } else {
+            lines
+        };
+        Paragraph::new(lines)
+            .scroll((col_off, 0))
+            .render(Rect::new(x, body.y, w, body.height), f.buffer_mut());
     }
 }
 

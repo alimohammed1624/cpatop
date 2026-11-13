@@ -754,6 +754,7 @@ pub fn register_safe_name(name: &str) {
 /// Long UI strings that are never identifiers.
 const SAFE_UI: &[&str] = &[
     "yyyy-mm-dd..yyyy-mm-dd",
+    "openai-compatibility",
     "cpatop_no_update_check=1",
     "update_check",
     "logout_on_exit",

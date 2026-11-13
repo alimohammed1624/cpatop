@@ -208,6 +208,23 @@ fn header_segments(app: &App, level: u8) -> Vec<Vec<Span<'static>>> {
     segs
 }
 
+/// A message cut to `w` columns at a clause boundary (`: `, ` · `) when
+/// one fits, so `admin only: Requests` reads `admin only`, not `admin onl…`.
+fn short_message(m: &str, w: usize) -> String {
+    if fmt::width(m) <= w {
+        return m.to_string();
+    }
+    let cut = [": ", " · ", ", "]
+        .iter()
+        .flat_map(|sep| m.match_indices(sep).map(|(i, _)| i))
+        .filter(|&i| fmt::width(&m[..i]) <= w)
+        .max();
+    match cut {
+        Some(i) => m[..i].to_string(),
+        None => m.to_string(),
+    }
+}
+
 fn header(f: &mut Frame, app: &App, area: Rect) {
     let t = app.theme();
     let sep = Span::styled(" │ ", Style::default().fg(t.border));
@@ -220,6 +237,18 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
         None => vec![Span::styled("● ok", Style::default().fg(t.ok))],
     };
 
+    // A message must not push the title, the role, the refresh age, the
+    // status and the update badge off the line: it is cut instead.
+    // (Everything the header keeps at squeeze level 5: role, range, key
+    // filter, the age — measured with three digits — and the badge.)
+    let status_w0: usize = status.iter().map(|s| s.width()).sum();
+    let essentials = header_segments(app, 5)
+        .iter()
+        .map(|s| s.iter().map(|x| x.width()).sum::<usize>() + 3)
+        .sum::<usize>();
+    let room = (area.width as usize)
+        .saturating_sub(8 + essentials + status_w0 + 2)
+        .max(6);
     let right: Vec<Span<'static>> = if let Some(secs) = app.logout_countdown() {
         vec![Span::styled(
             format!(" ⚠ press X again to log out ({secs}s) · any key cancels "),
@@ -229,20 +258,21 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
         )]
     } else {
         match &app.flash {
-            Some((m, _)) => vec![Span::styled(
-                format!("{} ", app.privacy_text(m)),
-                Style::default().fg(t.hi).add_modifier(Modifier::BOLD),
-            )],
+            Some((m, _)) => {
+                let m = short_message(&app.privacy_text(m), room);
+                let pad = if fmt::width(&m) < room { " " } else { "" };
+                vec![Span::styled(
+                    format!("{m}{pad}"),
+                    Style::default().fg(t.hi).add_modifier(Modifier::BOLD),
+                )]
+            }
             None => vec![
                 Span::styled("?", Style::default().fg(t.hi).add_modifier(Modifier::BOLD)),
                 Span::styled(" help ", dim),
             ],
         }
     };
-    // A long message must not push the title, the status and the update
-    // badge off the line: it is cut instead.
-    let keep = 8 + 5 + if app.update_available.is_some() { 4 } else { 0 };
-    let right = panes::fit_spans(right, (area.width as usize).saturating_sub(keep));
+    let right = panes::fit_spans(right, room);
     let right_w: usize = right.iter().map(|s| s.width()).sum();
     let title = vec![Span::styled(
         " cpatop ",

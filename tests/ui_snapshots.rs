@@ -1157,12 +1157,23 @@ fn admin_tabs_say_admin_only() {
         press(&mut app, KeyCode::F(n));
         assert_eq!(app.tab, Tab::Overview);
         let msg = app.flash.as_ref().map(|f| f.0.clone()).unwrap_or_default();
-        assert!(msg.ends_with("admin only"), "F{n}: {msg}");
-        let s = render(&mut app, 80, 24);
-        let head = s.lines().next().unwrap();
-        assert!(head.contains("admin only"), "{head}");
-        assert!(head.contains('↻'), "F{n}: {head}");
+        assert!(msg.starts_with("admin only"), "F{n}: {msg}");
+        for (w, h) in [(80, 24), (50, 12)] {
+            let s = render(&mut app, w, h);
+            let head = s.lines().next().unwrap();
+            assert!(head.contains("admin only"), "{head}");
+            // The toast never pushes out the key or the refresh age.
+            assert!(
+                head.contains('↻') && head.contains("key"),
+                "F{n} {w}: {head}"
+            );
+        }
     }
+    // Nor does the `Esc` hint.
+    press(&mut app, KeyCode::Esc);
+    let s = render(&mut app, 50, 12);
+    let head = s.lines().next().unwrap();
+    assert!(head.contains('↻') && head.contains("key"), "{head}");
     press(&mut app, KeyCode::F(4));
     assert_eq!(app.tab, Tab::Analysis);
 }
