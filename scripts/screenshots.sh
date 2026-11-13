@@ -10,7 +10,8 @@
 # "MesloLGS Nerd Font Mono" font; oxipng is used when installed.
 #
 # Configuration (environment):
-#   CPATOP_BASE_URL            Keeper URL (default http://localhost:8318)
+#   CPATOP_BASE_URL            Keeper URL (default http://127.0.0.1:8318: an IP
+#                              address, to show that privacy mode masks it)
 #   CPATOP_SHOT_PASSWORD_FILE  admin password file (admin scenes)
 #   CPATOP_SHOT_API_KEY_FILE   CPA API key file (API-key scenes)
 #   SHOT_ONLY                  optional space-separated scene names to render
@@ -22,7 +23,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 OUT="$ROOT/docs/screenshots"
-BASE_URL=${CPATOP_BASE_URL:-http://localhost:8318}
+BASE_URL=${CPATOP_BASE_URL:-http://127.0.0.1:8318}
 PW_FILE=${CPATOP_SHOT_PASSWORD_FILE:-}
 KEY_FILE=${CPATOP_SHOT_API_KEY_FILE:-}
 ONLY=${SHOT_ONLY:-}
@@ -144,6 +145,11 @@ shot() {
     echo "privacy check failed in scene $name; not writing the PNG" >&2
     exit 1
   fi
+  # Panes replace identifiers themselves; a placeholder from the render
+  # guard means some text needed the last line of defence.
+  if tmux capture-pane -p -t "$sess" | grep -nE '‹(key|email)›' >&2; then
+    echo "warning: scene $name shows masked free text (see above)" >&2
+  fi
 
   # Quit like a user would; the server session is logged out in cleanup.
   tmux send-keys -t "$sess" q
@@ -227,5 +233,6 @@ shot theme-tokyo-night   admin 160 48 tokyo-night Tab t t t t
 shot help-overlay        admin 160 48 default     '?'
 shot wide-220x60         admin 220 60 default
 shot compact-80x24       admin 80 24 default      Tab
+shot row-detail          admin 80 24 default      F5 wait Enter
 
 echo "done: $OUT"

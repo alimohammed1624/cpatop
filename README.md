@@ -62,6 +62,8 @@ IP addresses become `‹ip›`.
 | **`light` theme** (Analysis) | **`tokyo-night` theme** (Realtime) |
 | ![220×60](docs/screenshots/wide-220x60.png) | ![80×24](docs/screenshots/compact-80x24.png) |
 | **220×60** — panes size to their content | **80×24** — low-priority panes collapse to one-line summaries |
+| ![Row details](docs/screenshots/row-detail.png) | |
+| **Row details** (`Enter`) — every field of the selected row, untruncated | |
 
 ## Install
 
