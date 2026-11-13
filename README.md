@@ -1,5 +1,9 @@
 # cpatop
 
+![cpatop admin overview: totals, braille token/request trend, activity heatmap and per-model distribution](docs/screenshots/admin-overview.png)
+
+<sub>Admin overview, captured from a live Keeper at 160×48 with `--privacy`. More in [Screenshots](#screenshots).</sub>
+
 A btop-style terminal dashboard for [CPA Usage Keeper](https://github.com/Willxup/cpa-usage-keeper)
 (the usage/cost tracker for CLIProxyAPI), written in Rust with [ratatui](https://ratatui.rs).
 
@@ -7,59 +11,6 @@ It mirrors the Keeper web dashboard in your terminal: totals and trends, realtim
 throughput, per-model / per-key / per-credential analysis, a live request log,
 credential health, quota windows, pricing and sessions — with braille graphs,
 gradient meters and sparklines.
-
-```text
- cpatop ⌂ localhost:8318 │ admin │ ◷ today │ ⟳ 10s │ ↻ 0s ago │ ● ok                                                                                     ? help
-─┤ Overview ├┤ Realtime ├┤ Analysis ├┤ Requests ├┤ Credentials ├┤ Quota ├┤ Models ├┤ Keys ├─────────────────────────────────────────────────── layout balanced ─
-╭─¹ totals ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── today ─╮
-│ requests 1,656   ✓ 1,615  ✗ 41   success ■■■■■■■■■■■■ 97.52%   tokens 198M   in 196M   out 1.42M   cache r 187M   cache w 8.34M   reasoning 458k             │
-│ cost $126.88   rpm 1.57   tpm 187k   cache ■■■■■■■■■■■■ 95.4%                                                                                                │
-│                                                                                                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭─² trend ───────────────────────────────────────────────────────────── peak 76.3M/h · Σ 198M ─╮╭─³ activity ──────────────────────────────────── day · short ─╮
-│ tokens                                                                                       ││ health 97.5%  ✓1,614 ✗41  tokens 198M                        │
-│                                                                 ⢀⣷                           ││ ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■         │
-│                                                                 ⣾⣿⡄                          ││ ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■         │
-│                                                                ⣸⣿⣿⣇                          ││ ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■         │
-│                                                               ⢰⣿⣿⣿⣿                          ││ ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■         │
-│                                                              ⢀⣿⣿⣿⣿⣿⡇                         ││ ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■         │
-│                                                             ⣠⣾⣿⣿⣿⣿⣿⣷                         ││ ■■■■■■■                                                      │
-│                                                           ⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⡄                        ││                                                              │
-│                                                          ⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇                        ││ tokens                                                       │
-│               ⣠⡀                                        ⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                        ││ ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■         │
-│             ⢀⣴⣿⣿⣦⡀                             ⢀⣠⣤⣤⡀  ⢀⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⣀                      ││ ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■         │
-│        ⣀⣀⣀⣀⣠⣿⣿⣿⣿⣿⣿⣦⣤⣀⣀⡀               ⣀⣀⣀⣤⣤⣴⣶⣶⣿⣿⣿⣿⣿⣿⣷⣦⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣄⡀                   ││ ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■         │
-│ requests peak 663 · Σ 1,656                                                                  ││ ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■         │
-│                                                                 ⢠⣷                           ││ ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■         │
-│                                                                ⢠⣿⣿⡆                          ││ ■■■■■■■                                                      │
-│                                                               ⢠⣿⣿⣿⣷                          ││                                                              │
-│                                                             ⢀⣠⣿⣿⣿⣿⣿⡆                         ││                                                              │
-│                                                          ⢀⣤⣾⣿⣿⣿⣿⣿⣿⣿⣷                         ││                                                              │
-│                                                         ⣰⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡆                        ││                                                              │
-│              ⣠⣴⣦⡀                                     ⢀⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷                        ││                                                              │
-│        ⣀⣀⣀⣀⣠⣾⣿⣿⣿⣿⣦⣄⣀⣀⣀⡀               ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣤⣴⣶⣶⣶⣦⣤⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⣤⣀⣀⡀                   ││                                                              │
-╰─ 11-12 23:30 ────────────────────────────────────────────────────────────────── 11-13 23:30 ─╯╰─ 11-13 00:00 ────────────────────────────────── 11-14 00:00 ─╯
-╭─⁴ distribution ◆ ──────────────────────────────────────────────────────────────────────────────────────────────────── models│api keys│credentials│providers ─╮
-│name                                                                                               tokens  share     req  fail      cost  cache trend         │
-│claude-opus-5-5                                                                                      139M  70.3%   1,137     4    $73.76  95.9% ▁▁▃▁▁▁▁▂▂▁█▁▁▁│
-│claude-fable-5-2                                                                                    45.1M  22.8%     315    37    $47.63  94.3% ▁▁▁▁▁▁▁▁▅█▂▁▁▁│
-│gpt-6.1-sol                                                                                         6.41M   3.2%      73     0     $1.52  96.9% ▁▁▁▁▁▁▁▁▁█▁▁▁▁│
-│gpt-6-luna                                                                                          6.15M   3.1%      95     0   $0.1338  93.0% ▁▁▁▁▁▁▁▁▁█▂▁▁▁│
-│gpt-6-astra                                                                                          961k   0.5%      33     0     $2.33  89.3% ▁▁▁▁▁▁▁▁▁▂█▁▁▁│
-│claude-fable-5                                                                                       161k   0.1%       3     0     $1.50  42.0% ▁▁▁▁▁▁▁▁▁▁█▁▁▁│
-│                                                                                                                                                              │
-│                                                                                                                                                              │
-│                                                                                                                                                              │
-│                                                                                                                                                              │
-│                                                                                                                                                              │
-│                                                                                                                                                              │
-│                                                                                                                                                              │
-│                                                                                                                                                              │
-│                                                                                                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-```
-
-<sub>Captured from a live Keeper at 160×48 with `--privacy`; colours are not shown here.</sub>
 
 ## Features
 
@@ -81,6 +32,23 @@ gradient meters and sparklines.
 - **Themes:** `default` (btop-like), `light`, `gruvbox`, `nord`, `tokyo-night`,
   `dracula`, `monochrome`, plus your own TOML themes.
 - Persists theme, range, layouts, hidden panes, sorting and the last tab.
+
+## Screenshots
+
+All captured from a live Keeper with `--privacy` (e-mail addresses masked).
+
+| | |
+|---|---|
+| ![Realtime tab](docs/screenshots/admin-realtime.png) | ![Analysis tab](docs/screenshots/admin-analysis.png) |
+| **Realtime** — throughput, outcomes, latency scatter, cache hit rate over the last 15 minutes | **Analysis** — token trend, composition, latency, speed, efficiency and key × model heatmap |
+| ![Requests tab](docs/screenshots/admin-requests.png) | ![Credentials tab](docs/screenshots/admin-credentials.png) |
+| **Requests** — live request log over SSE with a detail pane | **Credentials** — per-credential health, success rate and recent errors |
+| ![API-key overview](docs/screenshots/apikey-overview.png) | ![Help overlay](docs/screenshots/help-overlay.png) |
+| **API-key mode** — the per-key dashboard | **Help** — `?` lists every key |
+| ![Light theme](docs/screenshots/theme-light.png) | ![Tokyo Night theme](docs/screenshots/theme-tokyo-night.png) |
+| **`light` theme** (Analysis) | **`tokyo-night` theme** (Realtime) |
+| ![Compact 100×30 layout](docs/screenshots/compact-100x30.png) | |
+| **Compact** — the overview at 100×30 | |
 
 ## Install
 
@@ -241,6 +209,18 @@ Tests parse every recorded API response in `tests/fixtures/` (scrubbed real
 Keeper v2.1.0 responses) and snapshot the main screens with ratatui's
 `TestBackend` at 80×24 and 160×48 for both roles (`tests/snapshots/`, via
 [insta](https://insta.rs)).
+
+`scripts/screenshots.sh` regenerates the PNGs in `docs/screenshots/` from a
+running Keeper (needs tmux, aha, chromium, ImageMagick and the "MesloLGS Nerd
+Font Mono" font). It always runs cpatop with `--privacy` and throwaway config
+and state directories, and logs its sessions out when done:
+
+```sh
+CPATOP_BASE_URL=http://localhost:8318 \
+CPATOP_SHOT_PASSWORD_FILE=path/to/admin.pw \
+CPATOP_SHOT_API_KEY_FILE=path/to/cpa.key \
+  scripts/screenshots.sh            # SHOT_ONLY="admin-overview" for one scene
+```
 
 ## License
 
