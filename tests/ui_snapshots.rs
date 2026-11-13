@@ -1493,3 +1493,37 @@ fn explicit_changes_back_to_the_command_line_value_persist_across_restart() {
     assert_eq!(st.refresh_secs, Some(5), "untouched --refresh not saved");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The graph cursor stops at the bucket in progress: `G`, `→` and a click
+/// past now do not reach the rest of `today` (C4).
+#[test]
+fn graph_cursor_stops_at_now() {
+    use crossterm::event::KeyCode;
+    let mut app = populated(Role::Admin);
+    app.focus.insert(Tab::Overview, PaneId::OvTrend);
+    render(&mut app, 120, 30);
+    // Fixture: `today` in +05:30 at 16:45, buckets 00:00, 00:30 … 23:30.
+    let now_idx = 17; // 16:30–17:30
+    press(&mut app, KeyCode::Char('G'));
+    assert_eq!(app.cursor.get(&PaneId::OvTrend), Some(&now_idx));
+    render(&mut app, 120, 30);
+    press(&mut app, KeyCode::Right);
+    assert_eq!(app.cursor.get(&PaneId::OvTrend), Some(&now_idx));
+    let s = render(&mut app, 120, 30);
+    assert!(s.contains("▸ 11-13 16:30"), "{s}");
+    // A click on the dotted rest of the day lands on the same bucket.
+    let (_, r, _) = *app
+        .hit
+        .graphs
+        .iter()
+        .find(|(id, _, _)| *id == PaneId::OvTrend)
+        .unwrap();
+    use crossterm::event::{Event, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    app.on_event(Event::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: r.right() - 2,
+        row: r.y + 1,
+        modifiers: KeyModifiers::NONE,
+    }));
+    assert_eq!(app.cursor.get(&PaneId::OvTrend), Some(&now_idx));
+}

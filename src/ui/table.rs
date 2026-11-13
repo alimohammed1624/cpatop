@@ -133,6 +133,8 @@ pub enum Cell {
     Spark {
         values: Vec<f64>,
         color: Color,
+        /// Where its buckets sit in time, shared by the rows of a table.
+        axis: Option<std::sync::Arc<widgets::SparkAxis>>,
     },
     /// Alternatives from widest to narrowest; the widest that fits is drawn
     /// (e.g. `limit reached` or just `⚠`).
@@ -188,7 +190,11 @@ impl Cell {
         match self {
             Cell::Spans(s) => s.clone(),
             Cell::Choice(alts) => alts.get(level).or(alts.last()).cloned().unwrap_or_default(),
-            Cell::Spark { values, color } => widgets::spark(values, w, t, *color),
+            Cell::Spark {
+                values,
+                color,
+                axis,
+            } => widgets::spark_on(values, w, t, *color, axis.as_deref()),
             Cell::Meter { frac, color, label } => {
                 let lw = fmt::width(label);
                 let mw = w.saturating_sub(lw).max(1);
@@ -291,8 +297,22 @@ impl TRow {
         self
     }
     /// Append a sparkline cell.
-    pub fn spark(mut self, values: Vec<f64>, color: Color, key: SortKey) -> TRow {
-        self.cells.push(Cell::Spark { values, color });
+    pub fn spark(self, values: Vec<f64>, color: Color, key: SortKey) -> TRow {
+        self.spark_on(values, color, None, key)
+    }
+    /// Append a sparkline cell on a time axis (see [`widgets::SparkAxis`]).
+    pub fn spark_on(
+        mut self,
+        values: Vec<f64>,
+        color: Color,
+        axis: Option<std::sync::Arc<widgets::SparkAxis>>,
+        key: SortKey,
+    ) -> TRow {
+        self.cells.push(Cell::Spark {
+            values,
+            color,
+            axis,
+        });
         self.sort.push(key);
         self
     }

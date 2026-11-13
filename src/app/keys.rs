@@ -526,6 +526,13 @@ impl App {
         let Some(n) = self.graph_len(id).filter(|n| *n > 0) else {
             return;
         };
+        // Buckets that have not started (the rest of `today`) are not
+        // reachable: the cursor stops at the one in progress.
+        let n = self
+            .hit
+            .graph_limit
+            .get(&id)
+            .map_or(n, |l| (*l).clamp(1, n));
         let next = match self.cursor.get(&id) {
             None if delta.abs() > 1 => {
                 if delta < 0 {
@@ -916,8 +923,15 @@ impl App {
                         && n > 0
                         && r.width > 0
                     {
-                        let i = ((m.column - r.x) as usize * n / r.width as usize).min(n - 1);
-                        self.cursor.insert(id, i);
+                        let spans = self.hit.graph_spans.get(&id).map(Vec::as_slice);
+                        let col = (m.column - r.x) as usize;
+                        let i = crate::ui::widgets::bucket_at(col, n, r.width as usize, spans);
+                        let limit = self
+                            .hit
+                            .graph_limit
+                            .get(&id)
+                            .map_or(n, |l| (*l).clamp(1, n));
+                        self.cursor.insert(id, i.min(limit - 1));
                         return;
                     }
                     let body = self

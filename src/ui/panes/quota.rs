@@ -510,6 +510,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                 values: own,
                 fmt: fmt::count,
                 color: None,
+                place: None,
             });
         }
         let all = all_requests(app, &starts)?;
@@ -522,6 +523,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
             values: all,
             fmt: fmt::count,
             color: None,
+            place: None,
         })
     };
     table_with_chart(
@@ -872,6 +874,7 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         values: cycles.iter().map(|c| c.usage.total_tokens).collect(),
         fmt: fmt::compact,
         color: None,
+        place: None,
     };
     // One or two windows make a meaningless chart.
     let chart_for = |_: &str| -> Option<RowChart> {
@@ -881,6 +884,7 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
             values: per_window.values.clone(),
             fmt: per_window.fmt,
             color: None,
+            place: None,
         })
     };
     table_with_chart(

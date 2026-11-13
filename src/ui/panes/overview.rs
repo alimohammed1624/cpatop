@@ -247,6 +247,11 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
         return;
     }
     let labels = time_labels(&buckets, daily, false);
+    let place = if daily {
+        None
+    } else {
+        app.hourly_placement(&buckets)
+    };
     let n = buckets.len();
     let future = (keep < n).then_some(keep);
     let cur = cursor(app, PaneId::OvTrend, n);
@@ -288,6 +293,7 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
                 color: None,
                 max: None,
                 floor: 0.0,
+                place: place.as_ref(),
             },
             app.settings.graph_symbols,
             true,
@@ -310,6 +316,7 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
                 color: Some(t.accent),
                 max: None,
                 floor: 0.0,
+                place: place.as_ref(),
             },
             app.settings.graph_symbols,
             false,
@@ -331,6 +338,7 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
                 color: None,
                 max: None,
                 floor: 0.0,
+                place: place.as_ref(),
             },
             app.settings.graph_symbols,
             true,
@@ -392,6 +400,15 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
             .map(|(i, x)| if i < keep { *x } else { f64::NAN })
             .collect()
     };
+    // Sparklines share the trend's time axis: hourly buckets at their real
+    // times, the rest of `today` a dotted baseline.
+    let axis = app.data.comparisons.get().and_then(|c| {
+        let place = (c.granularity != "daily")
+            .then(|| app.hourly_placement(&c.buckets))
+            .flatten();
+        (keep < c.buckets.len() || place.is_some())
+            .then(|| std::sync::Arc::new(widgets::SparkAxis::new(keep, place.as_ref())))
+    });
     let dim = app.dim(PaneId::OvDist);
     let dim_name = crate::app::dims_for(PaneId::OvDist, app.role)
         .get(dim)
@@ -440,7 +457,12 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
                     cache.map(|c| fmt::pct(c, 1)).unwrap_or("-".into()),
                     num(cache.unwrap_or(-1.0)),
                 )
-                .spark(started(&i.token_series), t.accent, num(i.total_tokens))
+                .spark_on(
+                    started(&i.token_series),
+                    t.accent,
+                    axis.clone(),
+                    num(i.total_tokens),
+                )
                 .filter(format!("{name} {}", i.key))
                 .details(dim_key_field(app, dim_name, &i.key))
                 .details(request_details(i.requests, i.failures))
@@ -475,6 +497,9 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
             values: started(&i.token_series[..n]),
             fmt: fmt::compact,
             color: None,
+            place: (c.granularity != "daily")
+                .then(|| app.hourly_placement(&c.buckets[..n]))
+                .flatten(),
         })
     };
     table_with_chart(

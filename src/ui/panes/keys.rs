@@ -166,6 +166,9 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
             values,
             fmt: fmt::compact,
             color: None,
+            place: (c.granularity != "daily")
+                .then(|| app.hourly_placement(&c.buckets[..n]))
+                .flatten(),
         })
     };
     table_with_chart(

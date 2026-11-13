@@ -691,6 +691,8 @@ pub struct RowChart {
     pub values: Vec<f64>,
     pub fmt: fn(f64) -> String,
     pub color: Option<Color>,
+    /// Hourly buckets placed by time.
+    pub place: Option<crate::series::Placement>,
 }
 
 /// Rows a chart needs to be worth drawing (title, plot, axis).
@@ -810,6 +812,7 @@ pub fn draw_row_chart(
             color: c.color,
             max: None,
             floor: 0.0,
+            place: c.place.as_ref(),
         },
         app.settings.graph_symbols,
         false,
@@ -887,6 +890,9 @@ pub struct Series<'a> {
     pub max: Option<f64>,
     /// Bottom of the scale (values are drawn relative to it).
     pub floor: f64,
+    /// Hourly buckets placed by their real time spans (see
+    /// [`Placement`](crate::series::Placement)); `None` spreads them evenly.
+    pub place: Option<&'a crate::series::Placement>,
 }
 
 /// Draw a time chart with y-axis labels, x-axis time ticks and the pane's
@@ -926,12 +932,23 @@ pub fn chart_until(
 ) -> Rect {
     let plot = chart_inner(f, app, hit, id, area, labels, s, symbols, record);
     let n = s.values.len();
-    if let Some(from) = future.filter(|i| *i < n)
-        && plot != area
+    if record && let Some(from) = future.filter(|i| *i < n) {
+        // The cursor stops at the bucket in progress.
+        hit.graph_limit.insert(id, from.max(1));
+    }
+    // Placed by time, the axis turns dotted at now; otherwise at the first
+    // bucket that has not started.
+    let dotted_from = |w: usize| match s.place.and_then(|p| p.now) {
+        Some(now) => Some(widgets::frac_col(now, w)),
+        None => future
+            .filter(|i| *i < n)
+            .map(|from| widgets::bucket_cols(from, n, w).0),
+    };
+    if plot != area
         && plot.width > 0
+        && let Some(c0) = dotted_from(plot.width as usize)
     {
         let w = plot.width as usize;
-        let (c0, _) = widgets::bucket_cols(from, n, w);
         let style = Style::default().fg(app.theme().border);
         let buf = f.buffer_mut();
         for c in c0..w {
@@ -978,14 +995,23 @@ fn chart_inner(
         .max
         .unwrap_or_else(|| axis_top(peak - s.floor, whole) + s.floor);
     // Hourly buckets that start off the hour get their ticks at whole hours.
-    let hours = offset_hours(labels);
+    let hours = if s.place.is_some() {
+        None
+    } else {
+        offset_hours(labels)
+    };
+    let spans = s.place.map(|p| p.spans.as_slice());
     let axes = Axes {
         theme: t,
         y_min: s.floor,
         y_max: top,
         y_fmt: s.fmt,
         integral: whole,
-        labels: if hours.is_some() { &[] } else { labels },
+        labels: if hours.is_some() || s.place.is_some() {
+            &[]
+        } else {
+            labels
+        },
     };
     let plot = if area.height >= 4 {
         axes.draw(f.buffer_mut(), area)
@@ -997,6 +1023,15 @@ fn chart_inner(
     {
         let dim = Style::default().fg(t.graph_text);
         for (x, label) in hour_ticks(hours, frac, plot.width as usize) {
+            f.buffer_mut()
+                .set_string(plot.x + x as u16, plot.bottom(), label, dim);
+        }
+    }
+    if let Some(p) = s.place
+        && plot != area
+    {
+        let dim = Style::default().fg(t.graph_text);
+        for (x, label) in placed_ticks(p, plot.width as usize) {
             f.buffer_mut()
                 .set_string(plot.x + x as u16, plot.bottom(), label, dim);
         }
@@ -1015,6 +1050,7 @@ fn chart_inner(
     f.render_widget(
         Graph {
             data: &shifted,
+            spans,
             theme: t,
             symbols,
             max: Some((top - s.floor).max(f64::MIN_POSITIVE)),
@@ -1024,14 +1060,47 @@ fn chart_inner(
     );
     if record {
         hit.graphs.push((id, plot, n));
+        if let Some(sp) = spans {
+            hit.graph_spans.insert(id, sp.to_vec());
+        }
         if let Some(last) = s.values.iter().rposition(|v| v.is_finite() && *v > 0.0) {
             hit.graph_last.insert(id, last);
         }
     }
     if let Some(i) = cursor(app, id, n) {
-        widgets::draw_cursor(f.buffer_mut(), plot, i, n, t);
+        widgets::draw_cursor(f.buffer_mut(), plot, i, n, spans, t);
     }
     plot
+}
+
+/// Tick positions (column, label) for whole local hours on an axis placed
+/// by time: every 1, 2, 3, 4, 6, 8, 12 or 24 hours, as many as fit (at
+/// most five), each label starting at its hour.
+fn placed_ticks(p: &crate::series::Placement, width: usize) -> Vec<(usize, String)> {
+    const LW: usize = 5;
+    if width < LW {
+        return vec![];
+    }
+    let hours = p.hours();
+    let max = (width / (LW + 3)).clamp(1, 5);
+    let step = [1, 2, 3, 4, 6, 8, 12, 24]
+        .into_iter()
+        .find(|s| hours.iter().filter(|(_, h)| *h % s == 0).count() <= max)
+        .unwrap_or(24);
+    let mut out = Vec::new();
+    let mut next_free = 0usize;
+    for (frac, h) in hours {
+        if h % step != 0 {
+            continue;
+        }
+        let x = ((frac * width as f64).round() as usize).min(width - LW);
+        if x < next_free {
+            continue;
+        }
+        out.push((x, format!("{h:02}:00")));
+        next_free = x + LW + 1;
+    }
+    out
 }
 
 /// An hourly axis whose buckets start off the hour: the server cuts hourly
@@ -1121,6 +1190,7 @@ pub fn overlay_failures(
     let t = app.theme();
     let g = Graph {
         data: fail,
+        spans: None,
         theme: t,
         symbols,
         max: Some(top),

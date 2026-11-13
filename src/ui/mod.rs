@@ -24,6 +24,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     hit.bodies.clear();
     hit.graphs.clear();
     hit.graph_last.clear();
+    hit.graph_spans.clear();
+    hit.graph_limit.clear();
     hit.selected.clear();
     hit.picker.clear();
     hit.row_fields.clear();

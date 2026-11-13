@@ -274,6 +274,7 @@ pub fn throughput(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: 
             color: None,
             max: None,
             floor: 0.0,
+            place: None,
         },
         app.settings.graph_symbols,
         true,
@@ -299,6 +300,7 @@ pub fn throughput(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: 
                 color: Some(t.accent),
                 max: None,
                 floor: 0.0,
+                place: None,
             },
             app.settings.graph_symbols,
             false,
@@ -412,6 +414,7 @@ pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
             color: Some(t.ok),
             max: Some(top),
             floor: 0.0,
+            place: None,
         },
         symbols,
         true,
@@ -419,7 +422,7 @@ pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
     if fail.iter().any(|v| *v > 0.0) {
         super::overlay_failures(f, app, plot, &fail, top, symbols);
         if let Some(i) = cur {
-            widgets::draw_cursor(f.buffer_mut(), plot, i, req.len(), t);
+            widgets::draw_cursor(f.buffer_mut(), plot, i, req.len(), None, t);
         }
     }
     if t.no_color && !legend_in_head {
@@ -848,6 +851,7 @@ pub fn cache(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
             // a dip from 97 % to 92 % look like a collapse.
             max: Some(100.0),
             floor: 0.0,
+            place: None,
         },
         app.settings.graph_symbols,
         true,

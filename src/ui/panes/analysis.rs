@@ -154,6 +154,7 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         return;
     }
     let labels = time_labels(&slots, daily(a), false);
+    let place = hourly_place(app, a, &slots);
     chart_until(
         f,
         app,
@@ -167,11 +168,23 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             color: None,
             max: None,
             floor: 0.0,
+            place: place.as_ref(),
         },
         app.settings.graph_symbols,
         true,
         (started < values.len()).then_some(started),
     );
+}
+
+/// Where the hourly buckets `slots` sit on the response's range (see
+/// [`Placement`](crate::series::Placement)); `None` for daily series.
+fn hourly_place(app: &App, a: &Analysis, slots: &[String]) -> Option<crate::series::Placement> {
+    if daily(a) {
+        return None;
+    }
+    let start = a.range_start.as_deref().and_then(fmt::parse_ts)?;
+    let end = a.range_end.as_deref().and_then(fmt::parse_ts)?;
+    crate::series::Placement::hourly(slots, start, end, app.clock.utc())
 }
 
 fn comp_items(app: &App) -> &[CompositionItem] {
@@ -347,12 +360,25 @@ pub fn models(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         .iter()
         .map(|s| s.total_tokens.iter().sum::<f64>())
         .sum();
+    // Sparklines on the tokens chart's axis: the rest of `today` dotted,
+    // hourly buckets at their real times.
+    let started = a.model_usage.buckets.len();
+    let mut slots = a.model_usage.buckets.clone();
+    slots.extend(a.future_buckets.iter().cloned());
+    let axis = hourly_place(app, a, &slots)
+        .map(|p| widgets::SparkAxis::new(started, Some(&p)))
+        .or_else(|| (!a.future_buckets.is_empty()).then(|| widgets::SparkAxis::new(started, None)))
+        .map(std::sync::Arc::new);
     let rows = a
         .model_usage
         .series
         .iter()
         .map(|s| {
             let tok: f64 = s.total_tokens.iter().sum();
+            let mut trend = s.total_tokens.clone();
+            if axis.is_some() {
+                trend.resize(started.max(trend.len()) + a.future_buckets.len(), f64::NAN);
+            }
             let comp = a.model_composition.iter().find(|c| c.label == s.model);
             let req = comp
                 .map(|c| c.requests)
@@ -384,7 +410,7 @@ pub fn models(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
                     comp.map(|c| fmt::usd(c.cost_usd)).unwrap_or("—".into()),
                     num(comp.map(|c| c.cost_usd).unwrap_or(-1.0)),
                 )
-                .spark(s.total_tokens.clone(), t.accent, num(tok))
+                .spark_on(trend, t.accent, axis.clone(), num(tok))
                 .filter(s.model.clone())
                 .details(extra)
         })

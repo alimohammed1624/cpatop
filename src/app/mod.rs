@@ -169,6 +169,11 @@ pub struct Hit {
     pub graphs: Vec<(PaneId, Rect, usize)>,
     /// Last bucket with data per graph pane (where the cursor starts).
     pub graph_last: HashMap<PaneId, usize>,
+    /// Graphs whose buckets are placed by time: each bucket's span.
+    pub graph_spans: HashMap<PaneId, Vec<(f64, f64)>>,
+    /// Graphs whose axis runs past now: buckets before this index have
+    /// started (the cursor stops at the last of them).
+    pub graph_limit: HashMap<PaneId, usize>,
     /// ID of the selected row per table, after sorting/filtering.
     pub selected: HashMap<PaneId, String>,
     /// Picker rows (item index → screen row) for mouse selection.
@@ -519,6 +524,13 @@ impl App {
             .server_offset
             .unwrap_or_else(|| *chrono::Local::now().offset());
         self.clock.utc().with_timezone(&off)
+    }
+
+    /// Where the buckets of an hourly series of the selected range sit in
+    /// time (see [`Placement`](crate::series::Placement)).
+    pub fn hourly_placement(&self, buckets: &[String]) -> Option<crate::series::Placement> {
+        let (start, end) = self.range.bounds(self.server_now());
+        crate::series::Placement::hourly(buckets, start, end, self.clock.utc())
     }
 
     /// Longest custom day range for the current tab.

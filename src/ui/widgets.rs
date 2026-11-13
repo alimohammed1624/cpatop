@@ -113,9 +113,96 @@ pub fn bucket_cols(i: usize, n: usize, width: usize) -> (usize, usize) {
     }
 }
 
+/// The first column whose middle lies at or after fraction `f` of `width`
+/// (where something that starts at `f` begins).
+pub fn frac_col(f: f64, width: usize) -> usize {
+    const EPS: f64 = 1e-9;
+    ((f * width as f64 - 0.5 - EPS).ceil().max(0.0) as usize).min(width)
+}
+
+/// Columns `[start, end)` of a span given as fractions of `width`: those
+/// whose middle falls inside it, so neighbouring spans never share a
+/// column. A span narrower than that gets the column holding its middle.
+pub fn span_cols(span: (f64, f64), width: usize) -> (usize, usize) {
+    if width == 0 {
+        return (0, 0);
+    }
+    let w = width as f64;
+    let (c0, c1) = (frac_col(span.0, width), frac_col(span.1, width));
+    if c1 > c0 {
+        (c0, c1)
+    } else {
+        let mid = ((span.0 + span.1) / 2.0 * w).floor().max(0.0) as usize;
+        let c = mid.min(width - 1);
+        (c, c + 1)
+    }
+}
+
+/// [`bucket_cols`], or the columns of bucket `i`'s time span when the
+/// buckets are placed by time.
+pub fn cols_of(i: usize, n: usize, width: usize, spans: Option<&[(f64, f64)]>) -> (usize, usize) {
+    match spans.and_then(|s| s.get(i)) {
+        Some(sp) => span_cols(*sp, width),
+        None => bucket_cols(i, n, width),
+    }
+}
+
+/// The bucket drawn in column `col`: the one whose span covers it (the
+/// latest, where narrow buckets share a column), else the nearest one.
+pub fn bucket_at(col: usize, n: usize, width: usize, spans: Option<&[(f64, f64)]>) -> usize {
+    if n == 0 || width == 0 {
+        return 0;
+    }
+    match spans {
+        Some(sp) if sp.len() == n => {
+            let mut best = (usize::MAX, 0usize);
+            for (i, s) in sp.iter().enumerate() {
+                let (a, b) = span_cols(*s, width);
+                let d = if col < a {
+                    a - col
+                } else if col >= b {
+                    col + 1 - b
+                } else {
+                    0
+                };
+                if d <= best.0 {
+                    best = (d, i);
+                }
+                if a > col && d > best.0 {
+                    break;
+                }
+            }
+            best.1
+        }
+        _ => (col * n / width).min(n - 1),
+    }
+}
+
+/// Values per column for buckets placed by time: each bucket fills the
+/// columns of its span (the larger value where a narrow bucket shares a
+/// column), columns no bucket covers are `NaN`.
+pub fn place(data: &[f64], spans: &[(f64, f64)], width: usize) -> Vec<f64> {
+    let mut out = vec![f64::NAN; width];
+    for (v, sp) in data.iter().zip(spans) {
+        if !v.is_finite() {
+            continue;
+        }
+        let (a, b) = span_cols(*sp, width);
+        for c in &mut out[a..b] {
+            if !c.is_finite() || *v > *c {
+                *c = *v;
+            }
+        }
+    }
+    out
+}
+
 /// Filled area graph with a vertical low→high colour gradient.
 pub struct Graph<'a> {
     pub data: &'a [f64],
+    /// Time span of each bucket (fractions of the width); `None` spreads
+    /// the buckets evenly.
+    pub spans: Option<&'a [(f64, f64)]>,
     pub theme: &'a Theme,
     pub symbols: GraphSymbols,
     pub max: Option<f64>,
@@ -132,12 +219,17 @@ impl Widget for Graph<'_> {
         let h = area.height as usize;
         // Braille has two dot columns per cell, but only when there are at
         // least that many buckets; fewer buckets are drawn as solid bars.
-        let per_cell = if self.symbols == GraphSymbols::Braille && self.data.len() >= w * 2 {
+        let per_cell = if self.symbols == GraphSymbols::Braille
+            && (self.data.len() >= w * 2 || self.spans.is_some())
+        {
             2
         } else {
             1
         };
-        let vals = resample(self.data, w * per_cell);
+        let vals = match self.spans {
+            Some(sp) => place(self.data, sp, w * per_cell),
+            None => resample(self.data, w * per_cell),
+        };
         let max = self
             .max
             .unwrap_or_else(|| {
@@ -348,11 +440,18 @@ impl Axes<'_> {
 
 /// Highlight bucket `i` of `n` in a plot area: its whole column, top to
 /// bottom, in reverse video (bars inside it stay visible as dark marks).
-pub fn draw_cursor(buf: &mut Buffer, plot: Rect, i: usize, n: usize, t: &Theme) {
+pub fn draw_cursor(
+    buf: &mut Buffer,
+    plot: Rect,
+    i: usize,
+    n: usize,
+    spans: Option<&[(f64, f64)]>,
+    t: &Theme,
+) {
     if plot.width == 0 || n == 0 {
         return;
     }
-    let (c0, c1) = bucket_cols(i, n, plot.width as usize);
+    let (c0, c1) = cols_of(i, n, plot.width as usize, spans);
     let c1 = c1.max(c0 + 1).min(plot.width as usize);
     for c in c0..c1 {
         let x = plot.x + c as u16;
@@ -492,21 +591,90 @@ pub fn meter(frac: f64, width: usize, t: &Theme, color: Option<Color>) -> Vec<Sp
 /// in consecutive rows, and full blocks would merge with the row above into
 /// one tall bar.
 pub fn spark(values: &[f64], width: usize, t: &Theme, color: Color) -> Vec<Span<'static>> {
-    const B: [char; 7] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇'];
-    if width == 0 {
-        return vec![];
+    spark_on(values, width, t, color, None)
+}
+
+/// The time axis of a sparkline whose range runs past now (`today`):
+/// buckets from `started` on have not begun and are drawn as a faint
+/// dotted baseline, like the big charts' axis; with `spans` (hourly
+/// buckets, see [`Placement`](crate::series::Placement)) each bucket
+/// covers its real time span and the dots start at now.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SparkAxis {
+    pub started: usize,
+    pub spans: Option<Vec<(f64, f64)>>,
+    pub now: Option<f64>,
+}
+
+impl SparkAxis {
+    pub fn new(started: usize, place: Option<&crate::series::Placement>) -> SparkAxis {
+        SparkAxis {
+            started,
+            spans: place.map(|p| p.spans.clone()),
+            now: place.and_then(|p| p.now),
+        }
     }
-    // Wider than the series: each bucket spans several characters (stretched,
-    // never interpolated); narrower: max-pooled.
-    let n = if values.is_empty() { 0 } else { width };
-    let vals = resample(values, n);
+}
+
+/// [`spark`] on a time axis.
+pub fn spark_on(
+    values: &[f64],
+    width: usize,
+    t: &Theme,
+    color: Color,
+    axis: Option<&SparkAxis>,
+) -> Vec<Span<'static>> {
+    let Some(ax) = axis.filter(|a| a.started < values.len() || a.spans.is_some()) else {
+        return spark_plain(values, width, t, color);
+    };
+    if width == 0 || values.is_empty() {
+        return spark_plain(values, width, t, color);
+    }
+    let started = ax.started.min(values.len());
+    let past: Vec<f64> = values
+        .iter()
+        .enumerate()
+        .map(|(i, v)| if i < started { *v } else { f64::NAN })
+        .collect();
+    let (vals, future_from) = match ax.spans.as_deref().filter(|s| s.len() == values.len()) {
+        Some(sp) => {
+            let vals = place(&past, sp, width);
+            let from = match ax.now {
+                Some(now) => frac_col(now, width),
+                None if started < values.len() => span_cols(sp[started], width).0,
+                None => width,
+            };
+            (vals, from)
+        }
+        None => {
+            let vals = resample(&past, width);
+            let from = if started < values.len() {
+                bucket_cols(started, values.len(), width).0
+            } else {
+                width
+            };
+            (vals, from)
+        }
+    };
+    let mut out = spark_cells(&vals, t, color);
+    let dots = Style::default().fg(t.border);
+    for (c, cell) in out.iter_mut().enumerate().skip(future_from) {
+        if !vals[c].is_finite() {
+            *cell = Span::styled("┈", dots);
+        }
+    }
+    merge_spans(out)
+}
+
+/// One span per column of already resampled values.
+fn spark_cells(vals: &[f64], t: &Theme, color: Color) -> Vec<Span<'static>> {
+    const B: [char; 7] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇'];
     let max = vals
         .iter()
         .copied()
         .filter(|v| v.is_finite())
         .fold(0.0, f64::max);
-    let mut out: Vec<Span<'static>> = vals
-        .iter()
+    vals.iter()
         .map(|v| {
             if !v.is_finite() {
                 Span::raw(" ")
@@ -518,7 +686,18 @@ pub fn spark(values: &[f64], width: usize, t: &Theme, color: Color) -> Vec<Span<
                 Span::styled(B[i].to_string(), Style::default().fg(color))
             }
         })
-        .collect();
+        .collect()
+}
+
+fn spark_plain(values: &[f64], width: usize, t: &Theme, color: Color) -> Vec<Span<'static>> {
+    if width == 0 {
+        return vec![];
+    }
+    // Wider than the series: each bucket spans several characters (stretched,
+    // never interpolated); narrower: max-pooled.
+    let n = if values.is_empty() { 0 } else { width };
+    let vals = resample(values, n);
+    let mut out = spark_cells(&vals, t, color);
     if n < width {
         out.push(Span::raw(" ".repeat(width - n)));
     }
@@ -690,6 +869,48 @@ mod tests {
     }
 
     #[test]
+    fn placed_buckets_own_the_columns_of_their_time() {
+        // `today` in +05:30 at 02:45 on 48 columns (half an hour each).
+        let h = |x: f64| x / 24.0;
+        let spans = [
+            (0.0, h(0.5)),
+            (h(0.5), h(1.5)),
+            (h(1.5), h(2.5)),
+            (h(2.5), h(2.75)),
+            (h(3.5), h(4.5)),
+        ];
+        assert_eq!(span_cols(spans[0], 48), (0, 1));
+        assert_eq!(span_cols(spans[1], 48), (1, 3));
+        assert_eq!(span_cols(spans[2], 48), (3, 5));
+        // Narrower than a column: the column holding its middle.
+        assert_eq!(span_cols(spans[3], 48), (5, 6));
+        let vals = place(&[1.0, 2.0, 3.0, 4.0, f64::NAN], &spans, 48);
+        assert_eq!(vals[..6], [1.0, 2.0, 2.0, 3.0, 3.0, 4.0]);
+        assert!(vals[6..].iter().all(|v| v.is_nan()));
+        assert_eq!(frac_col(h(2.75), 48), 5);
+        // Columns map back to their buckets.
+        assert_eq!(bucket_at(0, 5, 48, Some(&spans)), 0);
+        assert_eq!(bucket_at(2, 5, 48, Some(&spans)), 1);
+        assert_eq!(bucket_at(4, 5, 48, Some(&spans)), 2);
+        assert_eq!(bucket_at(5, 5, 48, Some(&spans)), 3);
+        assert_eq!(bucket_at(30, 5, 48, Some(&spans)), 4);
+    }
+
+    #[test]
+    fn sparklines_dot_the_rest_of_the_day() {
+        let t = Theme::default();
+        let n = f64::NAN;
+        let ax = SparkAxis {
+            started: 2,
+            spans: None,
+            now: None,
+        };
+        let s = spark_on(&[1.0, 2.0, n, n], 8, &t, Color::Blue, Some(&ax));
+        let text: String = s.iter().map(|s| s.content.to_string()).collect();
+        assert_eq!(text, "▄▄▇▇┈┈┈┈");
+    }
+
+    #[test]
     fn sparklines_show_gaps_and_do_not_stretch() {
         let t = Theme::default();
         let s = spark(&[f64::NAN, 1.0, f64::NAN, 2.0], 4, &t, Color::Blue);
@@ -749,6 +970,7 @@ mod tests {
         let mut buf = Buffer::empty(Rect::new(0, 0, 4, 2));
         Graph {
             data: &[0.0, 1.0, 2.0, 4.0],
+            spans: None,
             theme: &t,
             symbols: GraphSymbols::Braille,
             max: None,

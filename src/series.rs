@@ -246,6 +246,88 @@ pub fn clip_first(labels: &mut [String], start: DateTime<FixedOffset>) {
     }
 }
 
+/// Where the buckets of an hourly series sit on a time axis `[start, end)`,
+/// as fractions of its width. Each bucket covers its real span: the server
+/// cuts hourly buckets on UTC hours, so in a +05:30 zone they run `HH:30` to
+/// `HH+1:30`; the first one of a `today` axis covers only 00:00–00:30
+/// (clipped at local midnight), the one in progress ends at now, and the
+/// last one is cut at the axis end. Drawn on whole-hour slots instead,
+/// every bar would sit 30–60 minutes late.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Placement {
+    pub start: DateTime<FixedOffset>,
+    pub end: DateTime<FixedOffset>,
+    /// `[start, end)` of each bucket, as fractions of the axis.
+    pub spans: Vec<(f64, f64)>,
+    /// Where now falls on the axis, when the axis runs past it.
+    pub now: Option<f64>,
+}
+
+impl Placement {
+    /// Placement of hourly buckets (RFC 3339 labels) on `[start, end)`.
+    /// `None` when a label does not parse or the axis is empty.
+    pub fn hourly(
+        buckets: &[String],
+        start: DateTime<FixedOffset>,
+        end: DateTime<FixedOffset>,
+        now: DateTime<Utc>,
+    ) -> Option<Placement> {
+        let total = (end - start).num_milliseconds() as f64;
+        if total <= 0.0 || buckets.is_empty() {
+            return None;
+        }
+        let starts: Vec<DateTime<FixedOffset>> =
+            buckets.iter().map(|b| parse_ts(b)).collect::<Option<_>>()?;
+        let now = now.with_timezone(start.offset());
+        let frac = |t: DateTime<FixedOffset>| {
+            ((t - start).num_milliseconds() as f64 / total).clamp(0.0, 1.0)
+        };
+        let spans = starts
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let mut e = *s + Duration::hours(1);
+                if let Some(next) = starts.get(i + 1)
+                    && *next > *s
+                {
+                    e = e.min(*next);
+                }
+                let s = (*s).max(start);
+                let mut e = e.min(end);
+                if s <= now && now < e {
+                    e = now;
+                }
+                (frac(s), frac(e).max(frac(s)))
+            })
+            .collect();
+        let now = (now > start && now < end).then(|| frac(now));
+        Some(Placement {
+            start,
+            end,
+            spans,
+            now,
+        })
+    }
+
+    /// Whole local hours on the axis: `(fraction, hour)`.
+    pub fn hours(&self) -> Vec<(f64, u32)> {
+        use chrono::Timelike;
+        let total = (self.end - self.start).num_seconds() as f64;
+        let mut t = self.start;
+        let off = t.minute() as i64 * 60 + t.second() as i64;
+        if off != 0 || t.nanosecond() != 0 {
+            t = t - Duration::seconds(off) - Duration::nanoseconds(t.nanosecond() as i64)
+                + Duration::hours(1);
+        }
+        let mut out = Vec::new();
+        while t < self.end && out.len() < 24 * 40 {
+            out.push(((t - self.start).num_seconds() as f64 / total, t.hour()));
+            t += Duration::hours(1);
+        }
+        out
+    }
+}
+
 /// The span an analysis response actually covers: the server's
 /// `range_start` → `range_end`, clipped to `now`. Averages and rates divide
 /// by this, not by the nominal range length (a `30d` range is calendar
@@ -645,5 +727,76 @@ mod tests {
             "2026-11-14T02:30:00+05:30"
         );
         assert!(bucket_start("garbage!!!", ist).is_none());
+    }
+
+    fn hourly_labels(first: &str, off: &str, n: usize) -> Vec<String> {
+        let t0: DateTime<FixedOffset> = DateTime::parse_from_rfc3339(first).unwrap();
+        let off: FixedOffset = off.parse().unwrap();
+        (0..n)
+            .map(|i| {
+                (t0 + Duration::hours(i as i64))
+                    .with_timezone(&off)
+                    .to_rfc3339()
+            })
+            .collect()
+    }
+
+    fn close(a: (f64, f64), b: (f64, f64)) -> bool {
+        (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9
+    }
+
+    #[test]
+    fn half_hour_zone_buckets_sit_at_their_real_times() {
+        // +05:30 at 02:45: the server cut hourly buckets at UTC hours, so
+        // they read 23:30, 00:30, … 23:30; the first was clipped to 00:00.
+        let mut labels = hourly_labels("2026-11-13T23:30:00+05:30", "+05:30", 25);
+        let start: DateTime<FixedOffset> = "2026-11-14T00:00:00+05:30".parse().unwrap();
+        let end: DateTime<FixedOffset> = "2026-11-15T00:00:00+05:30".parse().unwrap();
+        clip_first(&mut labels, start);
+        let p = Placement::hourly(&labels, start, end, now("2026-11-13T21:15:00Z")).unwrap();
+        let h = |x: f64| x / 24.0;
+        assert_eq!(p.spans.len(), 25);
+        assert!(close(p.spans[0], (0.0, h(0.5))), "{:?}", p.spans[0]);
+        assert!(close(p.spans[1], (h(0.5), h(1.5))), "{:?}", p.spans[1]);
+        // The bucket in progress (02:30–03:30) ends at now.
+        assert!(close(p.spans[3], (h(2.5), h(2.75))), "{:?}", p.spans[3]);
+        assert!(close(p.spans[4], (h(3.5), h(4.5))));
+        // The last one (23:30–00:30) is cut at midnight.
+        assert!(close(p.spans[24], (h(23.5), 1.0)));
+        assert!((p.now.unwrap() - h(2.75)).abs() < 1e-9);
+        // Whole local hours for the ticks.
+        let hours = p.hours();
+        assert_eq!(hours.len(), 24);
+        assert_eq!(hours[3].1, 3);
+        assert!((hours[3].0 - h(3.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn whole_hour_zone_buckets_fill_whole_hours() {
+        let labels = hourly_labels("2026-11-14T00:00:00+01:00", "+01:00", 24);
+        let start: DateTime<FixedOffset> = "2026-11-14T00:00:00+01:00".parse().unwrap();
+        let end: DateTime<FixedOffset> = "2026-11-15T00:00:00+01:00".parse().unwrap();
+        let p = Placement::hourly(&labels, start, end, now("2026-11-14T01:45:00Z")).unwrap();
+        let h = |x: f64| x / 24.0;
+        assert!(close(p.spans[0], (0.0, h(1.0))));
+        assert!(close(p.spans[2], (h(2.0), h(2.75))));
+        assert!(close(p.spans[23], (h(23.0), 1.0)));
+        assert!((p.now.unwrap() - h(2.75)).abs() < 1e-9);
+        // A past day has no `now` on its axis.
+        let p = Placement::hourly(&labels, start, end, now("2026-11-16T00:00:00Z")).unwrap();
+        assert_eq!(p.now, None);
+        assert!(close(p.spans[2], (h(2.0), h(3.0))));
+    }
+
+    #[test]
+    fn a_bucket_starting_before_the_axis_is_clipped_to_it() {
+        // A rolling range starts mid-bucket.
+        let labels = hourly_labels("2026-11-14T09:30:00+05:30", "+05:30", 3);
+        let start: DateTime<FixedOffset> = "2026-11-14T10:00:00+05:30".parse().unwrap();
+        let end: DateTime<FixedOffset> = "2026-11-14T12:00:00+05:30".parse().unwrap();
+        let p = Placement::hourly(&labels, start, end, now("2026-11-14T06:30:00Z")).unwrap();
+        assert!(close(p.spans[0], (0.0, 0.25)));
+        assert!(close(p.spans[1], (0.25, 0.75)));
+        assert!(close(p.spans[2], (0.75, 1.0)));
     }
 }

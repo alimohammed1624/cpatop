@@ -596,6 +596,7 @@ fn health_chart(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, h: &Credent
             color: Some(t.ok),
             max: Some(top),
             floor: 0.0,
+            place: None,
         },
         symbols,
         false,
