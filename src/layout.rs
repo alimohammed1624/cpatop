@@ -574,6 +574,7 @@ pub fn compute(
         heights[0] = area.height;
     }
     let mut spare = area.height.saturating_sub(heights.iter().sum());
+    let any_weighted = rows.iter().any(|r| !r.collapsed && r.weight > 0);
     let grow_pass = |heights: &mut Vec<u16>, spare: &mut u16, respect_max: bool| {
         while *spare > 0 {
             let pick = rows
@@ -581,7 +582,7 @@ pub fn compute(
                 .enumerate()
                 .filter(|(i, r)| {
                     !r.collapsed
-                        && (r.weight > 0 || !respect_max)
+                        && (r.weight > 0 || (!respect_max && !any_weighted))
                         && (!respect_max || r.max.is_none_or(|m| heights[*i] < m))
                 })
                 .min_by(|(i, a), (j, b)| {
