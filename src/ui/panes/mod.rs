@@ -839,7 +839,9 @@ mod tests {
     #[test]
     fn half_hour_buckets_get_whole_hour_ticks() {
         // `today` in +05:30: UTC-hour buckets 23:30 … 20:30 local.
-        let l: Vec<String> = (0..22).map(|i| format!("{:02}:30", (23 + i) % 24)).collect();
+        let l: Vec<String> = (0..22)
+            .map(|i| format!("{:02}:30", (23 + i) % 24))
+            .collect();
         let (frac, hours) = offset_hours(&l).unwrap();
         assert_eq!(frac, 0.5);
         assert_eq!(hours[0], 0);

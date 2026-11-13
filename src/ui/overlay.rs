@@ -383,7 +383,12 @@ mod tests {
     fn text(cols: &[Vec<Line<'static>>]) -> String {
         cols.iter()
             .flatten()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
