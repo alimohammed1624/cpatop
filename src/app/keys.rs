@@ -144,13 +144,24 @@ impl App {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let now = self.server_now();
         match self.overlay.as_mut() {
-            // Row details follow the table's selection.
+            // Row details scroll like the help; `[` `]` (or Shift+↑↓) step
+            // through the table's rows underneath.
             Some(Overlay::Row(id)) => {
                 let id = *id;
+                let page = self.row_page.get().max(1) as isize;
+                let shift = k.modifiers.contains(KeyModifiers::SHIFT);
                 match k.code {
                     KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => self.overlay = None,
-                    KeyCode::Down | KeyCode::Char('j') => self.move_sel(id, 1),
-                    KeyCode::Up | KeyCode::Char('k') => self.move_sel(id, -1),
+                    KeyCode::Up if shift => self.step_row(id, -1),
+                    KeyCode::Down if shift => self.step_row(id, 1),
+                    KeyCode::Char('[') | KeyCode::Char('K') => self.step_row(id, -1),
+                    KeyCode::Char(']') | KeyCode::Char('J') => self.step_row(id, 1),
+                    KeyCode::Down | KeyCode::Char('j') => self.scroll_row(1),
+                    KeyCode::Up | KeyCode::Char('k') => self.scroll_row(-1),
+                    KeyCode::PageDown | KeyCode::Char(' ') => self.scroll_row(page),
+                    KeyCode::PageUp => self.scroll_row(-page),
+                    KeyCode::Home | KeyCode::Char('g') => self.row_scroll = 0,
+                    KeyCode::End | KeyCode::Char('G') => self.scroll_row(isize::MAX / 2),
                     _ => {}
                 }
             }
@@ -438,6 +449,12 @@ impl App {
     }
 
     fn cycle_theme(&mut self, forward: bool) {
+        // Without colour every theme looks the same: say so instead of
+        // silently switching to a theme that cannot be seen.
+        if self.settings.no_color {
+            self.flash("themes disabled (NO_COLOR)");
+            return;
+        }
         let n = self.themes.len();
         self.theme_idx = if forward {
             (self.theme_idx + 1) % n
@@ -455,6 +472,20 @@ impl App {
         self.help_scroll = (self.help_scroll as isize)
             .saturating_add(delta)
             .clamp(0, max) as usize;
+    }
+
+    /// Scroll the row popup, clamped to its content (known after a draw).
+    fn scroll_row(&mut self, delta: isize) {
+        let max = self.row_max.get() as isize;
+        self.row_scroll = (self.row_scroll as isize)
+            .saturating_add(delta)
+            .clamp(0, max) as usize;
+    }
+
+    /// Show the previous / next row in the popup, from the top.
+    fn step_row(&mut self, id: PaneId, delta: isize) {
+        self.move_sel(id, delta);
+        self.row_scroll = 0;
     }
 
     fn move_sel(&mut self, id: PaneId, delta: isize) {
@@ -608,6 +639,7 @@ impl App {
                 self.overlay = Some(Overlay::Help)
             }
             KeyCode::Enter if focused.is_some_and(|f| self.hit.row_fields.contains_key(&f)) => {
+                self.row_scroll = 0;
                 self.overlay = focused.map(Overlay::Row);
             }
             KeyCode::Left if graph_focus.is_some() => {
@@ -620,6 +652,11 @@ impl App {
             KeyCode::BackTab | KeyCode::Left => self.step_tab(false),
             KeyCode::F(n) if (n as usize) >= 2 && (n as usize) <= self.tabs().len() + 1 => {
                 self.set_tab(self.tabs()[n as usize - 2])
+            }
+            // The admin tabs' keys say why nothing happens for a key viewer.
+            KeyCode::F(n) if !admin && (2..=layout::ALL_TABS.len() as u8 + 1).contains(&n) => {
+                let tab = layout::ALL_TABS[n as usize - 2];
+                self.flash(format!("{} tab: admin only", tab.title()));
             }
             KeyCode::Char(c @ '1'..='9') => self.toggle_pane(c as usize - '0' as usize),
             KeyCode::Char('f') => self.cycle_focus(true),
@@ -875,6 +912,13 @@ impl App {
                 }
                 if matches!(self.overlay, Some(Overlay::Help)) {
                     self.scroll_help(if down { 3 } else { -3 });
+                    return;
+                }
+                if matches!(self.overlay, Some(Overlay::Row(_))) {
+                    self.scroll_row(if down { 3 } else { -3 });
+                    return;
+                }
+                if self.overlay.is_some() {
                     return;
                 }
                 let delta = if down { 3 } else { -3 };

@@ -1,6 +1,7 @@
 //! Live request log (admin).
 
-use super::{frame, table_in};
+use super::{frame, table_in, token_details, when, yes_no};
+use crate::api::models::UsageEvent;
 use crate::app::{App, Hit, LiveStatus, ResultFilter};
 use crate::fmt;
 use crate::layout::PaneId;
@@ -91,6 +92,85 @@ fn status_spans(app: &App) -> Vec<Span<'static>> {
             format!(" · {}", app.credential_name(value, label)),
             hi,
         ));
+    }
+    v
+}
+
+/// Every field of a request for the row popup, through the privacy
+/// helpers (addresses, agent, endpoint and request id included).
+fn event_fields(app: &App, e: &UsageEvent, key: &str, source: &str) -> Vec<(&'static str, String)> {
+    let opt = |o: &Option<String>| o.clone().unwrap_or_default();
+    let tk = &e.tokens;
+    let mut v = vec![
+        ("time", when(app, Some(&e.timestamp))),
+        ("API key", key.to_string()),
+        ("source", source.to_string()),
+        ("source type", app.privacy(&opt(&e.source_type))),
+        ("auth index", app.opaque_id(&opt(&e.auth_index))),
+        ("model", app.privacy(&e.model)),
+        ("model alias", app.privacy(&opt(&e.model_alias))),
+        ("upstream model", app.privacy(&opt(&e.response_model))),
+        ("reasoning effort", app.privacy(&opt(&e.reasoning_effort))),
+        (
+            "result",
+            format!(
+                "{} {}",
+                if e.failed {
+                    "✗ failed"
+                } else {
+                    "✓ success"
+                },
+                e.status_code.map(|c| c.to_string()).unwrap_or_default()
+            ),
+        ),
+        ("endpoint", app.endpoint(&opt(&e.endpoint))),
+        ("stream", e.stream.map(yes_no).unwrap_or_default()),
+        ("latency", format!("{} ms", fmt::int(e.latency_ms))),
+        (
+            "time to first token",
+            e.ttft_ms
+                .filter(|v| *v > 0.0)
+                .map(|v| format!("{} ms", fmt::int(v)))
+                .unwrap_or_default(),
+        ),
+        (
+            "output speed",
+            e.speed_tps.map(fmt::tps).unwrap_or_default(),
+        ),
+        ("service tier", app.privacy(&opt(&e.service_tier))),
+        (
+            "effective tier",
+            app.privacy(&opt(&e.effective_service_tier)),
+        ),
+        ("response tier", app.privacy(&opt(&e.response_service_tier))),
+        ("executor", app.privacy(&opt(&e.executor_type))),
+    ];
+    v.extend(token_details(
+        tk.input_tokens,
+        tk.output_tokens,
+        tk.cache_read_tokens,
+        tk.cache_creation_tokens,
+        tk.reasoning_tokens,
+        tk.total_tokens,
+    ));
+    v.extend([
+        (
+            "cost",
+            if e.cost_available {
+                format!("${:.6}", e.cost_usd)
+            } else {
+                "not priced".into()
+            },
+        ),
+        ("pricing style", app.privacy(&opt(&e.pricing_style))),
+        ("client IP", app.ip(&opt(&e.client_ip))),
+        ("X-Forwarded-For", app.ip(&opt(&e.x_forwarded_for))),
+        ("user agent", app.user_agent(&opt(&e.user_agent))),
+        ("request id", app.opaque_id(&opt(&e.request_id))),
+        ("event id", format!("#{}", e.id)),
+    ]);
+    if e.is_delete {
+        v.push(("identity", "deleted".into()));
     }
     v
 }
@@ -202,6 +282,7 @@ pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
                     key,
                     app.endpoint(e.endpoint.as_deref().unwrap_or(""))
                 ))
+                .details(event_fields(app, e, &key, &source))
         })
         .collect();
     let empty = match &app.live.status {

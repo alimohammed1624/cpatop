@@ -27,6 +27,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     hit.selected.clear();
     hit.picker.clear();
     hit.row_fields.clear();
+    // Every table on screen gets its own state, so the row count it records
+    // while drawing is there for the first key press (not lost in the shared
+    // empty default).
+    for d in layout::panes(app.tab).iter().filter(|d| d.table) {
+        app.table_mut(d.id);
+    }
     render(f, app, &mut hit);
     app.hit = hit;
     // Privacy mode: the last line of defence runs on the finished frame.
@@ -94,33 +100,57 @@ fn dashboard(f: &mut Frame, app: &App, hit: &mut Hit) {
     }
 }
 
-fn header(f: &mut Frame, app: &App, area: Rect) {
+/// How far the header has been squeezed to fit (see [`header_segments`]).
+/// Each level keeps everything the previous one dropped out and gives up one
+/// more thing, least useful first.
+const HEADER_LEVELS: u8 = 9;
+
+/// The header's segments at a squeeze level: 0 is everything in full; then
+/// the refresh cadence goes, the host goes, the age loses "ago", a key
+/// viewer's key is named by its number only, the age goes, the update badge
+/// shrinks to `↑` (it never goes), then the role, the range and the key
+/// filter.
+fn header_segments(app: &App, level: u8) -> Vec<Vec<Span<'static>>> {
     let t = app.theme();
-    let sep = Span::styled(" │ ", Style::default().fg(t.border));
     let dim = Style::default().fg(t.graph_text);
     let val = Style::default().fg(t.title);
     let mut segs: Vec<Vec<Span<'static>>> = Vec::new();
-    segs.push(vec![
-        Span::styled("⌂ ", dim),
-        Span::styled(app.host_label(), val),
-    ]);
+    if level < 2 {
+        segs.push(vec![
+            Span::styled("⌂ ", dim),
+            Span::styled(app.host_label(), val),
+        ]);
+    }
+    let key_id = app
+        .session
+        .as_ref()
+        .and_then(|s| s.api_key.as_ref())
+        .map(|k| k.id.clone())
+        .unwrap_or_default();
     let role = match app.role {
         Some(Role::Admin) => "admin".to_string(),
+        Some(Role::KeyViewer) if level >= 4 => format!("key #{key_id}"),
         Some(Role::KeyViewer) if app.settings.privacy => app.session_key_name(),
         Some(Role::KeyViewer) => format!("key {}", app.session_key_name()),
         None => "-".into(),
     };
-    segs.push(vec![Span::styled(
-        role,
-        Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
-    )]);
+    if level < 7 {
+        segs.push(vec![Span::styled(
+            role,
+            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+        )]);
+    }
     let range = match app.tab {
         layout::Tab::Realtime => format!("window {}", app.window.param()),
         layout::Tab::Credentials | layout::Tab::Quota | layout::Tab::Models => "all time".into(),
         _ => app.range.label(),
     };
-    segs.push(vec![Span::styled("◷ ", dim), Span::styled(range, val)]);
-    if let Some(k) = &app.api_key {
+    if level < 8 {
+        segs.push(vec![Span::styled("◷ ", dim), Span::styled(range, val)]);
+    }
+    if let Some(k) = &app.api_key
+        && level < 9
+    {
         segs.push(vec![
             Span::styled("⚿ ", dim),
             Span::styled(
@@ -138,27 +168,44 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
         Cadence::Live => "live".into(),
         Cadence::OnDemand => "on R".into(),
     };
-    segs.push(vec![Span::styled("⟳ ", dim), Span::styled(cadence, val)]);
+    if level < 1 {
+        segs.push(vec![Span::styled("⟳ ", dim), Span::styled(cadence, val)]);
+    }
     let at = app.last_update();
     let age = at
-        .map(|at| fmt::age(app.now().saturating_duration_since(at).as_secs()) + " ago")
+        .map(|at| {
+            let a = fmt::age(app.now().saturating_duration_since(at).as_secs());
+            if level < 3 { a + " ago" } else { a }
+        })
         .unwrap_or_else(|| "—".into());
     let age_style = if app.is_stale(at).is_some() {
         Style::default().fg(t.warn).add_modifier(Modifier::BOLD)
     } else {
         val
     };
-    segs.push(vec![Span::styled("↻ ", dim), Span::styled(age, age_style)]);
-    // A newer cpatop release (details in the help overlay).
-    if let Some(tag) = &app.update_available {
-        segs.push(vec![
-            Span::styled("↑ ", dim),
-            Span::styled(
-                format!("v{}", crate::update::display_version(tag)),
-                Style::default().fg(t.ok),
-            ),
-        ]);
+    if level < 5 {
+        segs.push(vec![Span::styled("↻ ", dim), Span::styled(age, age_style)]);
     }
+    // A newer cpatop release (details in the help overlay): shortened when
+    // space is short, never hidden.
+    if let Some(tag) = &app.update_available {
+        let badge = Style::default().fg(t.ok).add_modifier(Modifier::BOLD);
+        segs.push(if level < 6 {
+            vec![
+                Span::styled("↑ ", badge),
+                Span::styled(format!("v{}", crate::update::display_version(tag)), badge),
+            ]
+        } else {
+            vec![Span::styled("↑", badge)]
+        });
+    }
+    segs
+}
+
+fn header(f: &mut Frame, app: &App, area: Rect) {
+    let t = app.theme();
+    let sep = Span::styled(" │ ", Style::default().fg(t.border));
+    let dim = Style::default().fg(t.graph_text);
     let status: Vec<Span<'static>> = match app.current_error() {
         Some(e) => vec![Span::styled(
             format!("▲ stale: {}", fmt::trunc(&app.privacy_text(e), 60)),
@@ -186,31 +233,48 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
             ],
         }
     };
+    // A long message must not push the title, the status and the update
+    // badge off the line: it is cut instead.
+    let keep = 8 + 5 + if app.update_available.is_some() { 4 } else { 0 };
+    let right = panes::fit_spans(right, (area.width as usize).saturating_sub(keep));
     let right_w: usize = right.iter().map(|s| s.width()).sum();
     let title = vec![Span::styled(
         " cpatop ",
         Style::default().fg(t.hi).add_modifier(Modifier::BOLD),
     )];
     let budget = (area.width as usize).saturating_sub(right_w + 1);
-    // Drop low-priority segments until everything fits (status always stays).
     let width_of = |v: &[Vec<Span<'static>>]| -> usize {
         v.iter()
             .map(|s| s.iter().map(|x| x.width()).sum::<usize>() + 3)
             .sum()
     };
+    // Measured as if the age always had three digits, so the header does not
+    // change shape as `9s` becomes `10s`.
+    let age_slack = app
+        .last_update()
+        .map(|at| {
+            let age = fmt::age(app.now().saturating_duration_since(at).as_secs());
+            3usize.saturating_sub(fmt::width(&age))
+        })
+        .unwrap_or(0);
+    let slack = |v: &[Vec<Span<'static>>]| {
+        if v.iter()
+            .any(|s| s.first().is_some_and(|x| x.content == "↻ "))
+        {
+            age_slack
+        } else {
+            0
+        }
+    };
     let status_w: usize = status.iter().map(|s| s.width()).sum();
-    while !segs.is_empty() && 8 + width_of(&segs) + status_w > budget {
-        // Remove in order: update badge, refresh, age, then host, role,
-        // range, key filter.
-        let find = |icon: &str| {
-            segs.iter()
-                .position(|s| s.first().is_some_and(|x| x.content == icon))
-        };
-        let idx = find("↑ ")
-            .or_else(|| find("⟳ "))
-            .or_else(|| find("↻ "))
-            .unwrap_or(0);
-        segs.remove(idx);
+    // Squeeze until everything fits (the status always stays).
+    let mut segs = (0..=HEADER_LEVELS)
+        .map(|l| header_segments(app, l))
+        .find(|s| 8 + width_of(s) + slack(s) + status_w <= budget)
+        .unwrap_or_else(|| header_segments(app, HEADER_LEVELS));
+    // Still too wide (a long error): keep only the update badge.
+    if 8 + width_of(&segs) + status_w > budget {
+        segs.retain(|s| s.first().is_some_and(|x| x.content.starts_with('↑')));
     }
     let mut spans = title;
     for s in segs {
@@ -230,42 +294,63 @@ fn tab_bar(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect) {
     let buf = f.buffer_mut();
     let line_style = Style::default().fg(t.border);
     buf.set_string(area.x, area.y, "─".repeat(area.width as usize), line_style);
-    let mut x = area.x + 1;
     let tabs = app.tabs();
     // Three densities: bracketed, plain, abbreviated.
     let title_w: usize = tabs.iter().map(|t| t.title().len()).sum();
     let bracketed = title_w + tabs.len() * 4 + 2 <= area.width as usize;
     let plain = title_w + tabs.len() * 2 + 2 <= area.width as usize;
-    for tab in tabs {
-        let title = if bracketed || plain {
-            tab.title().to_string()
-        } else {
-            tab.short_title().to_string()
-        };
-        // Without colour some terminals drop bold/reverse too: the active
-        // tab is also marked by brackets.
-        let label = if t.no_color && *tab == app.tab {
-            format!("[{title}]")
-        } else {
-            format!(" {title} ")
-        };
-        let w = label.chars().count() as u16;
-        let edge = if bracketed { 1 } else { 0 };
-        if x + w + 2 * edge > area.right() {
-            break;
-        }
-        let style = if *tab == app.tab {
+    let edge = if bracketed { 1 } else { 0 };
+    let labels: Vec<String> = tabs
+        .iter()
+        .map(|tab| {
+            let title = if bracketed || plain {
+                tab.title()
+            } else {
+                tab.short_title()
+            };
+            // Without colour some terminals drop bold/reverse too: the
+            // active tab is also marked by brackets.
+            if t.no_color && *tab == app.tab {
+                format!("[{title}]")
+            } else {
+                format!(" {title} ")
+            }
+        })
+        .collect();
+    let widths: Vec<u16> = labels
+        .iter()
+        .map(|l| l.chars().count() as u16 + 2 * edge)
+        .collect();
+    let active = tabs.iter().position(|x| *x == app.tab).unwrap_or(0);
+    let (first, last) = tab_window(&widths, active, area.width.saturating_sub(1));
+    let more_style = Style::default().fg(t.hi).add_modifier(Modifier::BOLD);
+    let mut x = area.x + 1;
+    // Tabs scrolled off either end: `‹`/`›` mark them, and a click on the
+    // marker goes to the nearest hidden tab.
+    if first > 0 {
+        buf.set_string(area.x, area.y, "‹", more_style);
+        hit.tabs
+            .push((tabs[first - 1], Rect::new(area.x, area.y, 1, 1)));
+    }
+    for i in first..=last {
+        let (tab, label, w) = (tabs[i], &labels[i], widths[i]);
+        let style = if tab == app.tab {
             t.selected().add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(t.inactive)
         };
         if bracketed {
             buf.set_string(x, area.y, "┤", line_style);
-            buf.set_string(x + w + 1, area.y, "├", line_style);
+            buf.set_string(x + w - 1, area.y, "├", line_style);
         }
-        buf.set_string(x + edge, area.y, &label, style);
-        hit.tabs.push((*tab, Rect::new(x, area.y, w + 2 * edge, 1)));
-        x += w + 2 * edge;
+        buf.set_string(x + edge, area.y, label, style);
+        hit.tabs.push((tab, Rect::new(x, area.y, w, 1)));
+        x += w;
+    }
+    if last + 1 < tabs.len() {
+        buf.set_string(x, area.y, "›", more_style);
+        hit.tabs.push((tabs[last + 1], Rect::new(x, area.y, 1, 1)));
+        x += 1;
     }
     // Right side: layout preset name.
     let preset = layout::presets(app.tab)[app.preset(app.tab)].name;
@@ -279,6 +364,30 @@ fn tab_bar(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect) {
             Style::default().fg(t.graph_text),
         );
     }
+}
+
+/// The tabs to show (`first..=last`) when they are `widths` wide and `avail`
+/// columns are free: as many as fit, starting as far left as possible while
+/// still including the `active` one. A `›` after the last costs a column
+/// when tabs remain to its right (the `‹` sits on the line's first column).
+fn tab_window(widths: &[u16], active: usize, avail: u16) -> (usize, usize) {
+    let n = widths.len();
+    for first in 0..=active.min(n.saturating_sub(1)) {
+        let mut used = 0u16;
+        let mut last = None;
+        for (j, w) in widths.iter().enumerate().skip(first) {
+            used = used.saturating_add(*w);
+            let need = used + u16::from(j + 1 < n);
+            if need > avail {
+                break;
+            }
+            last = Some(j);
+        }
+        if let Some(last) = last.filter(|l| *l >= active) {
+            return (first, last);
+        }
+    }
+    (active, active)
 }
 
 fn filter_prompt(f: &mut Frame, app: &App, id: PaneId) {
@@ -298,4 +407,25 @@ fn filter_prompt(f: &mut Frame, app: &App, id: PaneId) {
         fmt::trunc(&text, w as usize),
         t.selected().add_modifier(Modifier::BOLD),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tab_window;
+
+    #[test]
+    fn tab_strip_scrolls_to_keep_the_active_tab() {
+        // Eight 7-column tabs in 40 columns: five fit with a `›`.
+        let w = [7u16; 8];
+        assert_eq!(tab_window(&w, 0, 40), (0, 4));
+        assert_eq!(tab_window(&w, 4, 40), (0, 4));
+        // Further right, the strip scrolls just far enough.
+        assert_eq!(tab_window(&w, 5, 40), (1, 5));
+        // The last tab needs no `›`.
+        assert_eq!(tab_window(&w, 7, 40), (3, 7));
+        // Everything fits: no scrolling.
+        assert_eq!(tab_window(&w, 7, 56), (0, 7));
+        // Not even one fits: the active tab alone.
+        assert_eq!(tab_window(&w, 3, 4), (3, 3));
+    }
 }

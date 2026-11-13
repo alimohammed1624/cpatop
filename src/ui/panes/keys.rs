@@ -1,6 +1,9 @@
 //! Keys tab: API keys with range-scoped usage, sessions and server info.
 
-use super::{RowChart, frame, placeholder, stale_marker, table_in, table_with_chart, time_labels};
+use super::{
+    RowChart, frame, placeholder, request_details, stale_marker, table_in, table_with_chart,
+    time_labels, token_details, when, yes_no,
+};
 use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
@@ -107,6 +110,33 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
                     num(synced.map(|s| s as f64).unwrap_or(f64::MAX)),
                 )
                 .filter(format!("#{} {name} {masked} {kind}", k.id))
+                .details(vec![
+                    ("id", format!("#{}", k.id)),
+                    ("display name", app.key_name(&k.id, &k.label)),
+                    ("access provider", app.privacy(&k.access_provider)),
+                    ("last synced", when(app, k.last_synced_at.as_deref())),
+                    ("usage range", app.range.label()),
+                ])
+                .details(
+                    u.map(|u| {
+                        let mut v = request_details(u.requests, u.failures);
+                        v.extend(token_details(
+                            u.input_tokens,
+                            u.output_tokens,
+                            u.cache_read_tokens,
+                            u.cache_creation_tokens,
+                            u.reasoning_tokens,
+                            u.total_tokens,
+                        ));
+                        v.push(("share", format!("{} of tokens", fmt::pct(share, 2))));
+                        v.push((
+                            "cost",
+                            u.cost.map(|c| format!("${c:.4}")).unwrap_or_default(),
+                        ));
+                        v
+                    })
+                    .unwrap_or_default(),
+                )
         })
         .collect();
     // Names and keys hidden in every row (privacy mode) take no width.
@@ -237,6 +267,37 @@ pub fn sessions(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
                     num(if it.current { 1.0 } else { 0.0 }),
                 )
                 .filter(format!("{name} {ua} {ip} {via}"))
+                .details(vec![
+                    ("role", app.privacy(&it.role)),
+                    ("current", yes_no(it.current)),
+                    (
+                        "alias",
+                        it.alias
+                            .as_deref()
+                            .map(|a| app.account(a))
+                            .unwrap_or_default(),
+                    ),
+                    (
+                        "API key",
+                        if it.kind == "admin" {
+                            String::new()
+                        } else {
+                            name.clone()
+                        },
+                    ),
+                    ("logged in", when(app, it.login_at.as_deref())),
+                    ("last seen", when(app, it.last_seen_at.as_deref())),
+                    ("expires", when(app, it.expires_at.as_deref())),
+                    ("login IP", app.ip(it.login_ip.as_deref().unwrap_or(""))),
+                    (
+                        "last seen IP",
+                        app.ip(it.last_seen_ip.as_deref().unwrap_or("")),
+                    ),
+                    (
+                        "user agent",
+                        app.user_agent(it.user_agent.as_deref().unwrap_or("")),
+                    ),
+                ])
         })
         .collect();
     table_in(

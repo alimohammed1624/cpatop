@@ -1,6 +1,6 @@
 //! Credentials tab: credential list with health strips and a detail pane.
 
-use super::{frame, placeholder, stale_marker, table_in};
+use super::{frame, placeholder, stale_marker, table_in, when};
 use crate::api::models::{CredentialHealth, Identity};
 use crate::app::{App, Hit};
 use crate::fmt;
@@ -27,6 +27,145 @@ pub(super) fn plan(i: &Identity) -> String {
                 .unwrap_or(s.plan.clone())
         })
         .unwrap_or_default()
+}
+
+/// Every field of a credential for the row popup, through the privacy
+/// helpers: names and files as account labels, the auth index as an
+/// opaque id, notes and errors as free text.
+pub(super) fn identity_fields(app: &App, i: &Identity) -> Vec<(&'static str, String)> {
+    let opt = |s: &Option<String>| s.as_deref().unwrap_or("").to_string();
+    let status = if i.is_deleted {
+        "deleted"
+    } else if i.disabled {
+        "disabled"
+    } else {
+        "enabled"
+    };
+    let mut v = vec![
+        ("name", ident_name(app, i)),
+        ("id", format!("#{}", i.id)),
+        ("type", crate::app::ident_kind(i)),
+        ("provider", app.privacy(&i.provider)),
+        ("auth type", app.privacy(&i.auth_type_name)),
+        ("plan", plan(i)),
+        (
+            "subscription",
+            i.subscription
+                .as_ref()
+                .map(|s| {
+                    let tier = s.tier_id.as_deref().unwrap_or("");
+                    app.privacy(&format!("{} {} {tier}", s.provider, s.plan))
+                })
+                .unwrap_or_default(),
+        ),
+        (
+            "priority",
+            i.priority.map(|p| p.to_string()).unwrap_or_default(),
+        ),
+        ("state", status.to_string()),
+        (
+            "account",
+            if i.name == crate::app::raw_ident_name(i) {
+                String::new()
+            } else {
+                app.account(&i.name)
+            },
+        ),
+        (
+            "alias",
+            i.alias
+                .as_deref()
+                .map(|a| app.account(a))
+                .unwrap_or_default(),
+        ),
+        (
+            "file",
+            i.file_name
+                .as_deref()
+                .map(|a| app.account(a))
+                .unwrap_or_default(),
+        ),
+        ("auth index", app.opaque_id(&i.identity)),
+        ("note", app.privacy_text(&opt(&i.note))),
+        ("active since", when(app, i.active_start.as_deref())),
+        ("active until", when(app, i.active_until.as_deref())),
+    ];
+    if let Some(p) = &i.period_stats {
+        v.extend([
+            ("requests", fmt::int(p.total_requests)),
+            ("successes", fmt::int(p.success_count)),
+            ("failures", fmt::int(p.failure_count)),
+            ("tokens", fmt::int(p.total_tokens)),
+            ("input tokens", fmt::int(p.input_tokens)),
+            ("cache read tokens", fmt::int(p.cache_read_tokens)),
+        ]);
+    }
+    v.extend([
+        ("lifetime requests", fmt::int(i.total_requests)),
+        ("lifetime successes", fmt::int(i.success_count)),
+        ("lifetime failures", fmt::int(i.failure_count)),
+        ("lifetime tokens", fmt::int(i.total_tokens)),
+        ("lifetime input", fmt::int(i.input_tokens)),
+        ("lifetime output", fmt::int(i.output_tokens)),
+        ("lifetime reasoning", fmt::int(i.reasoning_tokens)),
+        ("lifetime cache read", fmt::int(i.cache_read_tokens)),
+        ("first used", when(app, i.first_used_at.as_deref())),
+        ("last used", when(app, i.last_used_at.as_deref())),
+        ("stats updated", when(app, i.stats_updated_at.as_deref())),
+        ("stats reset", when(app, i.stats_reset_at.as_deref())),
+    ]);
+    if let Some(h) = &i.credential_health {
+        let rate = if h.total_success + h.total_failure > 0.0 {
+            fmt::pct(h.success_rate, 1)
+        } else {
+            "quiet".into()
+        };
+        v.extend([
+            (
+                "health, last 5h",
+                format!(
+                    "{rate} · ✓ {} ✗ {}",
+                    fmt::int(h.total_success),
+                    fmt::int(h.total_failure)
+                ),
+            ),
+            ("5h successes", fmt::int(h.total_success)),
+            ("5h failures", fmt::int(h.total_failure)),
+            ("5h input tokens", fmt::int(h.input_tokens)),
+            ("5h cache read", fmt::int(h.cache_read_tokens)),
+            (
+                "5h window",
+                format!(
+                    "{} – {}",
+                    fmt::ts_fmt(&h.window_start, "%m-%d %H:%M"),
+                    fmt::ts_fmt(&h.window_end, "%m-%d %H:%M")
+                ),
+            ),
+        ]);
+    }
+    // The latest error, once the detail pane has fetched them.
+    if let Some((_, l)) = app
+        .data
+        .identity_errors
+        .as_ref()
+        .filter(|(id, _)| *id == i.id)
+        && let Some(errs) = l.get()
+    {
+        v.push(("recent errors", fmt::int(errs.events.len() as f64)));
+        if let Some(e) = errs.events.first() {
+            v.push((
+                "last error",
+                format!(
+                    "{} HTTP {} {} {}",
+                    fmt::ts_fmt(&e.timestamp, "%Y-%m-%d %H:%M:%S"),
+                    e.status_code,
+                    app.privacy(e.model.as_deref().unwrap_or("")),
+                    app.privacy_text(&e.body_summary.replace(['\n', '\r'], " "))
+                ),
+            ));
+        }
+    }
+    v
 }
 
 fn health_strip(app: &App, i: &Identity, width: usize) -> Vec<Span<'static>> {
@@ -169,6 +308,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                     num(-(last.map(|x| x as f64).unwrap_or(f64::MAX))),
                 )
                 .filter(format!("{name} {} {} {}", i.kind, i.provider, plan(i)))
+                .details(identity_fields(app, i))
         })
         .collect();
     table_in(

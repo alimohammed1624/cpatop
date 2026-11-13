@@ -2,8 +2,8 @@
 
 use super::realtime::scatter_pane;
 use super::{
-    Series, chart, cursor, cursor_time, dim_tabs, frame, placeholder, stale_marker, table_in,
-    time_labels,
+    Series, chart, cursor, cursor_time, dim_key_field, dim_tabs, frame, placeholder, stale_marker,
+    table_in, time_labels, token_details,
 };
 use crate::api::models::{Analysis, CompositionItem};
 use crate::app::{App, Hit};
@@ -269,6 +269,27 @@ pub fn composition(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused:
                     num(c.total_tokens),
                 )
                 .filter(name)
+                .details(dim_key_field(app, dim.unwrap_or(""), &c.key))
+                .details(token_details(
+                    c.input_tokens,
+                    c.output_tokens,
+                    c.cache_read_tokens,
+                    c.cache_creation_tokens,
+                    c.reasoning_tokens,
+                    c.total_tokens,
+                ))
+                .details(vec![
+                    ("share", format!("{} of tokens", fmt::pct(c.percent, 2))),
+                    ("requests", fmt::int(c.requests)),
+                    (
+                        "cost",
+                        if c.cost_available {
+                            format!("${:.4}", c.cost_usd)
+                        } else {
+                            format!("${:.4} (some models not priced)", c.cost_usd)
+                        },
+                    ),
+                ])
         })
         .collect();
     table_in(
@@ -317,8 +338,25 @@ pub fn models(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
                 .map(|c| c.requests)
                 .unwrap_or_else(|| s.requests.iter().sum());
             let share = fmt::ratio_pct(tok, total).unwrap_or(0.0);
+            let model = app.privacy(&s.model);
+            let mut extra = vec![
+                ("tokens", fmt::int(tok)),
+                ("share", format!("{} of tokens", fmt::pct(share, 2))),
+                ("requests", fmt::int(req)),
+            ];
+            if let Some(c) = comp {
+                extra.extend(token_details(
+                    c.input_tokens,
+                    c.output_tokens,
+                    c.cache_read_tokens,
+                    c.cache_creation_tokens,
+                    c.reasoning_tokens,
+                    c.total_tokens,
+                ));
+                extra.push(("cost", format!("${:.4}", c.cost_usd)));
+            }
             TRow::new(s.model.clone())
-                .text(s.model.clone(), text(&s.model))
+                .text(model.clone(), text(&model))
                 .styled(fmt::compact(tok), Style::default().fg(t.title), num(tok))
                 .meter(share / 100.0, None, format!(" {:>5.1}%", share), num(share))
                 .text(fmt::count(req), num(req))
@@ -328,6 +366,7 @@ pub fn models(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
                 )
                 .spark(s.total_tokens.clone(), t.accent, num(tok))
                 .filter(s.model.clone())
+                .details(extra)
         })
         .collect();
     table_in(
@@ -437,8 +476,9 @@ fn speed_rows(app: &App, a: &Analysis) -> Vec<TRow> {
                     format!("{lo:.0}–{hi:.0} t/s")
                 }
             };
+            let model = app.privacy(&s.model);
             TRow::new(s.model.clone())
-                .text(s.model.clone(), text(&s.model))
+                .text(model.clone(), text(&model))
                 .styled(
                     mean.map(fmt::tps).unwrap_or("-".into()),
                     Style::default().fg(t.title),
@@ -448,6 +488,14 @@ fn speed_rows(app: &App, a: &Analysis) -> Vec<TRow> {
                 .spark(per, t.accent, num(mean.unwrap_or(-1.0)))
                 .text(range, num(known.len() as f64))
                 .filter(s.model.clone())
+                .details(vec![
+                    ("speed samples", fmt::int(s.speed_sample_count)),
+                    ("tokens", fmt::int(s.total_tokens)),
+                    (
+                        "buckets with samples",
+                        format!("{} of {}", known.len(), s.samples.len()),
+                    ),
+                ])
         })
         .collect()
 }
@@ -476,8 +524,9 @@ pub fn efficiency(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: 
         .map(|m| {
             let per_m = (m.total_tokens > 0.0).then(|| m.cost_usd / m.total_tokens * 1e6);
             let cost_style = Style::default().fg(if m.cost_available { t.fg } else { t.warn });
+            let model = app.privacy(&m.model);
             TRow::new(m.model.clone())
-                .text(m.model.clone(), text(&m.model))
+                .text(model.clone(), text(&model))
                 .styled(
                     fmt::compact(m.total_tokens),
                     Style::default().fg(t.title),
@@ -502,6 +551,34 @@ pub fn efficiency(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: 
                     num(m.cache_read_rate),
                 )
                 .filter(m.model.clone())
+                .details(token_details(
+                    m.input_tokens,
+                    m.output_tokens,
+                    m.cache_read_tokens,
+                    m.cache_creation_tokens,
+                    m.reasoning_tokens,
+                    m.total_tokens,
+                ))
+                .details(vec![
+                    ("requests", fmt::int(m.requests)),
+                    (
+                        "cost",
+                        if m.cost_available {
+                            format!("${:.4}", m.cost_usd)
+                        } else {
+                            format!("${:.4} (not fully priced)", m.cost_usd)
+                        },
+                    ),
+                    (
+                        "cost per request",
+                        format!("${:.6}", m.cost_per_request_usd),
+                    ),
+                    (
+                        "output tokens per request",
+                        format!("{:.1}", m.output_tokens_per_request),
+                    ),
+                    ("cache read rate", fmt::pct(m.cache_read_rate * 100.0, 2)),
+                ])
         })
         .collect();
     table_in(
@@ -593,7 +670,10 @@ fn heatmap_table(app: &App, a: &Analysis) -> (Vec<Col>, Vec<TRow>) {
         .map(|k| {
             let raw = h.api_key_labels.get(k).map(String::as_str).unwrap_or(k);
             let label = app.key_name(k, raw);
-            let mut row = TRow::new(k.clone()).text(label.clone(), text(&label));
+            let mut row = TRow::new(k.clone())
+                .text(label.clone(), text(&label))
+                .detail_only()
+                .detail("API key", label.clone());
             let (mut tot, mut cost) = (0.0, 0.0);
             for (m, _) in &models {
                 let cell = h.cells.iter().find(|c| &c.api_key == k && &c.model == *m);
@@ -601,6 +681,15 @@ fn heatmap_table(app: &App, a: &Analysis) -> (Vec<Col>, Vec<TRow>) {
                     Some(c) if c.total_tokens > 0.0 => {
                         tot += c.total_tokens;
                         cost += c.cost_usd;
+                        row = row.detail(
+                            &app.privacy(m),
+                            format!(
+                                "{} tokens · {} req · ${:.4}",
+                                fmt::int(c.total_tokens),
+                                fmt::int(c.requests),
+                                c.cost_usd
+                            ),
+                        );
                         let v = 0.05 + 0.95 * (c.total_tokens / max.max(1.0)).powf(0.65);
                         row = row.styled(
                             fmt::compact(c.total_tokens),
@@ -616,6 +705,8 @@ fn heatmap_table(app: &App, a: &Analysis) -> (Vec<Col>, Vec<TRow>) {
             row.styled(fmt::compact(tot), Style::default().fg(t.title), num(tot))
                 .text(fmt::usd(cost), num(cost))
                 .filter(label)
+                .detail("total", format!("{} tokens", fmt::int(tot)))
+                .detail("cost", format!("${cost:.4}"))
         })
         .collect();
     (cols, rows)

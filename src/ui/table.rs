@@ -196,6 +196,14 @@ pub struct TRow {
     pub sort: Vec<SortKey>,
     pub filter: String,
     pub style: Option<Style>,
+    /// Fields of the row's record for the row popup (`Enter`), beyond or
+    /// more precise than its cells: a field named like a column (its
+    /// spelled-out name, see [`long_title`]) replaces that cell's text.
+    /// Values must already have been through the privacy helpers.
+    pub detail: Vec<(String, String)>,
+    /// The popup shows only [`TRow::detail`], not the cells (cells whose
+    /// titles are cut, like the heatmap's model columns).
+    pub detail_only: bool,
 }
 
 impl TRow {
@@ -206,7 +214,28 @@ impl TRow {
             sort: Vec::new(),
             filter: String::new(),
             style: None,
+            detail: Vec::new(),
+            detail_only: false,
         }
+    }
+    /// Add a popup field (see [`TRow::detail`]); empty values are skipped.
+    pub fn detail(mut self, name: &str, value: impl Into<String>) -> TRow {
+        let value = value.into();
+        if !value.trim().is_empty() {
+            self.detail.push((name.to_string(), value));
+        }
+        self
+    }
+    /// Add several popup fields.
+    pub fn details(self, fields: Vec<(&str, String)>) -> TRow {
+        fields
+            .into_iter()
+            .fold(self, |row, (name, value)| row.detail(name, value))
+    }
+    /// Show only the popup fields, not the cells.
+    pub fn detail_only(mut self) -> TRow {
+        self.detail_only = true;
+        self
     }
     /// Append a plain-text cell.
     pub fn text(mut self, s: impl Into<String>, key: SortKey) -> TRow {
@@ -263,6 +292,50 @@ impl TRow {
         self.style = Some(s);
         self
     }
+}
+
+/// A column title spelled out for the row popup, which has room for words
+/// (`P` → `priority`, `req` → `requests`).
+pub fn long_title(title: &str) -> String {
+    match title.trim() {
+        "P" | "prio" => "priority",
+        "req" => "requests",
+        "fail" => "failures",
+        "cache" => "cache read rate",
+        "cache r" => "cache read",
+        "cache w" => "cache write",
+        "mult" => "multiplier",
+        "rules" => "price rules",
+        "Δ" => "speed change",
+        "#" => "rank",
+        "rpm" => "requests per minute",
+        "tpm" => "tokens per minute",
+        "tok/1%" => "tokens per 1% of quota",
+        "$/1M" => "cost per 1M tokens",
+        "$/req" => "cost per request",
+        "out/req" => "output tokens per request",
+        "1st half" => "speed, first half",
+        "2nd half" => "speed, second half",
+        "ttft" => "time to first token",
+        "via" => "logged in via",
+        "ip" => "IP address",
+        "agent" => "user agent",
+        "last" => "last used",
+        "synced" => "last synced",
+        "health 5h" => "health, last 5h",
+        "key" => "API key",
+        "effort" => "reasoning effort",
+        "speed" => "output speed",
+        "left" => "quota left",
+        "mean" => "mean speed",
+        "samples" => "speed samples",
+        "per bucket" => "speed per bucket",
+        "range" => "speed range",
+        "trend" => "trend",
+        "" => "current",
+        t => t,
+    }
+    .to_string()
 }
 
 /// Drop those of the `candidates` columns whose cells are blank (`""`,

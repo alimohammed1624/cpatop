@@ -2,7 +2,7 @@
 source: tests/ui_snapshots.rs
 expression: s
 ---
- cpatop ⌂ localhost:8318 │ admin │ ◷ all time │ ⟳ on R │ ↻ 0s ago │ ● ok ? help
+ cpatop ⌂ localhost:8318 │ admin │ ◷ all time │ ↻ 0s ago │ ● ok          ? help
 ─ Overview  Realtime  Analysis  Requests  Credentials  Quota  Models  Keys ─────
 ╭─¹ pricing ◆ ────────────────────────── 5 priced · USD per 1M tokens · rev 2 ─╮
 │model                       style       input   output  cache r  cache w  mult│

@@ -69,8 +69,20 @@ pub fn pricing(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         .iter()
         .map(|m| {
             let b = &m.base_prices;
+            let model = app.privacy(&m.model);
+            // Branches and conditional multipliers as the server sends them.
+            let rules: Vec<String> = m
+                .branches
+                .iter()
+                .map(|x| format!("branch {}", app.privacy_text(&x.to_string())))
+                .chain(
+                    m.conditional_multipliers
+                        .iter()
+                        .map(|x| format!("condition {}", app.privacy_text(&x.to_string()))),
+                )
+                .collect();
             TRow::new(m.model.clone())
-                .text(m.model.clone(), text(&m.model))
+                .text(model.clone(), text(&model))
                 .text(m.pricing_style.clone(), text(&m.pricing_style))
                 .styled(price(b.input), Style::default().fg(t.title), num(b.input))
                 .styled(price(b.output), Style::default().fg(t.title), num(b.output))
@@ -88,6 +100,12 @@ pub fn pricing(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
                     num((m.branches.len() + m.conditional_multipliers.len()) as f64),
                 )
                 .filter(m.model.clone())
+                .details(vec![
+                    ("style", app.privacy(&m.pricing_style)),
+                    ("multiplier", format!("×{}", m.model_multiplier)),
+                    ("price rule details", rules.join(" · ")),
+                    ("prices", "USD per 1M tokens".into()),
+                ])
         })
         .collect();
     table_in(
@@ -166,11 +184,23 @@ pub fn catalog(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         .map(|m| {
             let p = provider_of(&m.id, m.owned_by.as_deref());
             let owner = m.owned_by.clone().unwrap_or_default();
+            let id = app.privacy(&m.id);
             TRow::new(m.id.clone())
-                .text(m.id.clone(), text(&m.id))
+                .text(id.clone(), text(&id))
                 .styled(p.clone(), Style::default().fg(t.accent), text(&p))
                 .text(owner.clone(), text(&owner))
                 .filter(format!("{} {p} {owner}", m.id))
+                .details(vec![
+                    ("owner", app.privacy(&owner)),
+                    ("object", app.privacy(m.object.as_deref().unwrap_or(""))),
+                    (
+                        "created",
+                        m.created
+                            .and_then(|c| chrono::DateTime::from_timestamp(c, 0))
+                            .map(|d| d.format("%Y-%m-%d %H:%M UTC").to_string())
+                            .unwrap_or_default(),
+                    ),
+                ])
         })
         .collect();
     table_in(

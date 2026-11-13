@@ -1,8 +1,8 @@
 //! Overview tab (admin and API-key viewer).
 
 use super::{
-    RowChart, Series, chart, chart_head, cursor, cursor_time, dim_tabs, frame, placeholder,
-    stale_marker, table_with_chart, time_labels,
+    RowChart, Series, chart, chart_head, cursor, cursor_time, dim_key_field, dim_tabs, frame,
+    placeholder, request_details, stale_marker, table_with_chart, time_labels, token_details,
 };
 use crate::api::models::ComparisonItem;
 use crate::app::{App, Hit};
@@ -365,6 +365,10 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
         .map(|c| crate::series::until_now(&c.buckets, app.clock.utc()))
         .unwrap_or(usize::MAX);
     let dim = app.dim(PaneId::OvDist);
+    let dim_name = crate::app::dims_for(PaneId::OvDist, app.role)
+        .get(dim)
+        .copied()
+        .unwrap_or("");
     let rows: Vec<TRow> = items
         .iter()
         .map(|i| {
@@ -409,6 +413,21 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
                     num(i.total_tokens),
                 )
                 .filter(format!("{name} {}", i.key))
+                .details(dim_key_field(app, dim_name, &i.key))
+                .details(request_details(i.requests, i.failures))
+                .details(token_details(
+                    i.input_tokens,
+                    i.output_tokens,
+                    i.cache_read_tokens,
+                    i.cache_creation_tokens,
+                    i.reasoning_tokens,
+                    i.total_tokens,
+                ))
+                .detail("share", format!("{} of tokens", fmt::pct(share, 2)))
+                .detail(
+                    "cost",
+                    i.cost.map(|c| format!("${c:.4}")).unwrap_or_default(),
+                )
         })
         .collect();
     // Spare rows chart the selected row's tokens over the range.
