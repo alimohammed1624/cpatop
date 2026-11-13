@@ -94,6 +94,11 @@ fn dashboard(f: &mut Frame, app: &App, hit: &mut Hit) {
     }
 }
 
+/// Header cadence of tabs refreshed only on demand (`R`), and its short
+/// form for narrow terminals.
+const MANUAL: &str = "manual (R)";
+const MANUAL_SHORT: &str = "manual";
+
 fn header(f: &mut Frame, app: &App, area: Rect) {
     let t = app.theme();
     let sep = Span::styled(" │ ", Style::default().fg(t.border));
@@ -136,7 +141,7 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
         }
         Cadence::Every(d) => format!("{}s", d.as_secs()),
         Cadence::Live => "live".into(),
-        Cadence::OnDemand => "on R".into(),
+        Cadence::OnDemand => MANUAL.into(),
     };
     segs.push(vec![Span::styled("⟳ ", dim), Span::styled(cadence, val)]);
     let at = app.last_update();
@@ -202,13 +207,32 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
     while !segs.is_empty() && 8 + width_of(&segs) + status_w > budget {
         // Remove in order: update badge, refresh, age, then host, role,
         // range, key filter.
-        let find = |icon: &str| {
+        let find = |segs: &[Vec<Span<'static>>], icon: &str| {
             segs.iter()
                 .position(|s| s.first().is_some_and(|x| x.content == icon))
         };
-        let idx = find("↑ ")
-            .or_else(|| find("⟳ "))
-            .or_else(|| find("↻ "))
+        // Before the refresh goes, `manual (R)` shortens to `manual` and
+        // the age drops its `ago`.
+        if find(&segs, "↑ ").is_none() {
+            if let Some(i) = find(&segs, "⟳ ")
+                && let Some(v) = segs[i].get_mut(1)
+                && v.content == MANUAL
+            {
+                v.content = MANUAL_SHORT.into();
+                continue;
+            }
+            if find(&segs, "⟳ ").is_some()
+                && let Some(i) = find(&segs, "↻ ")
+                && let Some(v) = segs[i].get_mut(1)
+                && let Some(s) = v.content.strip_suffix(" ago").map(str::to_string)
+            {
+                v.content = s.into();
+                continue;
+            }
+        }
+        let idx = find(&segs, "↑ ")
+            .or_else(|| find(&segs, "⟳ "))
+            .or_else(|| find(&segs, "↻ "))
             .unwrap_or(0);
         segs.remove(idx);
     }
