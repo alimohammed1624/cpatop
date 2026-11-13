@@ -7,6 +7,12 @@ All notable changes to cpatop are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Update notice: at most once a day, in the background, cpatop asks GitHub
+  for its own latest release (only a `cpatop/<version>` User-Agent is sent;
+  cached in the state directory). A newer stable release shows `↑ vX.Y.Z`
+  in the header and the upgrade command in `?` help. `cpatop check-update`
+  checks now. Off with `--no-update-check`, `update_check = false` or
+  `CPATOP_NO_UPDATE_CHECK=1`, and skipped when `CI` is set.
 - `Enter` on any table opens every field of the selected row, untruncated;
   `↑↓` move the selection underneath.
 - The Overview distribution charts the selected row's tokens in its spare

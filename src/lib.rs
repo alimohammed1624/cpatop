@@ -18,3 +18,4 @@ pub mod session_store;
 pub mod theme;
 pub mod tui;
 pub mod ui;
+pub mod update;

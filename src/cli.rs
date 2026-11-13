@@ -72,6 +72,11 @@ pub struct Cli {
     #[arg(long)]
     pub no_mouse: bool,
 
+    /// Do not check GitHub for a newer cpatop release on start
+    /// (also CPATOP_NO_UPDATE_CHECK=1 or config `update_check = false`)
+    #[arg(long)]
+    pub no_update_check: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -97,6 +102,8 @@ pub enum Command {
     },
     /// Show the config, theme and state paths in use
     Paths,
+    /// Check GitHub for a newer cpatop release now
+    CheckUpdate,
 }
 
 #[derive(Debug, Subcommand)]

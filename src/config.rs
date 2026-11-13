@@ -60,6 +60,8 @@ pub struct FileConfig {
     /// Log the server session out when quitting (default: keep it so the
     /// next start reuses it).
     pub logout_on_exit: Option<bool>,
+    /// Check GitHub for a newer cpatop release on start (default true).
+    pub update_check: Option<bool>,
 }
 
 impl FileConfig {
@@ -157,6 +159,9 @@ impl Paths {
     }
     pub fn session_file(&self) -> Option<PathBuf> {
         self.state_dir.as_ref().map(|d| d.join("session.json"))
+    }
+    pub fn update_cache_file(&self) -> Option<PathBuf> {
+        self.state_dir.as_ref().map(|d| d.join("update-check.json"))
     }
 }
 

@@ -25,6 +25,7 @@ impl App {
         match msg {
             Msg::Auth(e) => self.on_auth(e),
             Msg::Live(e) => self.on_live(e),
+            Msg::UpdateAvailable(tag) => self.update_available = Some(tag),
             Msg::Data {
                 group,
                 scope,

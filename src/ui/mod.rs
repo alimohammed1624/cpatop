@@ -149,6 +149,16 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
         val
     };
     segs.push(vec![Span::styled("↻ ", dim), Span::styled(age, age_style)]);
+    // A newer cpatop release (details in the help overlay).
+    if let Some(tag) = &app.update_available {
+        segs.push(vec![
+            Span::styled("↑ ", dim),
+            Span::styled(
+                format!("v{}", crate::update::display_version(tag)),
+                Style::default().fg(t.ok),
+            ),
+        ]);
+    }
     let status: Vec<Span<'static>> = match app.current_error() {
         Some(e) => vec![Span::styled(
             format!("▲ stale: {}", fmt::trunc(&app.privacy_text(e), 60)),
@@ -190,14 +200,15 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
     };
     let status_w: usize = status.iter().map(|s| s.width()).sum();
     while !segs.is_empty() && 8 + width_of(&segs) + status_w > budget {
-        // Remove in order: refresh, age, then host, role, range, key filter.
-        let idx = segs
-            .iter()
-            .position(|s| s.first().is_some_and(|x| x.content == "⟳ "))
-            .or_else(|| {
-                segs.iter()
-                    .position(|s| s.first().is_some_and(|x| x.content == "↻ "))
-            })
+        // Remove in order: update badge, refresh, age, then host, role,
+        // range, key filter.
+        let find = |icon: &str| {
+            segs.iter()
+                .position(|s| s.first().is_some_and(|x| x.content == icon))
+        };
+        let idx = find("↑ ")
+            .or_else(|| find("⟳ "))
+            .or_else(|| find("↻ "))
             .unwrap_or(0);
         segs.remove(idx);
     }

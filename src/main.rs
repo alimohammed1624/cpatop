@@ -7,6 +7,7 @@ use cpatop::config::{DEFAULT_BASE_URL, FileConfig, Paths, Settings, UiState};
 use cpatop::secrets::{self, ResolveOptions, Secret};
 use cpatop::session_store::SessionStore;
 use cpatop::theme;
+use cpatop::update;
 use std::io::IsTerminal;
 use std::process::ExitCode;
 
@@ -198,6 +199,15 @@ fn run() -> Result<(), CliError> {
             println!("ui state    : {}", show(paths.ui_state_file()));
             println!("themes dir  : {}", show(paths.themes_dir()));
             println!("session     : {}", show(paths.session_file()));
+            println!("update cache: {}", show(paths.update_cache_file()));
+            return Ok(());
+        }
+        Some(Command::CheckUpdate) => {
+            // Explicit: ignores the opt-outs and the cache (and refreshes it).
+            let rt = current_thread_runtime()?;
+            let cache = paths.update_cache_file();
+            let r = rt.block_on(update::check_and_cache(cache.as_deref()));
+            println!("{}", update::report(&r, update::CURRENT));
             return Ok(());
         }
         Some(Command::Keyring { action }) => {
@@ -328,6 +338,13 @@ fn run() -> Result<(), CliError> {
         );
     }
 
+    let update_check = update::enabled(
+        cli.no_update_check,
+        file_cfg.update_check,
+        std::env::var_os("CPATOP_NO_UPDATE_CHECK").as_deref(),
+        std::env::var_os("CI").as_deref(),
+    );
+
     let mut app = App::new(settings, themes, &ui_state);
     app.warnings = warnings;
 
@@ -339,6 +356,8 @@ fn run() -> Result<(), CliError> {
         creds,
         store,
         ui_state_path: paths.ui_state_file(),
+        update_check,
+        update_cache_path: paths.update_cache_file(),
     }))?;
     Ok(())
 }

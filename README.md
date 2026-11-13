@@ -169,11 +169,13 @@ Other commands:
 | `cpatop logout` | Log out on the server and forget the stored session |
 | `cpatop themes [--dump NAME]` | List themes / print one as a TOML starting point |
 | `cpatop paths` | Show the config, theme and state paths in use |
+| `cpatop check-update` | Check for a newer cpatop release now |
 
 Useful flags: `--range 7d` (or `--range custom:2026-11-01..2026-11-07`),
 `--refresh 5`, `--theme nord`, `--symbols block`, `--auth api-key` (prefer the
 key when both credentials exist), `--privacy` (hide e-mails, keys and IPs),
-`--no-mouse`, `--no-keyring`, `--fresh-session`, `--logout-on-exit`.
+`--no-mouse`, `--no-keyring`, `--fresh-session`, `--logout-on-exit`,
+`--no-update-check`.
 
 Sessions are remembered per server and role, and a stored session is checked
 with the server (`GET /auth/session`) and reused on the next start — cpatop
@@ -229,6 +231,7 @@ Precedence: command line and environment → saved UI state → config file → 
 | UI state (written automatically) | `$XDG_CONFIG_HOME/cpatop/ui-state.toml` |
 | User themes | `$XDG_CONFIG_HOME/cpatop/themes/*.toml` |
 | Session cookie (mode 0600) | `$XDG_STATE_HOME/cpatop/session.json` |
+| Last update check (mode 0600) | `$XDG_STATE_HOME/cpatop/update-check.json` |
 
 On macOS without `XDG_*` variables the platform directories are used
 (`cpatop paths` prints them).
@@ -290,8 +293,22 @@ complete starting point. A user theme with a built-in name replaces it.
   never called.
 - cpatop only issues GET requests, plus `POST /auth/login`,
   `/auth/api-key-login` and `/auth/logout`. It never changes Keeper settings
-  or data, never triggers quota refreshes and never calls the GitHub-backed
-  update check.
+  or data, never triggers quota refreshes and never calls Keeper's
+  GitHub-backed update check (`/update/check`).
+- **Update check (cpatop's own).** At most once a day, in the background
+  after the dashboard is up, cpatop asks GitHub for its own latest release:
+  `GET https://github.com/alimohammed1624/cpatop/releases/latest` (the tag
+  is read from the redirect, which is not followed), falling back to
+  `https://api.github.com/repos/alimohammed1624/cpatop/releases/latest`.
+  The request carries only a `cpatop/<version>` User-Agent — no Keeper
+  URL, credentials or other identifiers. The answer is cached in
+  `update-check.json` in the state directory; a newer stable release shows
+  `↑ vX.Y.Z` in the header and the upgrade command in `?` help. Failures are
+  silent and never delay startup (3 s timeout). Turn it off with
+  `--no-update-check`, `update_check = false` in the config file or
+  `CPATOP_NO_UPDATE_CHECK=1`; it is also skipped when `CI` is set.
+  `cpatop check-update` checks on demand (ignoring the cache and the
+  opt-outs) and prints one line; `cpatop --version` never goes online.
 - Keeper buckets hourly series on UTC hours. In a zone with a half-hour
   offset (+05:30) buckets start at :30 local time; the first `today` bucket
   holds only local midnight to the next UTC hour and is labelled `00:00`,
