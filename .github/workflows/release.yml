@@ -1,24 +1,42 @@
-# MANUAL FALLBACK ONLY: pushing a tag no longer triggers this workflow, to
-# save GitHub Actions minutes. Releases are built and published locally with
-# scripts/release.sh vX.Y.Z (Linux builds here, macOS builds on a Mac over
-# ssh; see README "Development"). Run this workflow by hand from the Actions
-# tab only if that is unavailable.
+# Releases for cpatop on GitHub Actions (the primary release path).
+#
+# Push a tag like v0.3.0 from main to build every archive and publish a
+# GitHub release for it:
+#
+#   git tag -a v0.3.0 -m "cpatop v0.3.0" && git push origin v0.3.0
+#
+# The tag must equal "v" + the version in Cargo.toml, point at a commit on
+# main, and CHANGELOG.md must have a "## [X.Y.Z]" section: its body is the
+# release text. A tag with a "-suffix" (v0.3.0-rc.1) makes a pre-release.
+#
+# Running the workflow by hand (workflow_dispatch, on any branch or tag) is a
+# dry run: it checks, builds, packages and test-installs every archive and
+# keeps them as the "dist" artifact, but never publishes anything.
+#
+# Assets match scripts/release.sh (the local fallback) and install.sh
+# exactly: cpatop-<target>.tar.gz, each containing a top-level
+# cpatop-<target>/ dir with cpatop (mode 755), README.md, LICENSE,
+# CHANGELOG.md and config.example.toml, owned by 0:0; plus SHA256SUMS
+# ("<hash>  cpatop-<target>.tar.gz" lines). The names are deliberately
+# version-independent so that
+# https://github.com/alimohammed1624/cpatop/releases/latest/download/<asset>
+# always resolves. Keep all three in sync.
+#
+# If a release for the tag already exists (e.g. scripts/release.sh made it
+# and pushed the tag), the publish job leaves it alone.
 name: Release
 
-# Run by hand on a v* tag (select the tag as the ref) to build release
-# binaries and attach them to a GitHub release for that tag. The tag must
-# equal "v" + the version in Cargo.toml. Run on a branch it is a dry run: it
-# checks and builds every archive but never publishes a release.
-#
-# Asset names are deliberately version-independent (cpatop-<target>.tar.gz,
-# containing a top-level cpatop-<target>/ dir) so that
-# https://github.com/alimohammed1624/cpatop/releases/latest/download/<asset>
-# always resolves. Keep asset names in sync with install.sh.
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,18 +44,42 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      - name: Tag matches Cargo.toml version
-        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          fetch-depth: 0
+      - name: Version, tag and changelog
+        id: version
         shell: bash
+        env:
+          PUBLISH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         run: |
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
-          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $version (expected v$version)"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          # A pushed tag fails on any problem; a dry run only warns.
+          level=warning
+          [ "$PUBLISH" = true ] && level=error
+          bad=0
+          problem() { echo "::$level::$*"; bad=1; }
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] ||
+              problem "tag $GITHUB_REF_NAME must look like v1.2.3 or v1.2.3-rc.1"
+            if [ "$GITHUB_REF_NAME" = "v$version" ]; then
+              echo "tag $GITHUB_REF_NAME matches Cargo.toml version $version"
+            else
+              problem "tag $GITHUB_REF_NAME does not match Cargo.toml version $version (expected v$version)"
+            fi
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main ||
+              problem "tag $GITHUB_REF_NAME (${GITHUB_SHA:0:7}) is not on main"
+          fi
+          grep -q "^## \[$version\]" CHANGELOG.md ||
+            problem "CHANGELOG.md has no '## [$version]' section (the release notes)"
+          if [ "$bad" = 1 ] && [ "$PUBLISH" = true ]; then
             exit 1
           fi
-          echo "tag $GITHUB_REF_NAME matches Cargo.toml version $version"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -46,25 +88,20 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
 
-  build:
+  build-linux:
     needs: check
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
+          # musl-tools' musl-gcc compiles ring's C code for x86_64; cross
+          # (Docker) brings an aarch64 musl toolchain.
+          - target: x86_64-unknown-linux-musl
             tool: cargo
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-musl
+          - target: aarch64-unknown-linux-musl
             tool: cross
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            tool: cargo
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            tool: cargo
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -73,7 +110,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - if: matrix.target == 'x86_64-unknown-linux-musl'
+      - if: matrix.tool == 'cargo'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - if: matrix.tool == 'cross'
         uses: taiki-e/install-action@v2
@@ -81,64 +118,168 @@ jobs:
           tool: cross
       - name: Build
         run: ${{ matrix.tool }} build --release --locked --target ${{ matrix.target }}
-      - name: Package
+      - name: Collect
         shell: bash
         run: |
-          # Keep asset names in sync with install.sh.
-          name=cpatop-${{ matrix.target }}
-          mkdir -p "dist/$name"
-          cp target/${{ matrix.target }}/release/cpatop README.md LICENSE CHANGELOG.md config.example.toml "dist/$name/"
-          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          t=${{ matrix.target }}
+          file "target/$t/release/cpatop"
+          file "target/$t/release/cpatop" | grep -Eq 'static(-pie)? linked|statically linked'
+          mkdir -p "bin/$t"
+          cp "target/$t/release/cpatop" "bin/$t/cpatop"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}
-          path: |
-            dist/*.tar.gz
-            target/${{ matrix.target }}/release/cpatop
+          name: bin-${{ matrix.target }}
+          path: bin/
+          if-no-files-found: error
 
-  macos-universal:
-    needs: build
+  # Both macOS targets and the universal binary on one Apple silicon runner,
+  # as scripts/release.sh does on the Mac.
+  build-macos:
+    needs: check
     runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: apple-darwin
+      - name: Build
+        shell: bash
+        run: |
+          for t in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo build --release --locked --target "$t"
+            mkdir -p "bin/$t"
+            cp "target/$t/release/cpatop" "bin/$t/cpatop"
+            printf '%s: macOS >= ' "$t"
+            vtool -show-build "bin/$t/cpatop" 2>/dev/null | awk '$1 == "minos" || $1 == "version" { print $2; exit }' || echo unknown
+          done
+          mkdir -p bin/universal-apple-darwin
+          lipo -create -output bin/universal-apple-darwin/cpatop \
+            bin/aarch64-apple-darwin/cpatop bin/x86_64-apple-darwin/cpatop
+          lipo -info bin/universal-apple-darwin/cpatop
+          bin/universal-apple-darwin/cpatop --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-apple-darwin
+          path: bin/
+          if-no-files-found: error
+
+  # Packaging mirrors scripts/release.sh line for line (GNU tar, sha256sum).
+  package:
+    needs: [check, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: "*-apple-darwin"
-      - name: lipo
+          pattern: bin-*
+          path: bin
+          merge-multiple: true
+      - name: Package
         shell: bash
         run: |
-          # Keep asset names in sync with install.sh.
-          name=cpatop-universal-apple-darwin
-          mkdir -p "dist/$name"
-          lipo -create -output "dist/$name/cpatop" \
-            aarch64-apple-darwin/target/aarch64-apple-darwin/release/cpatop \
-            x86_64-apple-darwin/target/x86_64-apple-darwin/release/cpatop
-          chmod +x "dist/$name/cpatop"
-          lipo -info "dist/$name/cpatop"
-          cp README.md LICENSE CHANGELOG.md config.example.toml "dist/$name/"
-          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          targets=(x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+                   aarch64-apple-darwin x86_64-apple-darwin universal-apple-darwin)
+          payload=(README.md LICENSE CHANGELOG.md config.example.toml)
+          mkdir -p dist pkg
+          for t in "${targets[@]}"; do
+            name="cpatop-$t"
+            [ -f "bin/$t/cpatop" ] || { echo "::error::missing binary for $t"; exit 1; }
+            mkdir -p "pkg/$name"
+            cp "bin/$t/cpatop" "pkg/$name/cpatop"
+            chmod 755 "pkg/$name/cpatop"
+            for f in "${payload[@]}"; do cp "$f" "pkg/$name/"; done
+            tar -C pkg --owner=0 --group=0 --numeric-owner -czf "dist/$name.tar.gz" "$name"
+          done
+          # install.sh looks up "<hash>  cpatop-<target>.tar.gz" lines here.
+          (cd dist && sha256sum -- *.tar.gz >SHA256SUMS)
+          for t in "${targets[@]}"; do
+            echo "== cpatop-$t.tar.gz"
+            tar -tvzf "dist/cpatop-$t.tar.gz"
+            file "pkg/cpatop-$t/cpatop"
+          done
+          cat dist/SHA256SUMS
+      - name: Release notes
+        shell: bash
+        run: |
+          # Same as changelog_section in scripts/release.sh: the body of
+          # "## [X.Y.Z]" in CHANGELOG.md (Unreleased if there is none, which
+          # only a dry run gets past the check job with).
+          section() {
+            awk -v v="$1" '
+                /^## \[/ { if (on) exit; on = index($0, "## [" v "]") == 1; next }
+                /^\[[^]]+\]: / { if (on) exit }
+                on { print }
+            ' CHANGELOG.md | sed -e '/./,$!d' | sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}'
+          }
+          mkdir -p notes
+          notes=$(section "$VERSION")
+          [ -n "$notes" ] || notes=$(section Unreleased)
+          printf '%s\n' "$notes" >notes/RELEASE_NOTES.md
+          { echo "## Release notes for v$VERSION"; echo; cat notes/RELEASE_NOTES.md; } >>"$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: universal-apple-darwin
-          path: dist/*.tar.gz
+          name: dist
+          path: |
+            dist/
+            notes/
+          if-no-files-found: error
 
-  release:
-    needs: [build, macos-universal]
-    # Only a run on a v* tag publishes; a manual run on a branch is a dry run.
-    if: startsWith(github.ref, 'refs/tags/v')
+  # Install each platform's archive with install.sh from the packaged dist/
+  # (file:// download base) and run it, so asset names, layout and
+  # SHA256SUMS are checked against the real installer.
+  install-test:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: out
+      - name: install.sh
+        shell: bash
+        run: |
+          CPATOP_DOWNLOAD_BASE="file://$PWD/out/dist" CPATOP_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
+          "$RUNNER_TEMP/bin/cpatop" --version
+
+  publish:
+    needs: [package, install-test]
+    # Only a pushed v* tag publishes; a manual run is always a dry run.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
-      - name: Checksums
+          name: dist
+          path: out
+      - name: gh release create
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
-          mkdir out
-          find artifacts -name '*.tar.gz' -exec cp {} out/ \;
-          # install.sh looks up "<hash>  cpatop-<target>.tar.gz" lines here.
-          (cd out && sha256sum -- *.tar.gz > SHA256SUMS)
-          ls -l out
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: out/*
-          generate_release_notes: true
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::release $TAG already exists (made by scripts/release.sh?); leaving it alone"
+            exit 0
+          fi
+          pre=()
+          [[ "$TAG" == *-* ]] && pre=(--prerelease)
+          gh release create "$TAG" --verify-tag --title "cpatop $TAG" \
+            --notes-file out/notes/RELEASE_NOTES.md "${pre[@]}" \
+            out/dist/*.tar.gz out/dist/SHA256SUMS
