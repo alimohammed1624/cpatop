@@ -226,6 +226,55 @@ fn key_picker_filters_by_id() {
 }
 
 #[test]
+fn one_esc_closes_pickers_and_the_next_key_is_not_lost() {
+    for open in ['r', 'a'] {
+        let mut app = admin();
+        let tab = app.tab;
+        // Typed filter, then a single Esc: closed, nothing applied.
+        press(&mut app, KeyCode::Char(open));
+        typed(&mut app, "30");
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.overlay, None, "picker {open}");
+        // Esc quickly followed by a key arrives as Alt+key: the picker
+        // closes and the key acts on the dashboard (`?` opens help).
+        press(&mut app, KeyCode::Char(open));
+        typed(&mut app, "30");
+        app.on_event(Event::Key(KeyEvent::new(
+            KeyCode::Char('?'),
+            KeyModifiers::ALT,
+        )));
+        assert_eq!(app.overlay, Some(Overlay::Help), "picker {open}");
+        assert_eq!(app.tab, tab);
+    }
+    // Same for the request-log pickers.
+    let mut app = admin();
+    app.tab = Tab::Events;
+    for open in ['m', 'o'] {
+        press(&mut app, KeyCode::Char(open));
+        assert!(matches!(app.overlay, Some(Overlay::Picker(_))));
+        typed(&mut app, "x");
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.overlay, None, "picker {open}");
+    }
+    // In the custom-range editor Esc steps back to the picker, and an
+    // Esc+key there is not typed into the date field.
+    press(&mut app, KeyCode::Char('r'));
+    typed(&mut app, "custom d");
+    press(&mut app, KeyCode::Enter);
+    assert!(matches!(app.overlay, Some(Overlay::Range(_))));
+    app.on_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('z'),
+        KeyModifiers::ALT,
+    )));
+    let Some(Overlay::Picker(p)) = &app.overlay else {
+        panic!("back in the range picker");
+    };
+    assert_eq!(p.query, "z");
+    press(&mut app, KeyCode::Esc);
+    assert_eq!(app.overlay, None);
+}
+
+#[test]
 fn range_picker_with_custom_days() {
     let mut app = admin();
     app.server_offset = Some(chrono::FixedOffset::east_opt(5 * 3600 + 1800).unwrap());

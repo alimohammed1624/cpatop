@@ -47,6 +47,20 @@ impl App {
             }
             return;
         }
+        // Terminals send `Esc` followed quickly by a key as one sequence that
+        // arrives as Alt+key, which would be typed into a picker query (the
+        // picker stays open and the key is lost). No binding uses Alt, so
+        // handle it as the two keys it most likely was.
+        if k.modifiers.contains(KeyModifiers::ALT)
+            && !k.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(k.code, KeyCode::Char(_))
+        {
+            self.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+            let mut k = k;
+            k.modifiers.remove(KeyModifiers::ALT);
+            self.on_key(k);
+            return;
+        }
         if let InputMode::Filter(id) = self.mode {
             self.on_filter_key(id, k);
             return;
