@@ -129,22 +129,29 @@ impl App {
         }
     }
 
-    /// A date or time typed into the custom-range editor: in privacy mode
-    /// every character other than digits, `-`, `:`, `.` and blanks is a
-    /// bullet, so dates stay readable while anything else stays hidden.
+    /// A date or time typed into the custom-range editor. In privacy mode
+    /// it stays readable only while it is made of digits, `-`, `:` and
+    /// blanks (the date/time syntax); anything else — a dot, a letter —
+    /// hides the whole field, so a half-typed IP or name shows nothing.
+    /// A time part must look like `HH:MM[:SS]` (1–2 digits per part), so
+    /// an all-digit IPv6 such as `2406:400::74` is hidden too.
     pub fn typed_date(&self, s: &str) -> String {
-        if !self.settings.privacy {
+        let date_like = s
+            .chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, '-' | ':' | ' '))
+            && s.split(' ').filter(|t| t.contains(':')).all(|t| {
+                let parts: Vec<&str> = t.split(':').collect();
+                parts.len() <= 3
+                    && parts
+                        .iter()
+                        .enumerate()
+                        // the last part may still be empty while typing
+                        .all(|(i, p)| p.len() <= 2 && (!p.is_empty() || i == parts.len() - 1))
+            });
+        if !self.settings.privacy || date_like {
             return s.to_string();
         }
-        s.chars()
-            .map(|c| {
-                if c.is_ascii_digit() || matches!(c, '-' | ':' | '.' | ' ') {
-                    c
-                } else {
-                    '•'
-                }
-            })
-            .collect()
+        hide_typed(s)
     }
 
     /// An IP address field (`‹ip›` in privacy mode).
@@ -1403,6 +1410,31 @@ mod privacy_tests {
             "DeepSeekCoder-v2-Instruct",
         ] {
             register_safe_name(m);
+        }
+    }
+
+    #[test]
+    fn typed_dates_show_only_date_syntax() {
+        let a = app();
+        for s in [
+            "2026-11-01 14:30",
+            "2026-11-01 14:30:05",
+            "2026-11-01 1",
+            "14:",
+        ] {
+            assert_eq!(a.typed_date(s), s);
+        }
+        for s in [
+            "10.0.0",
+            "10.0.0.7",
+            "192.168",
+            "2406:b400:d13::74d",
+            "2406:400::74",
+            "1:2:3:4",
+            "bob",
+            "1a",
+        ] {
+            assert_eq!(a.typed_date(s), hide_typed(s), "{s:?}");
         }
     }
 
