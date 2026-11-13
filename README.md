@@ -39,8 +39,10 @@ gradient meters and sparklines.
 
 ## Screenshots
 
-All captured from a live Keeper with `--privacy`: e-mail addresses become
-`account-N`, API keys are shown only as `key #id`, IP addresses are hidden.
+All captured from a live Keeper with `--privacy`, reached at
+`http://127.0.0.1:8318` to show that even the server address is masked:
+e-mail addresses become `account-N`, API keys are shown only as `key #id`,
+IP addresses become `‹ip›`.
 
 | | |
 |---|---|
