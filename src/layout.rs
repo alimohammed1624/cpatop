@@ -344,7 +344,7 @@ const EV_PRESETS: [Preset; 3] = [
         name: "stacked",
         rows: &[
             row(Fill(3), 0, &[(EvLog, 1)]),
-            row(Fixed(10), 1, &[(EvDetail, 1)]),
+            row(Fill(1), 1, &[(EvDetail, 1)]),
         ],
     },
     Preset {

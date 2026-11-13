@@ -44,12 +44,12 @@ fn status_spans(app: &App) -> Vec<Span<'static>> {
         LiveStatus::Retrying { message, until } => {
             let s = until.saturating_duration_since(app.now()).as_secs();
             vec![Span::styled(
-                format!("▲ {} · retry {s}s", fmt::trunc(message, 28)),
+                format!("▲ {} · retry {s}s", fmt::trunc(&app.privacy_text(message), 28)),
                 Style::default().fg(t.err),
             )]
         }
         LiveStatus::Failed(m) => vec![Span::styled(
-            format!("✗ {}", fmt::trunc(m, 40)),
+            format!("✗ {}", fmt::trunc(&app.privacy_text(m), 40)),
             Style::default().fg(t.err),
         )],
     };
@@ -91,9 +91,9 @@ fn status_spans(app: &App) -> Vec<Span<'static>> {
 
 /// Lines of the detail pane at an inner width (fields wrap when narrow).
 pub fn detail_lines(width: u16) -> u16 {
-    if width >= 110 {
+    if width >= 76 {
         8
-    } else if width >= 70 {
+    } else if width >= 56 {
         10
     } else {
         12
@@ -352,12 +352,15 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         ]),
         Line::from(vec![
             k("client"),
-            v(fmt::trunc(&opt(&e.client_ip), 39)),
+            v(fmt::trunc(&app.ip(&opt(&e.client_ip)), 39)),
             sep(),
             k("xff"),
-            v(fmt::trunc(&opt(&e.x_forwarded_for), 48)),
+            v(fmt::trunc(&app.ip(&opt(&e.x_forwarded_for)), 48)),
         ]),
-        Line::from(vec![k("agent"), v(fmt::trunc(&opt(&e.user_agent), 80))]),
+        Line::from(vec![
+            k("agent"),
+            v(fmt::trunc(&app.privacy_text(&opt(&e.user_agent)), 80)),
+        ]),
     ];
     f.render_widget(
         Paragraph::new(lines).wrap(Wrap { trim: true }),

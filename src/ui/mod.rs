@@ -131,7 +131,7 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
     segs.push(vec![Span::styled("↻ ", dim), Span::styled(age, val)]);
     let status: Vec<Span<'static>> = match app.current_error() {
         Some(e) => vec![Span::styled(
-            format!("▲ stale: {}", fmt::trunc(e, 60)),
+            format!("▲ stale: {}", fmt::trunc(&app.privacy_text(e), 60)),
             Style::default().fg(t.err).add_modifier(Modifier::BOLD),
         )],
         None => vec![Span::styled("● ok", Style::default().fg(t.ok))],
@@ -147,7 +147,7 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
     } else {
         match &app.flash {
             Some((m, _)) => vec![Span::styled(
-                format!("{m} "),
+                format!("{} ", app.privacy_text(m)),
                 Style::default().fg(t.hi).add_modifier(Modifier::BOLD),
             )],
             None => vec![

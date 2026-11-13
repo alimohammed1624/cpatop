@@ -493,7 +493,7 @@ pub fn spark(values: &[f64], width: usize, t: &Theme, color: Color) -> Vec<Span<
 /// shade glyphs when colour is off.
 pub fn heat_cell(level: Option<f64>, color: Color, t: &Theme) -> (char, Color) {
     match level {
-        None => (if t.no_color { ' ' } else { '■' }, t.meter_bg),
+        None => (if t.no_color { '·' } else { '■' }, t.meter_bg),
         Some(l) if t.no_color => {
             let shades = ['░', '▒', '▓', '█'];
             (

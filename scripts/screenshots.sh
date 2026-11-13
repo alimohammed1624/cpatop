@@ -198,18 +198,28 @@ EOF
     --screenshot="$png" "file://$html" >/dev/null 2>&1
 }
 
-# Scenes. Keys follow the in-app help (`?`): Tab moves to the next tab, t
-# cycles themes (default → light → gruvbox → nord → tokyo-night → …).
-# name               role  cols rows theme       keys
-shot admin-overview    admin 160 48 default
-shot admin-realtime    admin 160 48 default     Tab
-shot admin-analysis    admin 160 48 default     Tab Tab
-shot admin-requests    admin 160 48 default     Tab Tab Tab
-shot admin-credentials admin 160 48 default     Tab Tab Tab Tab
-shot apikey-overview   key   160 48 default
-shot theme-light       admin 160 48 light       Tab Tab t
-shot theme-tokyo-night admin 160 48 tokyo-night Tab t t t t
-shot help-overlay      admin 160 48 default     '?'
-shot compact-100x30    admin 100 30 default
+# Scenes. Keys follow the in-app help (`?`): Tab moves to the next tab, F2…F9
+# jump to a tab, t cycles themes (default → light → gruvbox → nord →
+# tokyo-night → …), f focuses the next table or graph, ←/→ move a graph's
+# cursor, r opens the range picker, a the API-key picker, e cycles the
+# request-log result filter.
+# name                 role  cols rows theme       keys
+shot admin-overview      admin 160 48 default
+shot admin-realtime      admin 160 48 default     Tab
+shot admin-analysis      admin 160 48 default     Tab Tab
+shot admin-requests      admin 160 48 default     Tab Tab Tab
+shot admin-requests-failed admin 160 48 default   F5 wait e e wait
+shot admin-credentials   admin 160 48 default     F6
+shot admin-quota         admin 160 48 default     F7
+shot admin-keys          admin 160 48 default     F9 wait
+shot graph-cursor        admin 160 48 default     f Left Left Left Left Left Left
+shot range-picker        admin 160 48 default     r Down Down Down
+shot key-picker          admin 160 48 default     a
+shot apikey-overview     key   160 48 default
+shot theme-light         admin 160 48 light       Tab Tab t
+shot theme-tokyo-night   admin 160 48 tokyo-night Tab t t t t
+shot help-overlay        admin 160 48 default     '?'
+shot wide-220x60         admin 220 60 default
+shot compact-80x24       admin 80 24 default      Tab
 
 echo "done: $OUT"

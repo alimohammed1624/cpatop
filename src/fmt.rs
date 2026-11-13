@@ -248,24 +248,6 @@ pub fn redact_key(s: &str) -> String {
     s.to_string()
 }
 
-/// Mask an e-mail address for screenshots: `alice@example.com` → `a…@example.com`.
-pub fn mask_email(s: &str) -> String {
-    match s.split_once('@') {
-        Some((local, domain)) if !local.is_empty() => {
-            let first: String = local.chars().take(1).collect();
-            let dom = domain
-                .split_once('.')
-                .map(|(d, tld)| {
-                    let f: String = d.chars().take(1).collect();
-                    format!("{f}….{tld}")
-                })
-                .unwrap_or_else(|| "…".into());
-            format!("{first}…@{dom}")
-        }
-        _ => s.to_string(),
-    }
-}
-
 /// Truncate to `max` display columns, adding an ellipsis when cut.
 pub fn trunc(s: &str, max: usize) -> String {
     use unicode_width::UnicodeWidthChar;
@@ -398,7 +380,6 @@ mod tests {
         assert_eq!(redact_key("my-alias"), "my-alias");
         assert_eq!(redact_key("sk-abcdefghijklmnopqrstuvwxyz"), "sk-abc…");
         assert_eq!(redact_key("legacy:0123456789abcdef"), "legacy:012345…");
-        assert_eq!(mask_email("alice@example.com"), "a…@e….com");
     }
 
     #[test]

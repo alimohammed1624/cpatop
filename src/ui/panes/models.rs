@@ -10,7 +10,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Paragraph, Wrap};
 
 const PRICE_COLS: [Col; 8] = [
     flex("model", 14),
@@ -254,7 +254,7 @@ pub fn recalc(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         lines.push(Line::from(vec![k("timezone"), v(o.timezone.clone())]));
     }
     f.render_widget(
-        Paragraph::new(lines),
+        Paragraph::new(lines).wrap(Wrap { trim: true }),
         Rect::new(
             inner.x + 1,
             inner.y,

@@ -11,37 +11,40 @@ use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Widget, Wrap};
 
 /// Wrap `text` to `width` columns; continuation lines get `indent` spaces.
 pub fn wrap_indent(text: &str, width: usize, indent: usize) -> Vec<String> {
+    let width = width.max(indent + 8);
     let mut out: Vec<String> = Vec::new();
     let mut cur = String::new();
-    let width = width.max(indent + 8);
-    let limit_now = |out: &Vec<String>| {
-        if out.is_empty() {
-            width
-        } else {
-            width - indent
-        }
-    };
+    let limit = |out: &Vec<String>| if out.is_empty() { width } else { width - indent };
     for word in text.split_whitespace() {
-        let limit = limit_now(&out);
-        if !cur.is_empty() && fmt::width(&cur) + 1 + fmt::width(word) > limit {
+        let ww = fmt::width(word);
+        if ww > limit(&out) / 2 {
+            // Long words (paths, URLs) start on the current line and are
+            // split wherever the line ends.
+            if !cur.is_empty() {
+                if fmt::width(&cur) + 2 > limit(&out) {
+                    out.push(std::mem::take(&mut cur));
+                } else {
+                    cur.push(' ');
+                }
+            }
+            let mut rest: String = word.to_string();
+            while fmt::width(&cur) + fmt::width(&rest) > limit(&out) {
+                let room = limit(&out).saturating_sub(fmt::width(&cur)).max(1);
+                let head: String = rest.chars().take(room).collect();
+                rest = rest.chars().skip(room).collect();
+                cur.push_str(&head);
+                out.push(std::mem::take(&mut cur));
+            }
+            cur.push_str(&rest);
+            continue;
+        }
+        if !cur.is_empty() && fmt::width(&cur) + 1 + ww > limit(&out) {
             out.push(std::mem::take(&mut cur));
         }
         if !cur.is_empty() {
             cur.push(' ');
         }
-        // Hard-split words longer than a line (paths, URLs).
-        let mut w = word.to_string();
-        while fmt::width(&cur) + fmt::width(&w) > limit_now(&out)
-            && fmt::width(&w) > limit_now(&out) / 2
-        {
-            let room = limit_now(&out).saturating_sub(fmt::width(&cur)).max(1);
-            let head: String = w.chars().take(room).collect();
-            let tail: String = w.chars().skip(room).collect();
-            cur.push_str(&head);
-            out.push(std::mem::take(&mut cur));
-            w = tail;
-        }
-        cur.push_str(&w);
+        cur.push_str(word);
     }
     if !cur.is_empty() {
         out.push(cur);
@@ -62,7 +65,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     let t = app.theme();
     let area = f.area();
     let w = 64.min(area.width.saturating_sub(2)).max(24.min(area.width));
-    let text_w = w.saturating_sub(4) as usize;
+    // Box borders, the body margin and the one-space line prefix.
+    let text_w = w.saturating_sub(5) as usize;
     // Warnings (e.g. a world-readable secret file) live inside the box.
     let warn_lines: Vec<String> = app
         .warnings
@@ -146,7 +150,7 @@ pub fn draw(f: &mut Frame, app: &App) {
                 "Cannot load data from the server",
                 Style::default().fg(t.err).add_modifier(Modifier::BOLD),
             )));
-            for l in wrap(message) {
+            for l in wrap(&app.privacy_text(message)) {
                 lines.push(Line::from(Span::styled(l, Style::default().fg(t.fg))));
             }
             let secs = retry_at.saturating_duration_since(app.now()).as_secs();
@@ -205,7 +209,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             ]));
             lines.push(Line::from(""));
             if let Some(e) = &form.error {
-                for l in wrap(&format!("✗ {e}")) {
+                for l in wrap(&format!("✗ {}", app.privacy_text(e))) {
                     lines.push(Line::from(Span::styled(
                         format!(" {l}"),
                         Style::default().fg(t.err).add_modifier(Modifier::BOLD),

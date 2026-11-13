@@ -5,8 +5,8 @@ use crate::api::models::Identity;
 use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
-use crate::ui::table::{Align, Col, TRow, col, flex, num, text};
-use crate::ui::widgets::{self, flow, health_color, meter, stat};
+use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, text};
+use crate::ui::widgets::{self, flow, health_color, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -64,7 +64,7 @@ const CRED_COLS: [Col; 11] = [
     col("P", 3, Align::Right, 8),
     col("state", 8, Align::Left, 4),
     col("req", 7, Align::Right, 0),
-    col("success", 15, Align::Left, 1),
+    grow("success", 14, 1),
     col("tokens", 7, Align::Right, 2),
     col("cache", 6, Align::Right, 7),
     col("health 5h", 15, Align::Left, 6),
@@ -118,16 +118,6 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                 )
             };
             let succ = fmt::ratio_pct(ok, req);
-            let mut sbar = meter(
-                succ.unwrap_or(0.0) / 100.0,
-                7,
-                t,
-                succ.map(|s| t.good_pct(s, 95.0, 80.0)),
-            );
-            sbar.push(Span::styled(
-                format!(" {:>6}", succ.map(|s| fmt::pct(s, 1)).unwrap_or("—".into())),
-                Style::default().fg(t.fg),
-            ));
             let state = if i.is_deleted {
                 Span::styled("deleted", Style::default().fg(t.err))
             } else if i.disabled {
@@ -152,7 +142,12 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                 )
                 .spans(vec![state], text(if i.disabled { "b" } else { "a" }))
                 .styled(fmt::count(req), Style::default().fg(t.title), num(req))
-                .spans(sbar, num(succ.unwrap_or(-1.0)))
+                .meter(
+                    succ.unwrap_or(0.0) / 100.0,
+                    succ.map(|s| t.good_pct(s, 95.0, 80.0)),
+                    format!(" {:>6}", succ.map(|s| fmt::pct(s, 1)).unwrap_or("—".into())),
+                    num(succ.unwrap_or(-1.0)),
+                )
                 .text(fmt::compact(tok), num(tok))
                 .text(
                     cache.map(|c| fmt::pct(c, 0)).unwrap_or("—".into()),
@@ -300,7 +295,10 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
                         e.model.clone().unwrap_or_default()
                     );
                     let room = w.saturating_sub(fmt::width(&head));
-                    let body = fmt::trunc(&e.body_summary.replace(['\n', '\r'], " "), room);
+                    let body = fmt::trunc(
+                        &app.privacy_text(&e.body_summary.replace(['\n', '\r'], " ")),
+                        room,
+                    );
                     lines.push(Line::from(vec![
                         Span::styled(head, Style::default().fg(t.graph_text)),
                         Span::styled(body, Style::default().fg(t.title)),

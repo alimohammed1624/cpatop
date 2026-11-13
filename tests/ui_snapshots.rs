@@ -316,3 +316,67 @@ fn keys_never_render_in_full() {
         assert!(!s.contains("demoKe"), "raw key prefix visible on {tab:?}");
     }
 }
+
+/// Fixture strings that identify people or keys: e-mail addresses contain
+/// `@`; the fixture API keys are masked as `dem***…` / `tst***…`.
+fn assert_private(s: &str, what: &str) {
+    assert!(!s.contains('@'), "e-mail visible in privacy mode ({what}):\n{s}");
+    for frag in ["dem", "tst", "xyz", "***", "127.0.0.1", "example.com"] {
+        assert!(
+            !s.contains(frag),
+            "{frag:?} visible in privacy mode ({what}):\n{s}"
+        );
+    }
+}
+
+#[test]
+fn privacy_mode_hides_every_identifier() {
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+    let key = |c: KeyCode| Event::Key(KeyEvent::new(c, KeyModifiers::NONE));
+    for role in [Role::Admin, Role::KeyViewer] {
+        let mut app = populated(role);
+        // Without privacy the fixtures do show identifiers…
+        let last = *app.tabs().last().unwrap();
+        let plain = render_tab(&mut app, last, 200, 60);
+        if role == Role::Admin {
+            assert!(plain.contains("dem…"), "{plain}");
+        }
+        // …and with it, none.
+        app.settings.privacy = true;
+        let tabs: Vec<Tab> = app.tabs().to_vec();
+        for tab in tabs {
+            for (w, h) in [(80, 24), (160, 48), (220, 60)] {
+                let s = render_tab(&mut app, tab, w, h);
+                assert_private(&s, &format!("{role:?} {} {w}x{h}", tab.key()));
+                if matches!(tab, Tab::Credentials | Tab::Quota | Tab::Events) {
+                    assert!(s.contains("account-"), "{s}");
+                }
+            }
+            // Every dimension of multi-dimension tables.
+            for _ in 0..4 {
+                app.on_event(key(KeyCode::Char('d')));
+                let s = render_tab(&mut app, tab, 200, 60);
+                assert_private(&s, &format!("{role:?} {} dims", tab.key()));
+            }
+        }
+        if role == Role::Admin {
+            // Pickers list keys and sources.
+            app.tab = Tab::Events;
+            for c in ['a', 'o'] {
+                render(&mut app, 160, 48);
+                app.on_event(key(KeyCode::Char(c)));
+                let s = render(&mut app, 160, 48);
+                assert_private(&s, &format!("picker {c}"));
+                app.on_event(key(KeyCode::Esc));
+            }
+            // With a key filter the header names the key.
+            render(&mut app, 160, 48);
+            app.on_event(key(KeyCode::Char('a')));
+            app.on_event(key(KeyCode::Down));
+            app.on_event(key(KeyCode::Enter));
+            let s = render(&mut app, 160, 48);
+            assert!(s.contains("key #1"), "{s}");
+            assert_private(&s, "key filter header");
+        }
+    }
+}

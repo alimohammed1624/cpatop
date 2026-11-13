@@ -20,7 +20,7 @@ use crate::range::{RtWindow, TimeRange, limits};
 use crate::theme::Theme;
 use chrono::{DateTime, FixedOffset, Utc};
 use ratatui::layout::Rect;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -225,6 +225,8 @@ pub struct App {
     pub warnings: Vec<String>,
     /// UTC offset of the server, learned from timestamps in its responses.
     pub server_offset: Option<FixedOffset>,
+    /// Privacy mode: stable `account-N` numbers per hidden identifier.
+    pub privacy_aliases: RefCell<HashMap<String, usize>>,
 }
 
 /// Dimensions of multi-dimension tables (`d` cycles them).
@@ -295,6 +297,7 @@ impl App {
             tab_by_role: ui.tab.clone(),
             warnings: Vec::new(),
             server_offset: None,
+            privacy_aliases: RefCell::new(HashMap::new()),
         };
         app.restore_ui(ui);
         app
@@ -448,9 +451,69 @@ impl App {
             .next()
     }
 
+    // ------------------------------------------------------------ privacy
+    //
+    // Privacy mode (`--privacy`, `x`) shows no part of any e-mail address or
+    // API key: e-mails become stable `account-N` labels, keys are named by
+    // their database id (plus an alias that is itself not an identifier),
+    // IP addresses are hidden.
+
+    /// Stable `account-N` label for an identifier.
+    fn alias_of(&self, s: &str) -> String {
+        let mut m = self.privacy_aliases.borrow_mut();
+        let next = m.len() + 1;
+        let n = *m.entry(s.to_string()).or_insert(next);
+        format!("account-{n}")
+    }
+
+    /// An identity name (credential, source, account). In privacy mode,
+    /// anything that is or contains an e-mail address or a key is replaced.
     pub fn privacy(&self, s: &str) -> String {
-        if self.settings.privacy && s.contains('@') {
-            crate::fmt::mask_email(s)
+        if self.settings.privacy && is_identifier(s) {
+            self.alias_of(s)
+        } else {
+            s.to_string()
+        }
+    }
+
+    /// Free text (error bodies, user agents, status messages): in privacy
+    /// mode every e-mail-like or key-like word is replaced.
+    pub fn privacy_text(&self, s: &str) -> String {
+        if !self.settings.privacy {
+            return s.to_string();
+        }
+        let mut out = String::with_capacity(s.len());
+        let mut word = String::new();
+        let flush = |word: &mut String, out: &mut String| {
+            if word.is_empty() {
+                return;
+            }
+            let core = word.trim_end_matches(['.', ',', ':', ';']);
+            if is_identifier(core) {
+                let tail = &word[core.len()..];
+                out.push_str(&self.alias_of(core));
+                out.push_str(tail);
+            } else {
+                out.push_str(word);
+            }
+            word.clear();
+        };
+        for c in s.chars() {
+            if c.is_whitespace() || "\"'()<>[]{}|=,".contains(c) {
+                flush(&mut word, &mut out);
+                out.push(c);
+            } else {
+                word.push(c);
+            }
+        }
+        flush(&mut word, &mut out);
+        out
+    }
+
+    /// An IP address (hidden in privacy mode).
+    pub fn ip(&self, s: &str) -> String {
+        if self.settings.privacy && !s.is_empty() && s != "-" {
+            "hidden".into()
         } else {
             s.to_string()
         }
@@ -458,14 +521,18 @@ impl App {
 
     // ------------------------------------------------------------ key names
 
-    /// Distinguishable API-key name: `#3 ci-bot xyz…` / `#1 xyz…`.
-    /// Never shows more of a key than its 3–6 character prefix.
+    /// Distinguishable API-key name: `#3 ci-bot xyz…` / `#1 xyz…`; in
+    /// privacy mode `key #3 ci-bot` / `key #1` — never any part of the key.
     pub fn key_name(&self, id: &str, label: &str) -> String {
         let item = self
             .data
             .api_keys
             .get()
             .and_then(|k| k.items.iter().find(|i| i.id == id));
+        if self.settings.privacy {
+            let alias = item.map(|i| i.key_alias.as_str()).unwrap_or("");
+            return private_key_name(id, alias);
+        }
         match item {
             Some(i) => key_item_name(i),
             None if id.is_empty() => crate::fmt::redact_key(label),
@@ -488,10 +555,14 @@ impl App {
                 .iter()
                 .filter(|i| i.label == label || (!i.key_alias.is_empty() && i.key_alias == label));
             if let (Some(i), None) = (m.next(), m.next()) {
-                return key_item_name(i);
+                return self.key_name(&i.id, &i.label);
             }
         }
-        crate::fmt::redact_key(label)
+        if self.settings.privacy {
+            "key".into()
+        } else {
+            crate::fmt::redact_key(label)
+        }
     }
 
     /// Name of the session's own key (API-key role).
@@ -499,10 +570,15 @@ impl App {
         let Some(k) = self.session.as_ref().and_then(|s| s.api_key.as_ref()) else {
             return String::new();
         };
+        let alias = k.alias.as_deref().unwrap_or("");
+        if self.settings.privacy {
+            return private_key_name(&k.id, alias);
+        }
         let prefix = crate::fmt::redact_key(&k.display_key);
-        match k.alias.as_deref().filter(|a| !a.is_empty()) {
-            Some(a) => format!("#{} {a} {prefix}", k.id),
-            None => format!("#{} {prefix}", k.id),
+        if alias.is_empty() {
+            format!("#{} {prefix}", k.id)
+        } else {
+            format!("#{} {alias} {prefix}", k.id)
         }
     }
 
@@ -1136,6 +1212,34 @@ impl App {
         self.live.reset();
         self.table_mut(PaneId::EvLog).selected = 0;
         self.table_mut(PaneId::EvLog).offset.set(0);
+    }
+}
+
+/// Whether a string is (or contains) an e-mail address or an API key, in
+/// full or masked form.
+pub fn is_identifier(s: &str) -> bool {
+    let s = s.trim();
+    if s.contains('@') || s.contains('*') || s.contains('…') {
+        return true;
+    }
+    // Long opaque tokens without separators look like keys.
+    s.len() >= 20
+        && !s.contains(' ')
+        && !s.contains('/')
+        && s.chars().any(|c| c.is_ascii_digit())
+        && s.chars().any(|c| c.is_ascii_uppercase())
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Privacy-mode key name: the id, plus the alias when it is not itself an
+/// identifier.
+fn private_key_name(id: &str, alias: &str) -> String {
+    let alias = alias.trim();
+    let id = if id.is_empty() { "?" } else { id };
+    if alias.is_empty() || is_identifier(alias) {
+        format!("key #{id}")
+    } else {
+        format!("key #{id} {alias}")
     }
 }
 

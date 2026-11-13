@@ -59,12 +59,14 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
         .items
         .iter()
         .map(|k| {
-            let masked = if k.source_type == "plugin" {
+            let masked = if k.source_type == "plugin" || app.settings.privacy {
                 "—".to_string()
             } else {
                 fmt::redact_key(&k.display_key)
             };
-            let name = if k.key_alias.is_empty() {
+            let name = if k.key_alias.is_empty()
+                || (app.settings.privacy && crate::app::is_identifier(&k.key_alias))
+            {
                 "—".to_string()
             } else {
                 k.key_alias.clone()
@@ -161,14 +163,16 @@ pub fn sessions(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
                 it.alias
                     .clone()
                     .filter(|a| !a.is_empty())
+                    .map(|a| app.privacy(&a))
                     .unwrap_or("admin".into())
             } else {
-                it.label
+                let label = it
+                    .label
                     .clone()
                     .filter(|l| !l.is_empty())
-                    .map(|l| fmt::redact_key(&l))
-                    .or(it.display_key.as_deref().map(fmt::redact_key))
-                    .unwrap_or("-".into())
+                    .or(it.display_key.clone())
+                    .unwrap_or_default();
+                app.key_name(&it.api_key_id, &label)
             };
             let via = match it.source.as_str() {
                 "standard" => "keeper",
@@ -176,12 +180,13 @@ pub fn sessions(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
                 other => other,
             }
             .to_string();
-            let ip = it
-                .last_seen_ip
-                .clone()
-                .or(it.login_ip.clone())
-                .unwrap_or("-".into());
-            let ua = it.user_agent.clone().unwrap_or_default();
+            let ip = app.ip(
+                &it.last_seen_ip
+                    .clone()
+                    .or(it.login_ip.clone())
+                    .unwrap_or("-".into()),
+            );
+            let ua = app.privacy_text(&it.user_agent.clone().unwrap_or_default());
             TRow::new(format!("{n}"))
                 .styled(
                     if it.kind == "admin" {
@@ -255,17 +260,17 @@ fn server_text(app: &App) -> Vec<Line<'static>> {
                 yes(s.cpa_request_log_access_enabled),
             ]));
             if let Some(ls) = &s.last_status {
-                lines.push(Line::from(vec![k("poller"), v(ls.clone())]));
+                lines.push(Line::from(vec![k("poller"), v(app.privacy_text(ls))]));
             }
             if let Some(w) = s.last_warning.as_ref().filter(|w| !w.is_empty()) {
                 lines.push(Line::from(Span::styled(
-                    format!("⚠ {w}"),
+                    format!("⚠ {}", app.privacy_text(w)),
                     Style::default().fg(t.warn),
                 )));
             }
             if let Some(e) = s.last_error.as_ref().filter(|e| !e.is_empty()) {
                 lines.push(Line::from(Span::styled(
-                    format!("✗ {e}"),
+                    format!("✗ {}", app.privacy_text(e)),
                     Style::default().fg(t.err),
                 )));
             }

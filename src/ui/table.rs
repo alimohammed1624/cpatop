@@ -334,16 +334,21 @@ fn allocate(cols: &[Col], content: &[usize], width: u16, keep: &[usize]) -> Vec<
             break;
         }
     }
-    // Meters take what is left.
+    // Meters take what is left, up to a readable length.
+    const MAX_GROW: u16 = 48;
     let growers: Vec<usize> = (0..keep.len()).filter(|k| cols[keep[*k]].grow).collect();
-    if !growers.is_empty() && spare > 0 {
-        let each = spare / growers.len() as u16;
-        let mut rest = spare % growers.len() as u16;
-        for k in growers {
-            widths[k] += each + if rest > 0 { 1 } else { 0 };
-            rest = rest.saturating_sub(1);
+    if !growers.is_empty() {
+        let mut gave = true;
+        while spare > 0 && gave {
+            gave = false;
+            for &k in &growers {
+                if spare > 0 && widths[k] < MAX_GROW {
+                    widths[k] += 1;
+                    spare -= 1;
+                    gave = true;
+                }
+            }
         }
-        spare = 0;
     }
     // Then breathing room between columns (up to two extra cells per gap).
     let gaps = keep.len().saturating_sub(1) as u16;
@@ -578,10 +583,13 @@ mod tests {
             grow("share", 12, 1),
             col("req", 5, Align::Right, 0),
         ];
-        let f = fit(&cols, &[10, 12, 4], 80);
+        let f = fit(&cols, &[10, 12, 4], 60);
         assert_eq!(f[0].width, 10);
         assert_eq!(f[2].width, 5);
-        assert_eq!(f[1].width, 80 - 10 - 5 - 2);
+        assert_eq!(f[1].width, 60 - 10 - 5 - 2);
+        // ...but not without limit.
+        let f = fit(&cols, &[10, 12, 4], 200);
+        assert_eq!(f[1].width, 48);
     }
 
     #[test]
@@ -607,5 +615,28 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(order(rows, &st).len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+
+    #[test]
+    fn selection_is_reverse_video_without_colour() {
+        let t = Theme {
+            no_color: true,
+            ..Default::default()
+        };
+        let cols = [flex("name", 6), col("n", 3, Align::Right, 0)];
+        let rows = vec![
+            TRow::new("a").text("alpha", text("a")).text("1", num(1.0)),
+            TRow::new("b").text("beta", text("b")).text("2", num(2.0)),
+        ];
+        let st = TableState::default();
+        let mut buf = Buffer::empty(Rect::new(0, 0, 20, 4));
+        render(&mut buf, Rect::new(0, 0, 20, 3), &t, &cols, &rows, &st, true);
+        assert!(buf[(0, 1)].modifier.contains(Modifier::REVERSED));
+        assert!(!buf[(0, 2)].modifier.contains(Modifier::REVERSED));
     }
 }

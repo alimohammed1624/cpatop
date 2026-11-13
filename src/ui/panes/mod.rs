@@ -86,10 +86,10 @@ pub fn size(app: &App, id: PaneId, w: u16) -> Size {
         AnHeatmap => table(analysis::heatmap_len(app)),
         EvLog => Size::at_least(8),
         EvDetail => Size::range(6, events::detail_lines(w.saturating_sub(3)) + 2),
-        CrList => Size::at_least(8),
+        CrList => table(app.data.identities.get().map(|p| p.identities.len())),
         CrDetail => Size::at_least(8),
         QuInspection => Size::exact(quota::inspection_lines(app, inner_w).max(1) + 2),
-        QuList => Size::at_least(8),
+        QuList => table(quota::list_len(app)),
         QuHistory => table(quota::history_len(app)),
         MoPricing | MoCatalog => Size::at_least(6),
         MoRecalc => Size::range(5, 10),
@@ -358,7 +358,12 @@ pub fn placeholder<T>(f: &mut Frame, app: &App, inner: Rect, l: &Loaded<T>) -> b
     }
     let t = app.theme();
     match &l.error {
-        Some(e) => widgets::message(f.buffer_mut(), inner, &format!("✗ {e}"), t.err),
+        Some(e) => widgets::message(
+            f.buffer_mut(),
+            inner,
+            &format!("✗ {}", app.privacy_text(e)),
+            t.err,
+        ),
         None => widgets::message(f.buffer_mut(), inner, "loading…", t.graph_text),
     }
     true
@@ -368,7 +373,7 @@ pub fn placeholder<T>(f: &mut Frame, app: &App, inner: Rect, l: &Loaded<T>) -> b
 pub fn stale_marker<T>(app: &App, l: &Loaded<T>) -> Vec<Span<'static>> {
     match (&l.data, &l.error) {
         (Some(_), Some(e)) => vec![Span::styled(
-            format!("▲ {}", fmt::trunc(e, 30)),
+            format!("▲ {}", fmt::trunc(&app.privacy_text(e), 30)),
             Style::default().fg(app.theme().err),
         )],
         _ => vec![],

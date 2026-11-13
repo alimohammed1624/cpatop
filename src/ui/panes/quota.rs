@@ -284,6 +284,27 @@ const HIST_COLS: [Col; 9] = [
     col("tok/1%", 7, Align::Right, 2),
 ];
 
+/// Rows of the quota table: one per window, at least one per credential.
+pub fn list_len(app: &App) -> Option<usize> {
+    let tasks = app.data.quota.get()?;
+    let ids = app.data.identities.get()?;
+    Some(
+        ids.identities
+            .iter()
+            .filter(|i| i.auth_type == 1 && !i.is_deleted)
+            .map(|i| match tasks.get(&i.identity) {
+                Some(Ok(t)) => t
+                    .quota
+                    .as_ref()
+                    .map(|q| q.quota.iter().filter(|r| r.used_pct().is_some()).count())
+                    .unwrap_or(0)
+                    .max(1),
+                _ => 1,
+            })
+            .sum(),
+    )
+}
+
 pub fn history_len(app: &App) -> Option<usize> {
     app.data
         .quota_history
