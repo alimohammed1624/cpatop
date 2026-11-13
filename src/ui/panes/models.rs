@@ -187,11 +187,31 @@ pub fn catalog(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
 }
 
 pub fn recalc(f: &mut Frame, app: &App, area: Rect, focused: bool) {
-    let t = app.theme();
     let inner = frame(f, app, PaneId::MoRecalc, area, focused, vec![], None);
     if placeholder(f, app, inner, &app.data.recalc) {
         return;
     }
+    f.render_widget(
+        Paragraph::new(recalc_text(app)).wrap(Wrap { trim: true }),
+        Rect::new(
+            inner.x + 1,
+            inner.y,
+            inner.width.saturating_sub(1),
+            inner.height,
+        ),
+    );
+}
+
+/// Outer width the recalculation status needs; the catalog beside it gets
+/// the rest of the row.
+pub fn recalc_width(app: &App) -> Option<u16> {
+    app.data.recalc.get()?;
+    let w = recalc_text(app).iter().map(Line::width).max()?;
+    Some((w + 4).min(u16::MAX as usize) as u16)
+}
+
+fn recalc_text(app: &App) -> Vec<Line<'static>> {
+    let t = app.theme();
     let k = |s: &str| Span::styled(format!("{s:<10}"), Style::default().fg(t.graph_text));
     let v = |s: String| Span::styled(s, Style::default().fg(t.title));
     let mut lines = vec![];
@@ -291,15 +311,7 @@ pub fn recalc(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         }
         lines.push(Line::from(vec![k("timezone"), v(o.timezone.clone())]));
     }
-    f.render_widget(
-        Paragraph::new(lines).wrap(Wrap { trim: true }),
-        Rect::new(
-            inner.x + 1,
-            inner.y,
-            inner.width.saturating_sub(1),
-            inner.height,
-        ),
-    );
+    lines
 }
 
 #[cfg(test)]

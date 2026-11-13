@@ -327,6 +327,13 @@ fn server_text(app: &App) -> Vec<Line<'static>> {
     lines
 }
 
+/// Outer width the server facts need; the sessions table beside them gets
+/// the rest of the row.
+pub fn server_width(app: &App) -> u16 {
+    let w = server_text(app).iter().map(Line::width).max().unwrap_or(0);
+    (w + 4).min(u16::MAX as usize) as u16
+}
+
 /// Rows the server pane needs at an inner width (long lines wrap).
 pub fn server_lines(app: &App, width: u16) -> u16 {
     let w = width.max(1) as usize;

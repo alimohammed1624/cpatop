@@ -114,11 +114,12 @@ pub fn size(app: &App, id: PaneId, w: u16) -> Size {
         QuList => table(quota::list_len(app)),
         QuHistory => quota::history_size(app),
         MoPricing | MoCatalog => Size::at_least(6),
-        MoRecalc => Size::range(5, 10),
+        MoRecalc => with_width(Size::range(5, 10), models::recalc_width(app)),
         // Spare rows chart the selected key's tokens.
         StKeys => table(app.data.api_keys.get().map(|k| k.items.len())).soaking(),
         StSessions => table(app.data.sessions.get().map(|s| s.items.len())),
-        StServer => Size::range(5, keys::server_lines(app, w.saturating_sub(4)) + 2),
+        StServer => Size::range(5, keys::server_lines(app, w.saturating_sub(4)) + 2)
+            .max_width(keys::server_width(app)),
     }
 }
 
