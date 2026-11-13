@@ -144,6 +144,8 @@ pub type Query = Vec<(&'static str, String)>;
 impl Client {
     pub fn new(base_url: &str) -> Result<Self, String> {
         let base = normalize_base_url(base_url)?;
+        // reqwest is built without a default crypto provider; install ring once.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let http = reqwest::Client::builder()
             .user_agent(concat!("cpatop/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(Duration::from_secs(5))
@@ -219,7 +221,15 @@ impl Client {
     }
 
     pub async fn startup_status(&self) -> Result<StartupStatus, ApiError> {
-        let s: StartupStatus = self.get("/startup/status", &vec![]).await?;
+        let s: StartupStatus = match self.get("/startup/status", &vec![]).await {
+            Err(ApiError::Decode(_)) => {
+                return Err(ApiError::Decode(format!(
+                    "{} did not answer like a CPA Usage Keeper API (non-JSON response) — check the base URL and sub-path",
+                    self.inner.base
+                )));
+            }
+            other => other?,
+        };
         if s.phase.is_empty() {
             return Err(ApiError::Decode(
                 "startup status has no phase — is this a CPA Usage Keeper URL?".into(),

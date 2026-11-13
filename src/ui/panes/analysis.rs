@@ -44,9 +44,10 @@ pub fn tokens(f: &mut Frame, app: &App, area: Rect, focused: bool) {
             ));
         }
         if let (Some(first), Some(last)) = (a.token_usage.first(), a.token_usage.last()) {
+            let pat = if daily(a) { "%m-%d" } else { "%m-%d %H:%M" };
             bottom = Some((
-                fmt::bucket_label(&first.bucket, daily(a)),
-                fmt::bucket_label(&last.bucket, daily(a)),
+                fmt::ts_fmt(&first.bucket, pat),
+                fmt::ts_fmt(&last.bucket, pat),
             ));
         }
     }
@@ -441,7 +442,9 @@ pub fn heatmap(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
     let mut cols: Vec<Col> = vec![flex("api key", 10)];
     for m in &h.models {
         let mut c = col("", 8, Align::Right, 1);
-        c.title = Cow::Owned(fmt::trunc(m, 8));
+        // Drop the vendor prefix ("claude-", "gpt-") so columns stay distinguishable.
+        let short = m.split_once('-').map(|(_, rest)| rest).unwrap_or(m);
+        c.title = Cow::Owned(fmt::trunc(short, 8));
         cols.push(c);
     }
     cols.push(col("total", 8, Align::Right, 0));

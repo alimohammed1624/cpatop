@@ -291,28 +291,19 @@ pub fn credential_detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, fo
                 Style::default().fg(t.graph_text),
             ))),
             (Some(errs), _) => {
+                let w = inner.width.saturating_sub(2) as usize;
                 for e in &errs.events {
+                    let head = format!(
+                        "{} HTTP {} {} ",
+                        fmt::ts_fmt(&e.timestamp, "%m-%d %H:%M:%S"),
+                        e.status_code,
+                        e.model.clone().unwrap_or_default()
+                    );
+                    let room = w.saturating_sub(fmt::width(&head));
+                    let body = fmt::trunc(&e.body_summary.replace(['\n', '\r'], " "), room);
                     lines.push(Line::from(vec![
-                        Span::styled(
-                            format!("{} ", fmt::ts_fmt(&e.timestamp, "%m-%d %H:%M:%S")),
-                            Style::default().fg(t.graph_text),
-                        ),
-                        Span::styled(
-                            format!("HTTP {} ", e.status_code),
-                            Style::default().fg(t.err),
-                        ),
-                        Span::styled(
-                            format!("{} ", e.model.clone().unwrap_or_default()),
-                            Style::default().fg(t.fg),
-                        ),
-                        Span::styled(
-                            format!(
-                                "{}{}",
-                                e.body_summary,
-                                if e.body_truncated { "…" } else { "" }
-                            ),
-                            Style::default().fg(t.title),
-                        ),
+                        Span::styled(head, Style::default().fg(t.graph_text)),
+                        Span::styled(body, Style::default().fg(t.title)),
                     ]));
                 }
             }
@@ -417,7 +408,7 @@ pub fn inspection(f: &mut Frame, app: &App, area: Rect, focused: bool) {
 const QUOTA_COLS: [Col; 8] = [
     flex("credential", 14),
     col("plan", 7, Align::Left, 4),
-    col("window", 9, Align::Left, 0),
+    col("window", 13, Align::Left, 0),
     col("left", 18, Align::Left, 0),
     col("resets in", 9, Align::Right, 1),
     col("tokens", 7, Align::Right, 2),

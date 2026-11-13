@@ -238,10 +238,13 @@ pub fn outcomes(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         .as_ref()
         .map(|i| i.outcomes.clone())
         .unwrap_or_default();
-    let req: Vec<f64> = out.iter().map(|o| o.requests).collect();
-    let fail: Vec<f64> = out.iter().map(|o| o.failures).collect();
-    let tr: f64 = req.iter().sum();
-    let tf: f64 = fail.iter().sum();
+    let raw_req: Vec<f64> = out.iter().map(|o| o.requests).collect();
+    let raw_fail: Vec<f64> = out.iter().map(|o| o.failures).collect();
+    let w = inner.width as usize;
+    let req = widgets::step_resample(&raw_req, w);
+    let fail = widgets::step_resample(&raw_fail, w);
+    let tr: f64 = raw_req.iter().sum();
+    let tf: f64 = raw_fail.iter().sum();
     let head = Line::from(vec![
         Span::styled("ok ", Style::default().fg(t.graph_text)),
         Span::styled(fmt::int(tr - tf), Style::default().fg(t.ok)),
@@ -561,6 +564,14 @@ pub fn cache(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         .map(|c| c.cache_read_rate.unwrap_or(0.0))
         .collect();
     let (latest, avg, tr) = trend_stats(&rates);
+    // Plot above a floor so small changes near 100% stay visible.
+    let lo = rates
+        .iter()
+        .copied()
+        .filter(|v| *v > 0.0)
+        .fold(100.0, f64::min);
+    let floor = ((lo - 5.0) / 10.0).floor().max(0.0) * 10.0;
+    let shifted: Vec<f64> = rates.iter().map(|v| (v - floor).max(0.0)).collect();
     let head = Line::from(vec![
         Span::styled("cache read ", Style::default().fg(t.graph_text)),
         Span::styled(
@@ -572,15 +583,19 @@ pub fn cache(f: &mut Frame, app: &App, area: Rect, focused: bool) {
             Style::default().fg(t.graph_text),
         ),
         trend_span(app, tr),
+        Span::styled(
+            format!("  axis {floor:.0}–100%"),
+            Style::default().fg(t.graph_text),
+        ),
     ]);
     f.buffer_mut()
         .set_line(inner.x + 1, inner.y, &head, inner.width.saturating_sub(1));
     f.render_widget(
         Graph {
-            data: &rates,
+            data: &shifted,
             theme: t,
             symbols: app.settings.graph_symbols,
-            max: Some(100.0),
+            max: Some(100.0 - floor),
             color: None,
         },
         Rect::new(

@@ -1124,6 +1124,11 @@ impl QuotaRow {
 
     /// Human label normalised the way the web app does.
     pub fn display_label(&self) -> String {
+        if self.scope.as_deref() == Some("quota_group")
+            && let Some(g) = self.group_label.as_ref().filter(|g| !g.is_empty())
+        {
+            return g.clone();
+        }
         if let Some(secs) = self.window.as_ref().and_then(|w| w.seconds) {
             match secs as i64 {
                 18_000 => return "5h".into(),

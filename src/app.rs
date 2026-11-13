@@ -275,6 +275,8 @@ pub struct App {
     pub window: RtWindow,
     pub api_key: Option<ApiKeyOption>,
     pub manual: u64,
+    /// See [`Query::nonce`].
+    pub nonce: u64,
     pub data: Data,
     pub live: LiveState,
     pub tables: HashMap<PaneId, TableState>,
@@ -338,6 +340,7 @@ impl App {
             tab: Tab::Overview,
             api_key: None,
             manual: 0,
+            nonce: 0,
             data: Data::default(),
             live: LiveState::default(),
             tables: HashMap::new(),
@@ -508,6 +511,7 @@ impl App {
             refresh: Duration::from_secs(self.settings.refresh_secs),
             slow: Duration::from_secs(self.settings.slow_refresh_secs),
             manual: self.manual,
+            nonce: self.nonce,
         }
     }
 
@@ -603,7 +607,15 @@ impl App {
 
     fn on_live(&mut self, e: LiveEvent) {
         let now = self.now();
-        self.live.last_frame = Some(now);
+        if matches!(
+            e,
+            LiveEvent::Snapshot(_)
+                | LiveEvent::Append(_)
+                | LiveEvent::Checkpoint(_)
+                | LiveEvent::Heartbeat(_)
+        ) {
+            self.live.last_frame = Some(now);
+        }
         match e {
             LiveEvent::Stopped => self.live.status = LiveStatus::Idle,
             LiveEvent::Connecting => self.live.status = LiveStatus::Connecting,
@@ -806,6 +818,14 @@ impl App {
 
     /// Error to show in the header for the current tab, if any.
     pub fn current_error(&self) -> Option<&str> {
+        if self.tab == Tab::Events {
+            match &self.live.status {
+                LiveStatus::Retrying { message, .. } | LiveStatus::Failed(message) => {
+                    return Some(message.as_str());
+                }
+                _ => {}
+            }
+        }
         self.tab_groups()
             .iter()
             .chain([Group::Meta].iter())
@@ -1059,6 +1079,7 @@ impl App {
                 ..Default::default()
             };
             self.table_mut(PaneId::EvLog).selected = 0;
+            self.nonce += 1;
             self.effects.push(Effect::SaveState);
         }
     }
@@ -1161,6 +1182,7 @@ impl App {
         self.data.analysis = Loaded::default();
         self.data.latency = Loaded::default();
         self.live = LiveState::default();
+        self.nonce += 1;
         self.flash(format!("api key filter: {label}"));
     }
 
@@ -1252,6 +1274,7 @@ impl App {
             KeyCode::Char('w') => {
                 self.window = self.window.next();
                 self.data.realtime = Loaded::default();
+                self.nonce += 1;
                 self.effects.push(Effect::SaveState);
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
@@ -1296,6 +1319,7 @@ impl App {
                     self.dims.insert(id, next);
                     let st = self.table_mut(id);
                     st.selected = 0;
+                    st.filter.clear();
                     self.flash(format!("showing {}", dims_for(id, self.role)[next]));
                     self.effects.push(Effect::SaveState);
                 }

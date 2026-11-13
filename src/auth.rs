@@ -54,6 +54,8 @@ pub struct AuthManager {
     /// Secret entered on the login screen, kept in memory for re-login.
     interactive: Option<Credential>,
     last_auto_login: Option<Instant>,
+    /// Consecutive expiries shortly after an automatic login.
+    quick_expiries: u32,
     /// Set once a configured credential was rejected, to avoid retry loops.
     auto_disabled: bool,
 }
@@ -94,6 +96,7 @@ impl AuthManager {
             epoch: 0,
             interactive: None,
             last_auto_login: None,
+            quick_expiries: 0,
             auto_disabled: false,
         }
     }
@@ -130,13 +133,16 @@ impl AuthManager {
                     }
                     self.client.set_token(None);
                     let _ = self.store.remove(self.client.base_url());
-                    // Avoid hammering the login endpoint if a fresh login expires at once.
-                    let recent = self
+                    // Re-login automatically, but stop if sessions keep dying
+                    // right after login (e.g. a revoked key or clock issue).
+                    let quick = self
                         .last_auto_login
                         .is_some_and(|t| t.elapsed() < Duration::from_secs(30));
-                    if recent {
+                    self.quick_expiries = if quick { self.quick_expiries + 1 } else { 0 };
+                    if self.quick_expiries >= 2 {
+                        self.quick_expiries = 0;
                         self.send(AuthEvent::NeedLogin {
-                            error: Some("session expired immediately after login".into()),
+                            error: Some("session keeps expiring right after login".into()),
                             mode: self.creds.preferred_mode(),
                         });
                     } else {

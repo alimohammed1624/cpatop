@@ -245,8 +245,8 @@ const OV_PRESETS: [Preset; 3] = [
         name: "balanced",
         rows: &[
             row(Fixed(5), 0, &[(OvTotals, 1)]),
-            row(Fill(3), 1, &[(OvTrend, 3), (OvActivity, 2)]),
-            row(Fill(4), 2, &[(OvDist, 1)]),
+            row(Fill(4), 1, &[(OvTrend, 3), (OvActivity, 2)]),
+            row(Fill(3), 2, &[(OvDist, 1)]),
         ],
     },
     Preset {

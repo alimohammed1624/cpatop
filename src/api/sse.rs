@@ -341,10 +341,13 @@ mod tests {
             }]
         );
         out = p.push(b"\ndata: x\rdata: y\r\r").unwrap();
-        assert_eq!(out.len(), 2);
+        // The final CR may be the first half of a CRLF, so it waits for more input.
+        assert_eq!(out.len(), 1);
         assert_eq!(out[0].event, "heartbeat");
-        assert_eq!(out[1].event, "message");
-        assert_eq!(out[1].data, "x\ny");
+        out = p.push(b"\n").unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].event, "message");
+        assert_eq!(out[0].data, "x\ny");
     }
 
     #[test]

@@ -102,6 +102,16 @@ pub fn resample(data: &[f64], n: usize) -> Vec<f64> {
     }
 }
 
+/// Nearest-bucket resampling (keeps bars crisp instead of interpolating).
+pub fn step_resample(data: &[f64], n: usize) -> Vec<f64> {
+    if data.is_empty() || n == 0 {
+        return vec![0.0; n];
+    }
+    (0..n)
+        .map(|j| data[(j * data.len() / n).min(data.len() - 1)])
+        .collect()
+}
+
 /// Filled area graph with a vertical low→high colour gradient.
 pub struct Graph<'a> {
     pub data: &'a [f64],

@@ -1,0 +1,28 @@
+---
+source: tests/ui_snapshots.rs
+expression: s
+---
+ cpatop ⌂ localhost:8318 │ admin │ ◷ today │ ⟳ 10s │ ↻ 0s ago │ ● ok     ? help
+─ Overview  Realtime  Analysis  Requests  Credentials  Quota  Models  Keys ─────
+╭─¹ tokens ──────────────────────────────────────────────────── today · daily ─╮
+│ tokens 123M   requests 1,176   cost $88.79 (partial)   $/1M $0.7206          │
+│ avg/bucket 41.1M                                                             │
+│⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣠⣤⣤⣤⣤⣤⣤⣤⣤⣤⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣿⣿⣿⣿⣿│
+╰─ 11-12 ────────────────────────────────────────────────────────────── 11-13 ─╯
+╭─² composition ◆ ──────── d ‹models› ─╮╭─³ models ────────────────────────────╮
+│name                     tokens    req││model                    tokens  share│
+│claude-opus-5-5           67.4M    718││claude-opus-5-5           67.4M  57.2%│
+│claude-fable-5-2          42.9M    307││claude-fable-5-2          42.9M  36.5%│
+│gpt-6.1-sol               7.43M     79││gpt-6.1-sol               7.43M   6.3%│
+╰──────────────────────────────────────╯╰──────────────────────────────────────╯
+╭─⁴ latency ─ p95 ttft 9.61s… ─╮╭─⁵ speed ─────────────────────────────────────╮
+│↑9.77s                        ││model                    mean per bucket      │
+│                              ││claude-opus-5-5             - ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁│
+│ 2.64s                        ││claude-fable-5-2            - ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁│
+╰─ ttft 1.12s → ─────── 2.18s ─╯╰────────────────────────────────────── 1-2/3 ─╯
+╭─⁶ efficiency ────────────────────────────────╮╭─⁷ heatmap ─ api key × model ─╮
+│model                tokens      cost     $/1M││api key        total      cost│
+│claude-fable-5-2      42.9M    $46.96    $1.09││dem…            110M    $86.91│
+│claude-opus-5-5       67.4M    $39.95  $0.5930││                              │
+│gpt-6.1-sol           7.43M     $1.59  $0.2133││                              │
+╰──────────────────────────────────────────────╯╰──────────────────────────────╯

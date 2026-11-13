@@ -57,6 +57,8 @@ pub struct Query {
     pub refresh: Duration,
     pub slow: Duration,
     pub manual: u64,
+    /// Bumped when the UI discards range-scoped data, forcing a refetch.
+    pub nonce: u64,
 }
 
 impl Default for Query {
@@ -71,6 +73,7 @@ impl Default for Query {
             refresh: Duration::from_secs(10),
             slow: Duration::from_secs(60),
             manual: 0,
+            nonce: 0,
         }
     }
 }
@@ -89,8 +92,10 @@ impl Query {
             "self"
         };
         match g {
-            Group::Overview | Group::Analysis => format!("{role}|{}|{key}", self.range),
-            Group::Realtime => format!("{role}|{}|{key}", self.window.param()),
+            Group::Overview | Group::Analysis => {
+                format!("{role}|{}|{key}|{}", self.range, self.nonce)
+            }
+            Group::Realtime => format!("{role}|{}|{key}|{}", self.window.param(), self.nonce),
             _ => role.to_string(),
         }
     }
@@ -468,13 +473,13 @@ mod tests {
             role: Some(Role::Admin),
             ..Default::default()
         };
-        assert_eq!(q.scope(Group::Overview), "admin|today|all");
+        assert_eq!(q.scope(Group::Overview), "admin|today|all|0");
         q.api_key_id = Some("3".into());
-        assert_eq!(q.scope(Group::Analysis), "admin|today|3");
+        assert_eq!(q.scope(Group::Analysis), "admin|today|3|0");
         assert!(q.relevant(Group::Overview));
         assert!(!q.relevant(Group::Analysis));
         q.role = Some(Role::KeyViewer);
-        assert_eq!(q.scope(Group::Realtime), "api-key|15m|self");
+        assert_eq!(q.scope(Group::Realtime), "api-key|15m|self|0");
         assert!(!q.relevant(Group::KeyOptions));
         q.role = None;
         assert!(!q.relevant(Group::Meta));

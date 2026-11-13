@@ -80,7 +80,7 @@ pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let bottom = if app.live.loading_more {
         Some(("loading older…".to_string(), String::new()))
     } else if app.live.has_more {
-        Some((String::new(), "scroll for more".to_string()))
+        Some(("↓ scroll for older".to_string(), String::new()))
     } else {
         None
     };

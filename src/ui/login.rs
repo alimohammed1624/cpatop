@@ -174,7 +174,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     if !app.warnings.is_empty() && area.height > h + 2 {
         let y = r.bottom();
-        for (i, wmsg) in app.warnings.iter().take(3).enumerate() {
+        let room = area.bottom().saturating_sub(y) as usize;
+        for (i, wmsg) in app.warnings.iter().take(3.min(room)).enumerate() {
             f.buffer_mut().set_string(
                 r.x,
                 y + i as u16,
