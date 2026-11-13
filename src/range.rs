@@ -125,6 +125,34 @@ impl TimeRange {
         }
     }
 
+    /// The span the range covers, `[start, end)`, in the server's zone:
+    /// calendar ranges run midnight to midnight (today's end is tonight),
+    /// rolling ranges end now.
+    pub fn bounds(
+        self,
+        now: DateTime<FixedOffset>,
+    ) -> (DateTime<FixedOffset>, DateTime<FixedOffset>) {
+        let off = *now.offset();
+        let midnight = |d: NaiveDate| {
+            off.from_local_datetime(&d.and_time(NaiveTime::MIN))
+                .single()
+                .unwrap_or(now)
+        };
+        let today = now.date_naive();
+        match self {
+            TimeRange::Today | TimeRange::Days(1) => {
+                (midnight(today), midnight(today + Duration::days(1)))
+            }
+            TimeRange::Yesterday => (midnight(today - Duration::days(1)), midnight(today)),
+            TimeRange::Hours(h) => (now - Duration::hours(h as i64), now),
+            TimeRange::Days(d) => (now - Duration::days(d as i64), now),
+            TimeRange::Custom(Custom::Days { start, end }) => {
+                (midnight(start), midnight(end + Duration::days(1)))
+            }
+            TimeRange::Custom(Custom::Hours { start, end }) => (start, end + Duration::hours(1)),
+        }
+    }
+
     pub fn is_custom(self) -> bool {
         matches!(self, TimeRange::Custom(_))
     }

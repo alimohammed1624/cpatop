@@ -21,6 +21,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
+use std::borrow::Cow;
 
 const H: i64 = 3600;
 const D: i64 = 86_400;
@@ -81,6 +82,14 @@ impl Blocks {
             .timestamp_opt(t, 0)
             .single()
             .unwrap_or_else(|| self.off.timestamp_opt(0, 0).unwrap())
+    }
+
+    /// Row spans to try, finest first: those of the grain no longer than
+    /// the window (a six-day range gets week rows, not 52-day ones).
+    fn spans(&self) -> Vec<i64> {
+        let all = spans_for(&self.grain);
+        let len = (self.end - self.start).max(all[0]);
+        all.iter().copied().filter(|s| *s <= len).collect()
     }
 
     /// Local midnight at or before `t`.
@@ -198,7 +207,7 @@ fn plan_with(b: &Blocks, w: u16, h: u16, max_rh: u16) -> Plan {
     // (both maps, no pooling, drawn area, titled, rows): higher is better.
     type Score = (bool, bool, u32, bool, usize);
     let mut best: Option<(Plan, Score)> = None;
-    for &span in spans_for(&b.grain) {
+    for span in b.spans() {
         for rh in (1..=max_rh).filter(|r| *r <= 2) {
             for side in [false, true] {
                 let avail = if side { half } else { full };
@@ -238,7 +247,7 @@ fn plan_with(b: &Blocks, w: u16, h: u16, max_rh: u16) -> Plan {
     }
     best.map(|(p, _)| p).unwrap_or_else(|| {
         // Nothing fits: the coarsest grid, clipped to the rows available.
-        let span = *spans_for(&b.grain).last().unwrap_or(&D);
+        let span = *b.spans().last().unwrap_or(&D);
         Plan {
             grid: Grid::new(b, span, full, 1),
             both: false,
@@ -288,15 +297,90 @@ fn activity_head(app: &App, a: &Activity) -> Vec<Vec<Span<'static>>> {
     ]
 }
 
+/// The server's grid has a fixed span per window and ignores the selected
+/// range's own span: any custom day range gets the last year, 2–7 days the
+/// last week, 8–29 days the last 30 days, 5–23 hours the last 24 hours.
+/// What is shown is cropped to the selected range (totals recomputed from
+/// the blocks inside it); the second value names the server's window when
+/// it was cropped.
+fn shown<'a>(app: &App, a: &'a Activity) -> (Cow<'a, Activity>, Option<&'static str>) {
+    let (rs, re) = app.range.bounds(app.server_now());
+    match crop(a, rs, re) {
+        Some((c, server)) => (Cow::Owned(c), Some(server)),
+        None => (Cow::Borrowed(a), None),
+    }
+}
+
+/// `a` cut to `[rs, re)`, with the server window's name, or `None` when the
+/// server's window already matches the range (within half a block).
+fn crop(
+    a: &Activity,
+    rs: DateTime<FixedOffset>,
+    re: DateTime<FixedOffset>,
+) -> Option<(Activity, &'static str)> {
+    let ws = fmt::parse_ts(&a.window_start)?.timestamp();
+    let we = fmt::parse_ts(&a.window_end)?.timestamp();
+    let half = (a.bucket_seconds / 2.0).max(1.0) as i64;
+    let (s, e) = (ws.max(rs.timestamp()), we.min(re.timestamp()));
+    if (s - ws <= half && we - e <= half) || e <= s {
+        return None;
+    }
+    let server = match a.window.as_str() {
+        "day" => "24h",
+        "week" => "7d",
+        "month" => "30d",
+        "year" => "1y",
+        _ => "?",
+    };
+    let mut c = a.clone();
+    // A block belongs to the range when most of it is inside.
+    c.blocks.retain(|b| {
+        let (Some(bs), Some(be)) = (fmt::parse_ts(&b.start_time), fmt::parse_ts(&b.end_time))
+        else {
+            return false;
+        };
+        let mid = (bs.timestamp() + be.timestamp()) / 2;
+        (s..e).contains(&mid)
+    });
+    let sum =
+        |f: fn(&crate::api::models::ActivityBlock) -> f64| c.blocks.iter().map(f).sum::<f64>();
+    c.total_success = sum(|b| b.success);
+    c.total_failure = sum(|b| b.failure);
+    let n = c.total_success + c.total_failure;
+    c.success_rate = if n > 0.0 {
+        c.total_success / n * 100.0
+    } else {
+        0.0
+    };
+    c.input_tokens = sum(|b| b.input_tokens);
+    c.output_tokens = sum(|b| b.output_tokens);
+    c.reasoning_tokens = sum(|b| b.reasoning_tokens);
+    c.cache_read_tokens = sum(|b| b.cache_read_tokens);
+    c.cache_creation_tokens = sum(|b| b.cache_creation_tokens);
+    c.total_tokens = sum(|b| b.total_tokens);
+    let off = *rs.offset();
+    let ts = |t: i64| {
+        off.timestamp_opt(t, 0)
+            .single()
+            .map(|d| d.to_rfc3339())
+            .unwrap_or_default()
+    };
+    c.window_start = ts(s);
+    c.window_end = ts(e);
+    Some((c, server))
+}
+
 pub fn activity_size(app: &App, w: u16) -> Size {
     let Some(a) = app.data.activity.get() else {
         return Size::at_least(6);
     };
+    let (a, _) = shown(app, a);
+    let a = a.as_ref();
     let head = flow(activity_head(app, a), w.saturating_sub(3), 2).len() as u16;
     let Some(b) = Blocks::new(a, *app.server_now().offset()) else {
         return Size::at_least(6);
     };
-    let span = *spans_for(&b.grain).last().unwrap_or(&D);
+    let span = *b.spans().last().unwrap_or(&D);
     let rows = Grid::new(&b, span, w, 1).rows as u16;
     // Borders, head, legend and the coarsest single map at least.
     let min = 2 + head + 1 + rows;
@@ -306,7 +390,7 @@ pub fn activity_size(app: &App, w: u16) -> Size {
     let inner_w = w.saturating_sub(2);
     // The finest rows, one line each: side by side when both maps fit the
     // width, stacked otherwise.
-    let finest = spans_for(&b.grain)[0];
+    let finest = b.spans()[0];
     let half = (inner_w.saturating_sub(1) / 2).saturating_sub(LABEL_W + 1);
     let full = inner_w.saturating_sub(LABEL_W + 1);
     let side = Grid::fit(&b, finest, half, 1, 2);
@@ -405,7 +489,8 @@ pub fn activity(f: &mut Frame, app: &App, area: Rect, focused: bool) {
     let t = app.theme();
     let l = &app.data.activity;
     let mut right = stale_marker(app, l);
-    if let Some(a) = l.get()
+    let shown = l.get().map(|a| shown(app, a));
+    if let Some((a, cropped)) = &shown
         && right.is_empty()
     {
         let pat = match a.grain.as_str() {
@@ -417,6 +502,17 @@ pub fn activity(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         let off = *app.server_now().offset();
         let parse = |s: &str| fmt::parse_ts(s).map(|d| d.with_timezone(&off));
         let text = match (parse(&a.window_start), parse(&a.window_end)) {
+            // Cropped to the selected range: the range, then the server's
+            // window, so it is clear the server answered for a longer span.
+            (Some(_), Some(_)) if cropped.is_some() => {
+                let server = cropped.unwrap_or_default();
+                let range = app.range.label();
+                if area.width >= 50 {
+                    format!("{range} · server window {server}")
+                } else {
+                    format!("{range} · of {server}")
+                }
+            }
             // A whole local day (today, yesterday): just the date.
             (Some(s), Some(e))
                 if (e - s).num_seconds() == D && s.time() == chrono::NaiveTime::MIN =>
@@ -448,7 +544,8 @@ pub fn activity(f: &mut Frame, app: &App, area: Rect, focused: bool) {
     if placeholder(f, app, inner, l) {
         return;
     }
-    let Some(a) = l.get() else { return };
+    let Some((a, _)) = &shown else { return };
+    let a = a.as_ref();
     let head = flow(activity_head(app, a), inner.width.saturating_sub(1), 2);
     let hh = (head.len() as u16).min(inner.height);
     f.render_widget(
@@ -669,6 +766,76 @@ mod tests {
         let g = Grid::new(&b, 2 * H, 60, 1);
         assert_eq!(b.local(g.origin).format("%M").to_string(), "00");
         assert!(g.origin <= b.start);
+    }
+
+    #[test]
+    fn custom_days_are_cropped_from_the_server_year() {
+        use crate::api::models::ActivityBlock;
+        use crate::range::{Custom, TimeRange};
+        // The server answers any custom day range with the last 364 days.
+        let start = fmt::parse_ts("2025-11-15T00:00:00+05:30").unwrap();
+        let blocks: Vec<ActivityBlock> = (0..364)
+            .map(|i| {
+                let s = start + chrono::Duration::days(i);
+                ActivityBlock {
+                    start_time: s.to_rfc3339(),
+                    end_time: (s + chrono::Duration::days(1)).to_rfc3339(),
+                    success: 10.0,
+                    failure: if i % 2 == 0 { 1.0 } else { 0.0 },
+                    total_tokens: 1000.0,
+                    ..Default::default()
+                }
+            })
+            .collect();
+        let a = Activity {
+            window: "year".into(),
+            grain: "daily".into(),
+            bucket_seconds: 86400.0,
+            window_start: start.to_rfc3339(),
+            window_end: "2026-11-14T00:00:00+05:30".into(),
+            total_success: 3640.0,
+            total_tokens: 364_000.0,
+            blocks,
+            ..Default::default()
+        };
+        let now = fmt::parse_ts("2026-11-13T22:00:00+05:30").unwrap();
+        let day = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        let r = TimeRange::Custom(Custom::Days {
+            start: day("2026-11-08"),
+            end: day("2026-11-13"),
+        });
+        let (rs, re) = r.bounds(now);
+        let (c, server) = crop(&a, rs, re).expect("cropped");
+        assert_eq!(server, "1y");
+        assert_eq!(c.blocks.len(), 6);
+        assert_eq!(c.total_tokens, 6000.0);
+        assert_eq!(c.total_success, 60.0);
+        assert_eq!(c.window_start, "2026-11-08T00:00:00+05:30");
+        assert_eq!(c.window_end, "2026-11-14T00:00:00+05:30");
+        // The grid now starts at the range: one row of a week.
+        let b = Blocks::new(&c, *now.offset()).unwrap();
+        let p = plan(&b, 80, 20);
+        assert_eq!(p.grid.rows, 1);
+        // Today matches the server's window: nothing to crop.
+        let today = Activity {
+            window: "day".into(),
+            bucket_seconds: 238.0,
+            window_start: "2026-11-13T00:00:00+05:30".into(),
+            window_end: "2026-11-14T00:00:00+05:30".into(),
+            ..Default::default()
+        };
+        let (rs, re) = TimeRange::Today.bounds(now);
+        assert!(crop(&today, rs, re).is_none());
+        // 8 h of the server's 24 h: cropped.
+        let (rs, re) = TimeRange::Hours(8).bounds(now);
+        let day24 = Activity {
+            window_start: "2026-11-12T22:00:00+05:30".into(),
+            window_end: "2026-11-13T22:00:00+05:30".into(),
+            ..today
+        };
+        let (c, server) = crop(&day24, rs, re).unwrap();
+        assert_eq!(server, "24h");
+        assert_eq!(c.window_start, "2026-11-13T14:00:00+05:30");
     }
 
     #[test]
