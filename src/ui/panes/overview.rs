@@ -179,7 +179,7 @@ fn trend_series(app: &App) -> Option<Trend> {
             }
         }
         // The `today` axis runs to midnight; stop at the current bucket.
-        let keep = crate::series::until_now(&c.buckets, app.clock.utc()).max(1);
+        let keep = crate::series::until_now(&c.buckets, app.server_now()).max(1);
         tokens.truncate(keep);
         reqs.truncate(keep);
         let buckets = c.buckets[..keep.min(n)].to_vec();
@@ -362,7 +362,7 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
         .data
         .comparisons
         .get()
-        .map(|c| crate::series::until_now(&c.buckets, app.clock.utc()))
+        .map(|c| crate::series::until_now(&c.buckets, app.server_now()))
         .unwrap_or(usize::MAX);
     let dim = app.dim(PaneId::OvDist);
     let dim_name = crate::app::dims_for(PaneId::OvDist, app.role)

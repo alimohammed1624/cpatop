@@ -145,7 +145,7 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
     let chart_for = |id: &str| -> Option<RowChart> {
         let c = app.data.key_usage.get()?;
         let item = c.api_keys.iter().find(|k| k.key == id);
-        let keep = crate::series::until_now(&c.buckets, app.clock.utc());
+        let keep = crate::series::until_now(&c.buckets, app.server_now());
         let n = keep.min(c.buckets.len());
         let values = item
             .map(|i| i.token_series[..n.min(i.token_series.len())].to_vec())

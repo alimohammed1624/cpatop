@@ -292,18 +292,29 @@ impl Window {
 
 /// Drop buckets that start after `now` (the `today` axes run to midnight).
 /// Returns how many leading buckets to keep.
-pub fn until_now(buckets: &[String], now: DateTime<Utc>) -> usize {
+///
+/// `now` must carry the server's offset: a date-only label (`YYYY-MM-DD`)
+/// starts at local midnight in that offset, not at UTC midnight — in a
+/// +05:30 zone the current day would otherwise be dropped from local
+/// midnight until 05:30, and in a −08:00 zone tomorrow's (empty) bucket
+/// would be kept from 16:00 on.
+pub fn until_now(buckets: &[String], now: DateTime<FixedOffset>) -> usize {
+    let off = *now.offset();
     buckets
         .iter()
-        .position(|b| {
-            let start = if b.len() == 10 {
-                label_day(b).and_then(|d| d.and_hms_opt(0, 0, 0).map(|t| t.and_utc()))
-            } else {
-                parse_ts(b).map(|t| t.with_timezone(&Utc))
-            };
-            start.is_some_and(|s| s > now)
-        })
+        .position(|b| bucket_start(b, off).is_some_and(|s| s > now))
         .unwrap_or(buckets.len())
+}
+
+/// The instant a bucket label starts: RFC 3339 labels carry their own
+/// offset, date-only labels start at midnight in `off` (the server zone).
+pub fn bucket_start(label: &str, off: FixedOffset) -> Option<DateTime<FixedOffset>> {
+    if label.len() == 10 {
+        let d = NaiveDate::parse_from_str(label, "%Y-%m-%d").ok()?;
+        midnight(d, off).map(|t| t.with_timezone(&off))
+    } else {
+        parse_ts(label)
+    }
 }
 
 #[cfg(test)]
@@ -527,6 +538,94 @@ mod tests {
         ]
         .map(String::from)
         .to_vec();
-        assert_eq!(until_now(&b, now("2026-11-13T13:50:00Z")), 2);
+        let at = |s: &str| parse_ts(s).unwrap();
+        assert_eq!(until_now(&b, at("2026-11-13T19:20:00+05:30")), 2);
+        // The same instant seen in UTC changes nothing for RFC 3339 labels.
+        assert_eq!(until_now(&b, at("2026-11-13T13:50:00+00:00")), 2);
+    }
+
+    fn days(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn date_only_buckets_start_at_server_midnight_ist() {
+        // 7d in +05:30, live shape: the axis ends with today's date.
+        let b = days(&["2026-11-12", "2026-11-13", "2026-11-14"]);
+        let at = |s: &str| parse_ts(s).unwrap();
+        // 00:30 local = 19:00 UTC the day before: today's bucket stays (the
+        // old UTC-midnight reading dropped it until 05:30 local).
+        assert_eq!(until_now(&b, at("2026-11-14T00:30:00+05:30")), 3);
+        // Exactly local midnight: the bucket starts now, it is not future.
+        assert_eq!(until_now(&b, at("2026-11-14T00:00:00+05:30")), 3);
+        // One second before local midnight: 11-14 is still tomorrow.
+        assert_eq!(until_now(&b, at("2026-11-13T23:59:59+05:30")), 2);
+        // Around UTC midnight (05:30 local) nothing changes.
+        assert_eq!(until_now(&b, at("2026-11-14T05:29:59+05:30")), 3);
+        assert_eq!(until_now(&b, at("2026-11-14T05:30:00+05:30")), 3);
+    }
+
+    #[test]
+    fn date_only_buckets_start_at_server_midnight_pst() {
+        // −08:00: UTC midnight is 16:00 local the day before. Reading the
+        // labels as UTC midnight kept tomorrow's empty bucket from 16:00.
+        let b = days(&["2026-11-12", "2026-11-13", "2026-11-14"]);
+        let at = |s: &str| parse_ts(s).unwrap();
+        assert_eq!(until_now(&b, at("2026-11-13T16:30:00-08:00")), 2);
+        assert_eq!(until_now(&b, at("2026-11-13T15:59:59-08:00")), 2);
+        assert_eq!(until_now(&b, at("2026-11-13T23:59:59-08:00")), 2);
+        assert_eq!(until_now(&b, at("2026-11-14T00:00:00-08:00")), 3);
+        assert_eq!(until_now(&b, at("2026-11-14T00:00:01-08:00")), 3);
+    }
+
+    #[test]
+    fn date_only_buckets_in_utc() {
+        let b = days(&["2026-11-12", "2026-11-13", "2026-11-14"]);
+        let at = |s: &str| parse_ts(s).unwrap();
+        assert_eq!(until_now(&b, at("2026-11-13T23:59:59+00:00")), 2);
+        assert_eq!(until_now(&b, at("2026-11-14T00:00:00+00:00")), 3);
+        assert_eq!(until_now(&b, at("2026-11-14T00:00:01+00:00")), 3);
+    }
+
+    #[test]
+    fn hourly_buckets_around_local_and_utc_midnight() {
+        // `today` in +05:30 just after local midnight: UTC-hour buckets
+        // (the first relabelled to 00:00) run to the end of the day.
+        let b = days(&[
+            "2026-11-14T00:00:00+05:30",
+            "2026-11-14T00:30:00+05:30",
+            "2026-11-14T01:30:00+05:30",
+        ]);
+        let at = |s: &str| parse_ts(s).unwrap();
+        assert_eq!(until_now(&b, at("2026-11-14T00:05:00+05:30")), 1);
+        assert_eq!(until_now(&b, at("2026-11-14T00:30:00+05:30")), 2);
+        // −08:00 and UTC: on-the-hour buckets, now just past midnight.
+        let b = days(&["2026-11-14T00:00:00-08:00", "2026-11-14T01:00:00-08:00"]);
+        assert_eq!(until_now(&b, at("2026-11-14T00:01:00-08:00")), 1);
+        assert_eq!(until_now(&b, at("2026-11-13T23:59:00-08:00")), 0);
+        let b = days(&["2026-11-14T00:00:00+00:00", "2026-11-14T01:00:00+00:00"]);
+        assert_eq!(until_now(&b, at("2026-11-14T00:00:00+00:00")), 1);
+    }
+
+    #[test]
+    fn bucket_start_reads_dates_in_the_server_offset() {
+        let ist = FixedOffset::east_opt(5 * 3600 + 1800).unwrap();
+        let pst = FixedOffset::west_opt(8 * 3600).unwrap();
+        assert_eq!(
+            bucket_start("2026-11-14", ist).unwrap().to_rfc3339(),
+            "2026-11-14T00:00:00+05:30"
+        );
+        assert_eq!(
+            bucket_start("2026-11-14", pst).unwrap().to_rfc3339(),
+            "2026-11-14T00:00:00-08:00"
+        );
+        // RFC 3339 labels keep their own offset.
+        assert_eq!(
+            bucket_start("2026-11-14T02:30:00+05:30", pst)
+                .unwrap()
+                .to_rfc3339(),
+            "2026-11-14T02:30:00+05:30"
+        );
+        assert!(bucket_start("garbage!!!", ist).is_none());
     }
 }
