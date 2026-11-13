@@ -8,12 +8,7 @@ expression: s
 │ tokens 123M   requests 1,176   cost $88.79 (partial)   $/1M $0.7206          │
 │ avg/day 41.1M                                                                │
 │ 200M┤                                                                        │
-│     │                                                                        │
-│     │                                                                        │
 │     │                                                ⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤│
-│ 100M┤                                                ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
-│     │                                                ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
-│     │                                                ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
 │     │                                                ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
 │    0┤⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
 │     └11-12───────────────────11-12───────────────────11-13───────────────────│
@@ -22,7 +17,12 @@ expression: s
 │name                 tokens      req  ││model             tokens share        │
 │user1@example.com     99.3M      913  ││claude-opus-5-5    67.4M ■■■■■■  57.2%│
 │user3@example.com     11.0M      112  ││claude-fable-5-2   42.9M ■■■■■■  36.5%│
-│user9@example.com     7.76M       87  ││gpt-6.1-sol        7.43M ■■■■■■   6.3%│
-╰─ d dimension · s/S sort · / fi… ─────╯╰──────────────────────────────────────╯
-─⁴ latency  ▸ needs more rows —…─⁵ speed  ▸ needs more rows — enlarge, p layout…
-─⁶ efficiency  ▸ needs more rows — enlarge, p l…─⁷ heatmap  ▸ needs more rows —…
+╰─ d dimension · s/S sort · / f 1-2/3 ─╯╰────────────────────────────── 1-2/3 ─╯
+╭─⁴ latency ─ p95 ttft 9.61s… ─╮╭─⁵ speed ─────────────────────────────────────╮
+│↑9.77s                        ││model                mean  samples per bucket │
+│┈┈┈┈┈┈┈┈┈┈┈┈┈⠈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈⠠││claude-opus-5…          -      716            │
+│                             ┊││claude-fable-…          -      272            │
+│⠁ ⠐ ⢀                        ┊││gpt-6.1-sol             -       79            │
+│ 2.64s                        ││                                              │
+╰─ ttft 1.12s → ─────── 2.18s ─╯╰──────────────────────────────────────────────╯
+─⁶ efficiency  ▸ claude-opus-5-5 57% · claude…───⁷ heatmap  ▸ 1 keys × 3 mode…──
