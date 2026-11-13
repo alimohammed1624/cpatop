@@ -292,6 +292,10 @@ complete starting point. A user theme with a built-in name replaces it.
   `/auth/api-key-login` and `/auth/logout`. It never changes Keeper settings
   or data, never triggers quota refreshes and never calls the GitHub-backed
   update check.
+- Keeper buckets hourly series on UTC hours. In a zone with a half-hour
+  offset (+05:30) buckets start at :30 local time; the first `today` bucket
+  holds only local midnight to the next UTC hour and is labelled `00:00`,
+  and axis ticks sit on whole local hours.
 - `--privacy` (or `x`) hides every e-mail address, every part of an API
   key and every IP address, in tables, details, pickers, error text and the
   login and offline screens — handy for screenshots and screen sharing.

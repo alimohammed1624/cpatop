@@ -349,28 +349,36 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
         }
     }
     // Spare rows chart the selected credential's recent requests (the
-    // server's health window), so a quota can be read against its use.
+    // server's health window), so a quota can be read against its use; a
+    // credential without requests in that window shows all credentials
+    // instead, titled as such.
     let chart_for = |id: &str| -> Option<RowChart> {
-        let i = app
-            .data
-            .identities
-            .get()?
-            .identities
-            .iter()
-            .find(|i| i.identity == id)?;
+        let ids = &app.data.identities.get()?.identities;
+        let i = ids.iter().find(|i| i.identity == id)?;
         let h = i
             .credential_health
             .as_ref()
             .filter(|h| !h.buckets.is_empty())?;
         let starts: Vec<String> = h.buckets.iter().map(|b| b.start_time.clone()).collect();
+        let window = fmt::secs(h.window_seconds).replace(" 00m", "");
+        let own: Vec<f64> = h.buckets.iter().map(|b| b.success + b.failure).collect();
+        if own.iter().sum::<f64>() > 0.0 {
+            return Some(RowChart {
+                title: format!("{} · requests, last {window}", ident_name(app, i)),
+                labels: time_labels(&starts, false, false),
+                values: own,
+                fmt: fmt::count,
+                color: None,
+            });
+        }
+        let all = all_requests(app, &starts)?;
         Some(RowChart {
             title: format!(
-                "{} · requests, last {}",
-                ident_name(app, i),
-                fmt::secs(h.window_seconds).replace(" 00m", "")
+                "{} has no requests in the last {window} · all credentials",
+                ident_name(app, i)
             ),
             labels: time_labels(&starts, false, false),
-            values: h.buckets.iter().map(|b| b.success + b.failure).collect(),
+            values: all,
             fmt: fmt::count,
             color: None,
         })
@@ -420,6 +428,34 @@ pub fn list_len(app: &App) -> Option<usize> {
             })
             .sum(),
     )
+}
+
+/// Requests per health bucket summed over every quota credential, on the
+/// given bucket starts; `None` when there were none.
+fn all_requests(app: &App, starts: &[String]) -> Option<Vec<f64>> {
+    let mut v = vec![0.0; starts.len()];
+    for i in &app.data.identities.get()?.identities {
+        let Some(h) = &i.credential_health else {
+            continue;
+        };
+        for b in &h.buckets {
+            if let Some(k) = starts.iter().position(|s| *s == b.start_time) {
+                v[k] += b.success + b.failure;
+            }
+        }
+    }
+    (v.iter().sum::<f64>() > 0.0).then_some(v)
+}
+
+/// Whether the quota table has a requests chart to put spare rows to.
+pub fn list_has_chart(app: &App) -> bool {
+    app.data.identities.get().is_some_and(|p| {
+        p.identities.iter().any(|i| {
+            i.credential_health
+                .as_ref()
+                .is_some_and(|h| h.buckets.iter().any(|b| b.success + b.failure > 0.0))
+        })
+    })
 }
 
 /// Height of the history pane: one message line when there is nothing to

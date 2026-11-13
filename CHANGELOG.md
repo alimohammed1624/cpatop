@@ -112,6 +112,17 @@ All notable changes to cpatop are documented here. The format follows
   readable (distinct glyphs, reverse video).
 
 ### Fixed
+- `today`/`yesterday` hourly series in half-hour zones start at local
+  midnight: the first UTC-hour bucket (only data after midnight) is
+  labelled `00:00` instead of `23:30` of the previous day.
+- Quota's requests chart shows all credentials (titled as such) when the
+  selected one has no requests in the health window, and is left out when
+  none has.
+- Realtime share and speed tables share a row sized to their rows.
+- The Models recalc status is derived from status and stage
+  (`completed`, `running · recalculating events · 42%`).
+- The activity title names the server's fixed grid span (`last 30d`).
+- Privacy mode keeps a user agent's product/version tokens.
 - Without colour the active tab is bracketed (`[Quota]`); some terminals
   drop bold and reverse along with colour.
 - Quota charts the selected credential's recent requests under the table;

@@ -5,6 +5,22 @@
 use super::*;
 
 impl App {
+    /// Local midnight the selected range starts at, for calendar-day
+    /// ranges with hourly buckets (`today`, `yesterday`).
+    fn day_range_start(&self) -> Option<DateTime<FixedOffset>> {
+        let now = self.server_now();
+        let today = now
+            .date_naive()
+            .and_hms_opt(0, 0, 0)?
+            .and_local_timezone(*now.offset())
+            .single()?;
+        match self.range {
+            TimeRange::Today => Some(today),
+            TimeRange::Yesterday => Some(today - chrono::Duration::days(1)),
+            _ => None,
+        }
+    }
+
     pub fn on_msg(&mut self, msg: Msg) {
         match msg {
             Msg::Auth(e) => self.on_auth(e),
@@ -184,9 +200,18 @@ impl App {
             return;
         }
         let now = self.now();
+        let start = self.day_range_start();
         let d = &mut self.data;
         let err: Option<ApiError> = match payload {
-            Payload::Overview(r) => d.overview.apply(r, now),
+            Payload::Overview(r) => d.overview.apply(
+                r.map(|mut o| {
+                    if let Some(s) = start {
+                        crate::series::clip_first(&mut o.series.buckets, s);
+                    }
+                    o
+                }),
+                now,
+            ),
             Payload::Activity(r) => {
                 let e = d.activity.apply(r, now);
                 if let Some(ts) = self
@@ -201,6 +226,12 @@ impl App {
                 e
             }
             Payload::Comparisons(r) => {
+                let r = r.map(|mut c| {
+                    if let Some(s) = start {
+                        crate::series::clip_first(&mut c.buckets, s);
+                    }
+                    c
+                });
                 let e = d.comparisons.apply(r, now);
                 if let Some(b) = self.data.comparisons.get().and_then(|c| c.buckets.first()) {
                     let b = b.clone();
@@ -239,7 +270,15 @@ impl App {
                 }
                 e
             }
-            Payload::KeyUsage(r) => d.key_usage.apply(r, now),
+            Payload::KeyUsage(r) => d.key_usage.apply(
+                r.map(|mut c| {
+                    if let Some(s) = start {
+                        crate::series::clip_first(&mut c.buckets, s);
+                    }
+                    c
+                }),
+                now,
+            ),
             Payload::EventModels(r) => {
                 let e = d.event_models.apply(r, now);
                 let gone = match (&self.live.filters.model, self.data.event_models.get()) {

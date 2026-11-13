@@ -208,6 +208,30 @@ pub fn densify_analysis(a: &mut Analysis, now: DateTime<Utc>) {
         s.requests = axis.spread(&old, &s.requests);
     }
     a.model_usage.buckets = axis.labels.clone();
+    if !daily {
+        let off = *start.offset();
+        let mut labels: Vec<String> = a.token_usage.iter().map(|b| b.bucket.clone()).collect();
+        clip_first(&mut labels, start.with_timezone(&off));
+        for (b, l) in a.token_usage.iter_mut().zip(&labels) {
+            b.bucket = l.clone();
+        }
+        a.model_usage.buckets = labels;
+    }
+}
+
+/// The server buckets hourly series by UTC hour, so with a half-hour
+/// offset (+05:30) a `today` axis starts with a bucket labelled 23:30 of
+/// the previous day that only holds data from local midnight on. That
+/// bucket is relabelled to the range start (`00:00`), which is what it
+/// covers; nothing else changes.
+pub fn clip_first(labels: &mut [String], start: DateTime<FixedOffset>) {
+    let Some(first) = labels.first().and_then(|l| parse_ts(l)) else {
+        return;
+    };
+    let second = labels.get(1).and_then(|l| parse_ts(l));
+    if first < start && second.is_none_or(|s| s > start) {
+        labels[0] = start.to_rfc3339();
+    }
 }
 
 /// The span an analysis response actually covers: the server's
@@ -386,7 +410,10 @@ mod tests {
         };
         // 19:20 local.
         densify_analysis(&mut a, now("2026-11-13T13:50:00Z"));
-        assert_eq!(a.token_usage[0].bucket, "2026-11-12T23:30:00+05:30");
+        // The first UTC-hour slot starts at 23:30 but only holds data from
+        // midnight: it is labelled with the range start.
+        assert_eq!(a.token_usage[0].bucket, "2026-11-13T00:00:00+05:30");
+        assert_eq!(a.token_usage[1].bucket, "2026-11-13T00:30:00+05:30");
         assert_eq!(
             a.token_usage.last().unwrap().bucket,
             "2026-11-13T18:30:00+05:30"
@@ -473,6 +500,22 @@ mod tests {
         assert_eq!(w.length(), "19.3h");
         assert_eq!(w.bounds(), "00:00 → now");
         assert!(Window::of(&Analysis::default(), now("2026-11-13T13:50:00Z")).is_none());
+    }
+
+    #[test]
+    fn first_partial_utc_bucket_is_relabelled_to_midnight() {
+        let start = parse_ts("2026-11-13T00:00:00+05:30").unwrap();
+        let mut l = vec![
+            "2026-11-12T23:30:00+05:30".to_string(),
+            "2026-11-13T00:30:00+05:30".to_string(),
+        ];
+        clip_first(&mut l, start);
+        assert_eq!(parse_ts(&l[0]), Some(start));
+        assert_eq!(l[1], "2026-11-13T00:30:00+05:30");
+        // Whole-hour offsets are untouched.
+        let mut l = vec!["2026-11-13T00:00:00+05:30".to_string()];
+        clip_first(&mut l, start);
+        assert_eq!(l[0], "2026-11-13T00:00:00+05:30");
     }
 
     #[test]
