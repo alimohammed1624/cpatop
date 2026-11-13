@@ -341,12 +341,17 @@ pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
             Style::default().fg(if tf > 0.0 { t.err } else { t.graph_text }),
         ),
         Span::styled(
-            format!(
-                "  fail rate {}",
-                fmt::ratio_pct(tf, tr)
+            {
+                let rate = fmt::ratio_pct(tf, tr)
                     .map(|p| fmt::pct(p, 1))
-                    .unwrap_or("-".into())
-            ),
+                    .unwrap_or("-".into());
+                // Narrow panes: `fail 0 (0.0%)` so the rate is not cut.
+                if inner.width >= 40 {
+                    format!("  fail rate {rate}")
+                } else {
+                    format!(" ({rate})")
+                }
+            },
             Style::default().fg(t.graph_text),
         ),
     ];
