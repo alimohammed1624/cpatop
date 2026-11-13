@@ -6,6 +6,47 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Privacy: e-mail addresses with quoted local parts and escaped quotes
+  (`"alice \"bob\" smith"@example.org`) are masked from the start of their
+  field on screen, in typed input and on stderr; nothing of the local part
+  is left.
+- Privacy: `/` filters and picker searches are hidden as they are typed
+  (`••••• 5`), from the first character, also in pane titles; the range
+  editor shows only digits and separators.
+- Privacy: the change-server field shows the host name and port in clear,
+  like the header, and hides IP addresses, user info and the path.
+- `--privacy`, `--range`, `--theme`, `--symbols` and `--refresh` on the
+  command line apply to that run only and are no longer saved to
+  `ui-state.toml`; changes made in the app still are.
+- `cpatop --privacy paths` shows `~/.config/cpatop/…` instead of `‹key›`;
+  credential file errors name the option (`--password-file`) and show the
+  path only without privacy; messages show `‹path›`, not `(‹path›)`.
+- Daily charts start each day at the server's midnight, not UTC midnight:
+  with the server at +05:30 today's bucket no longer disappears from the
+  Overview trend, distribution sparklines and Keys chart for the first
+  hours after midnight.
+- Charts of `today` keep the whole day on the time axis (the part still to
+  come blank, the axis dotted) instead of stretching the first bucket into
+  a wall; totals and peaks count only buckets that have started.
+- The realtime cache-hit chart runs from 0 % like every other chart.
+- Panes too short for their content show a one-line summary instead of an
+  empty box; collapsed tables give a real summary instead of `0 rows`;
+  spare rows bring a collapsed pane back (quota table at 50×12).
+- `?` help lists only keys that work for the role (API-key sessions:
+  `F2…F4`, no API-key picker, requests or credential-name keys).
+- Requests title reads `51 loaded of 4,585 · 24h`; a plan from the quota
+  cache reads `(from quota)` everywhere.
+
+### Added
+- Hidden panes are listed next to the layout name (`hidden ²³`); `0` shows
+  them all.
+
+### Changed
+- GitHub Actions is the primary CI again (push to `main`, pull requests,
+  manual) and builds releases on `v*` tags; the local `scripts/ci.sh`,
+  `scripts/release.sh` and git hooks are an optional fallback.
+
 ## [0.2.0] - 2026-11-13
 
 A polish and hardening release. Privacy mode now covers everything cpatop

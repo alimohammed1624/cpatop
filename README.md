@@ -176,7 +176,9 @@ Useful flags: `--range 7d` (or `--range custom:2026-11-01..2026-11-07`),
 key when both credentials exist), `--privacy` (hide e-mails, keys and IPs),
 `--no-mouse`, `--no-keyring`, `--fresh-session`, `--logout-on-exit`,
 `--no-update-check`. Connection, credential and display flags may also follow a
-subcommand (`cpatop logout --base-url http://host:8318`).
+subcommand (`cpatop logout --base-url http://host:8318`). `--theme`, `--range`,
+`--refresh`, `--symbols` and `--privacy` apply to that run only; changes made in
+the app (`t`, `r`, `+`/`-`, `b`, `x`) are remembered.
 
 Sessions are remembered per server and role, and a stored session is checked
 with the server (`GET /auth/session`) and reused on the next start — cpatop
@@ -197,6 +199,7 @@ The focused pane lists its own keys in its bottom border; `?` shows them all.
 | `Tab` / `Shift-Tab`, `←` `→` | Next / previous tab (or click a tab); `F2`…`F9` jump to a tab |
 | `f` / `F` | Focus the next / previous table or graph (or click a pane) |
 | `1`–`9` | Hide / show the pane with that number (panes are numbered left to right, top to bottom) |
+| `0` | Show every pane hidden with `1`–`9` (hidden panes are listed next to the layout name) |
 | `p` / `l`, `P` | Next / previous layout preset |
 | `↑↓` `j`/`k`, `PgUp`/`PgDn`, `g`/`G` | Move the selection (mouse wheel scrolls) |
 | `Enter` | Every field of the selected row's record, untruncated: `↑↓` `PgUp`/`PgDn` `Home`/`End` (or the wheel) scroll it, `[` `]` (or `Shift-↑↓`) step to the previous / next row, `Esc` closes |
@@ -215,7 +218,7 @@ The focused pane lists its own keys in its bottom border; `?` shows them all.
 | `R` | Refresh now |
 | `t` / `T` | Next / previous theme |
 | `b` | Graph symbols: braille / block / ascii; on the offline screen: change the server URL (`Ctrl-S` on the login screen) |
-| `x` | Privacy mode: hide e-mails, API keys and IP addresses |
+| `x` | Privacy mode: hide e-mails, API keys and IP addresses, and what you type into `/` and picker searches (remembered) |
 | `X` `X` | Log out on the server (press twice within 3 s) |
 | `Esc` | Close the overlay / clear the filter or cursor — never quits |
 | `?` | Help (scrolls with `↑↓` `j`/`k` `PgUp`/`PgDn` `g`/`G` or the wheel; `Esc`, `?` or `q` close it) |
@@ -249,7 +252,9 @@ reused, a configured credential logs in, otherwise the login screen appears —
 and saved as `base_url` in the config file (`--config` if given; created with
 mode 0600 if missing; other keys and comments are kept). A `--base-url` flag
 or `CPATOP_BASE_URL` still wins on the next start, which the message points
-out. In privacy mode the field shows only the scheme and port (`http://•••:8318`).
+out. In privacy mode the field shows the scheme, host name and port as in the
+header (`http://localhost:8318`) and hides IP addresses, user info and the path
+(`http://•••••••••:8318/••••••`).
 With `--logout-on-exit`, a session held on the old server is logged out when you
 switch (kept stored if that server cannot be reached); otherwise it stays stored.
 
@@ -348,10 +353,15 @@ complete starting point. A user theme with a built-in name replaces it.
   `[A-Za-z0-9_.+/=-]` characters unless it is a model name the server
   reported, a timestamp, an API route or a host name. As a last line of
   defence every rendered frame is scanned the same way and overwritten in
-  place. Everything cpatop prints outside the UI — errors, hints, warnings,
-  reports, panics, argument errors — is scrubbed the same way, and file
-  paths are shown as `(‹path›)`, whenever privacy is on (`--privacy`, or
-  `privacy = true` in the config or saved state).
+  place. E-mail addresses with quoted local parts (`"a \"b\" c"@x.org`) are
+  masked from the start of their field. Text you type into `/` filters and
+  picker searches is shown as bullets and a count (`••••• 5`) from the first
+  character; filtering uses the real text. Everything cpatop prints outside
+  the UI — errors, hints, warnings, reports, panics, argument errors — is
+  scrubbed the same way; file paths in messages read `‹path›` (credential
+  files `--password-file`), and `cpatop paths` keeps the useful part
+  (`~/.config/cpatop/config.toml`), whenever privacy is on (`--privacy` for
+  one run, `x` in the app, or `privacy = true` in the config).
 
 ## Development
 
