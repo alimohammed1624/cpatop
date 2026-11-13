@@ -19,13 +19,17 @@ gradient meters and sparklines.
   gets the per-key dashboard (Overview, Realtime, Analysis). The UI adapts to
   the role the server reports.
 - **Live request log** over Server-Sent Events, with reconnect/backoff,
-  `Retry-After` handling, `reset` frames and an idle watchdog; scrolling to the
-  bottom pages in older requests.
+  `Retry-After` handling, `reset` frames and an idle watchdog; result, model
+  and source filters run on the server, and scrolling to the bottom pages in
+  older matching requests.
+- **Time ranges** from presets or custom day/hour ranges, and an API-key
+  filter, both through searchable pickers.
 - **btop look:** rounded panes with `─¹ name ─` titles, braille/block/ascii
-  graphs with a low→high colour gradient, `■` meters, per-row sparklines,
-  right-aligned numbers, heatmaps.
-- **Responsive:** layouts degrade from 220×60 down to 80×24 by dropping
-  low-priority columns and panes.
+  graphs with axes, time ticks and a cursor, `■` meters, per-row sparklines,
+  right-aligned numbers, labelled heatmaps.
+- **Responsive:** panes and columns size to their content from 220×60 down
+  to 80×24; when rows run out, low-priority panes collapse to one-line
+  summaries instead of being squeezed.
 - **Never blocks on the network:** each data group is polled by its own task on
   its own cadence; when a poll fails the last good data stays on screen and
   the header shows a stale marker.
@@ -59,23 +63,35 @@ All captured from a live Keeper with `--privacy`: e-mail addresses become
 
 ## Install
 
-Requires Rust 1.88+.
+**Release binaries.** Each [GitHub release](https://github.com/alimohammed1624/cpatop/releases)
+has static Linux binaries (x86_64, aarch64; musl, no OpenSSL) and macOS
+binaries (x86_64, aarch64, universal), plus `SHA256SUMS`:
 
 ```sh
-cargo install --path .           # or: cargo build --release
+# pick the archive for your platform from the release page
+tar xzf cpatop-v*-x86_64-unknown-linux-musl.tar.gz
+install -m 755 cpatop-*/cpatop ~/.local/bin/
 ```
 
-TLS uses rustls (no OpenSSL), so a static Linux binary builds with:
+**With cargo** (Rust 1.88+):
 
 ```sh
+cargo install --git https://github.com/alimohammed1624/cpatop --locked
+```
+
+**From source:**
+
+```sh
+git clone https://github.com/alimohammed1624/cpatop && cd cpatop
+cargo build --release            # target/release/cpatop
+# static Linux build:
 rustup target add x86_64-unknown-linux-musl
 cargo build --release --target x86_64-unknown-linux-musl
-# without musl-gcc installed, point ring's C build at your compiler:
-#   CC_x86_64_unknown_linux_musl=gcc cargo build --release --target x86_64-unknown-linux-musl
 ```
 
-OS-keyring support (macOS Keychain, freedesktop Secret Service) is on by
-default; build with `--no-default-features` to leave it out.
+TLS uses rustls, so no OpenSSL is needed. OS-keyring support (macOS
+Keychain, freedesktop Secret Service) is on by default; build with
+`--no-default-features` to leave it out.
 
 ## Usage
 
@@ -104,34 +120,47 @@ Other commands:
 | `cpatop themes [--dump NAME]` | List themes / print one as a TOML starting point |
 | `cpatop paths` | Show the config, theme and state paths in use |
 
-Useful flags: `--range 7d`, `--refresh 5`, `--theme nord`, `--symbols block`,
-`--auth api-key` (prefer the key when both credentials exist), `--privacy`
-(mask e-mail addresses), `--no-mouse`, `--no-keyring`, `--fresh-session`.
+Useful flags: `--range 7d` (or `--range custom:2026-11-01..2026-11-07`),
+`--refresh 5`, `--theme nord`, `--symbols block`, `--auth api-key` (prefer the
+key when both credentials exist), `--privacy` (hide e-mails, keys and IPs),
+`--no-mouse`, `--no-keyring`, `--fresh-session`.
+
+Sessions are remembered per server and role. A credential given explicitly
+for this run (`--password-file`, `--api-key-file`, `CPATOP_PASSWORD`,
+`CPATOP_API_KEY`) decides the role, so `--api-key-file` always opens the
+per-key dashboard even when an admin session is stored.
 Run `cpatop --help` for the full list.
 
 ## Keys
 
+The focused pane lists its own keys in its bottom border; `?` shows them all.
+
 | Key | Action |
 |---|---|
-| `Tab` / `→`, `Shift-Tab` / `←` | Next / previous tab (or click a tab) |
-| `1`–`9` | Toggle the pane with that number |
+| `Tab` / `Shift-Tab`, `←` `→` | Next / previous tab (or click a tab); `F2`…`F9` jump to a tab |
+| `f` / `F` | Focus the next / previous table or graph (or click a pane) |
+| `1`–`9` | Hide / show the pane with that number |
 | `p` / `l`, `P` | Next / previous layout preset |
-| `f` | Focus the next table (or click a pane) |
 | `↑↓` `j`/`k`, `PgUp`/`PgDn`, `g`/`G` | Move the selection (mouse wheel scrolls) |
-| `/` | Filter the focused table (`Enter` keeps, `Esc` clears) |
-| `s` / `S` | Sort by the next column / flip direction |
+| `/` | Find in the focused table (`Enter` keeps, `Esc` clears) |
+| `s` / `S` | Sort by the next column / reverse |
 | `d` | Switch dimension: models, API keys, credentials, providers |
-| `[` `]`, `r` | Previous / next time range (today, yesterday, 5h … 30d) |
+| `←` `→`, `g` `G` (graph focused) | Move the graph cursor and read exact bucket values; `Esc` removes it |
+| `r` | Range picker: presets, custom days (YYYY-MM-DD), custom hours |
+| `[` `]` | Previous / next preset range |
+| `a` | API-key filter picker (admin) — type to search, `Enter` picks |
 | `w` | Realtime window 15m / 30m / 60m |
-| `a` | Cycle the API-key filter (admin) |
-| `e` | Request log: all / successes / failures |
+| `e` | Requests: result filter all / success / failed (server-side) |
+| `m` / `o` | Requests: model / source picker (server-side) |
+| `c` | Requests: clear the filters |
 | `+` / `-` | Slower / faster refresh |
 | `R` | Refresh now |
 | `t` / `T` | Next / previous theme |
 | `b` | Graph symbols: braille / block / ascii |
 | `x` | Privacy mode |
-| `X` `X` | Log out |
-| `?` | Help; `q` or `Esc` quits |
+| `X` `X` | Log out (press twice within 3 s) |
+| `Esc` | Close the overlay / clear the filter or cursor — never quits |
+| `?` | Help · `q` or `Ctrl-C` quits |
 
 ## Configuration
 
@@ -202,7 +231,9 @@ complete starting point. A user theme with a built-in name replaces it.
   `/auth/api-key-login` and `/auth/logout`. It never changes Keeper settings
   or data, never triggers quota refreshes and never calls the GitHub-backed
   update check.
-- `--privacy` (or `x`) masks e-mail addresses, handy for screenshots.
+- `--privacy` (or `x`) hides every e-mail address (shown as `account-N`),
+  every part of an API key (keys are `key #id`) and IP addresses, in tables,
+  details, pickers and error text — handy for screenshots and screen sharing.
 
 ## Development
 
@@ -213,9 +244,16 @@ cargo test
 ```
 
 Tests parse every recorded API response in `tests/fixtures/` (scrubbed real
-Keeper v2.1.0 responses) and snapshot the main screens with ratatui's
-`TestBackend` at 80×24 and 160×48 for both roles (`tests/snapshots/`, via
-[insta](https://insta.rs)).
+Keeper v2.1.0 responses), snapshot the main screens with ratatui's
+`TestBackend` at 80×24, 160×48 and 220×60 for both roles (`tests/snapshots/`,
+via [insta](https://insta.rs)), check that privacy mode leaves no identifier
+on any screen, drive the key bindings (`tests/keys.rs`) and run the client,
+pollers, live stream and session handling against a mock Keeper
+(`tests/http.rs`, via wiremock).
+
+Releases: push a `v*` tag; `.github/workflows/release.yml` builds the
+binaries and attaches them to the GitHub release. See
+[CHANGELOG.md](CHANGELOG.md).
 
 `scripts/screenshots.sh` regenerates the PNGs in `docs/screenshots/` from a
 running Keeper (needs tmux, aha, chromium, ImageMagick and the "MesloLGS Nerd

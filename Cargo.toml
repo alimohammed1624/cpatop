@@ -6,8 +6,11 @@ rust-version = "1.88"
 description = "A btop-style terminal dashboard for CPA Usage Keeper metrics"
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/alimohammed1624/cpatop"
+homepage = "https://github.com/alimohammed1624/cpatop"
 keywords = ["tui", "dashboard", "ratatui", "cliproxyapi", "monitoring"]
-categories = ["command-line-utilities"]
+categories = ["command-line-utilities", "visualization"]
+exclude = ["docs/screenshots/", "scripts/", ".github/"]
 
 [features]
 default = ["keyring"]

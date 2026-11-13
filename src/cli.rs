@@ -47,7 +47,7 @@ pub struct Cli {
     #[arg(long, value_name = "NAME")]
     pub theme: Option<String>,
 
-    /// Time range: today, yesterday, 5h..24h, 1d..30d
+    /// Time range: today, yesterday, 5h..24h, 1d..30d or custom:START..END (YYYY-MM-DD)
     #[arg(long, value_name = "RANGE", value_parser = parse_range)]
     pub range: Option<TimeRange>,
 
