@@ -10,7 +10,10 @@ mod privacy;
 
 pub use live::{EventFilters, LiveState, LiveStatus, ResultFilter};
 pub use overlay::{Overlay, PickItem, PickKind, Picker, RangeEditor, Unit};
-pub use privacy::{IP_MASK, contains_ip, is_identifier, is_ip, looks_like_key, mask_ips};
+pub use privacy::{
+    IP_MASK, contains_ip, ident_kind, is_identifier, is_ip, looks_like_key, mask_ips,
+    raw_ident_name,
+};
 
 use crate::api::models::*;
 use crate::api::sse::{LiveEvent, LiveParams};
@@ -255,7 +258,8 @@ pub fn dims_for(id: PaneId, role: Option<Role>) -> &'static [&'static str] {
     let admin = role == Some(Role::Admin);
     match (id, admin) {
         (PaneId::OvDist, true) => &["models", "api keys", "credentials", "providers"],
-        (PaneId::OvDist, false) => &["models", "api keys"],
+        // A key viewer sees one key: an "api keys" dimension adds nothing.
+        (PaneId::OvDist, false) => &["models"],
         (PaneId::RtShare, true) => &["models", "api keys", "credentials", "providers"],
         (PaneId::RtShare, false) => &["models"],
         // Models already have their own pane on the Analysis tab, so the
@@ -446,12 +450,13 @@ impl App {
         self.hidden.get(&tab).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
-    /// Hidden panes plus panes that make no sense for the role (the key
-    /// viewer's composition only repeats the models pane).
+    /// Hidden panes plus panes that make no sense for the role: the key
+    /// viewer's composition only repeats the models pane, and its key ×
+    /// model heatmap has a single row.
     pub fn effective_hidden(&self, tab: Tab) -> Vec<PaneId> {
         let mut v = self.hidden(tab).to_vec();
         if tab == Tab::Analysis && self.role == Some(Role::KeyViewer) {
-            v.push(PaneId::AnComposition);
+            v.extend([PaneId::AnComposition, PaneId::AnHeatmap]);
         }
         v
     }

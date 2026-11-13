@@ -14,14 +14,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 
 pub(super) fn ident_name(app: &App, i: &Identity) -> String {
-    let n = if !i.display_name.is_empty() {
-        &i.display_name
-    } else if !i.name.is_empty() {
-        &i.name
-    } else {
-        &i.identity
-    };
-    app.privacy(n)
+    app.ident_label(i)
 }
 
 pub(super) fn plan(i: &Identity) -> String {
@@ -127,11 +120,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
             };
             let cache = fmt::ratio_pct(cache_r, input);
             let last = i.last_used_at.as_deref().and_then(|s| fmt::since(s, now));
-            let kind = if i.auth_type == 2 {
-                format!("{} (api)", i.kind)
-            } else {
-                i.kind.clone()
-            };
+            let kind = crate::app::ident_kind(i);
             TRow::new(i.id.clone())
                 .text(name.clone(), text(&name))
                 .text(kind.clone(), text(&kind))

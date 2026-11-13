@@ -278,6 +278,46 @@ pub fn trunc(s: &str, max: usize) -> String {
     out
 }
 
+/// Truncate to `max` display columns keeping both ends (`claude-…-5-2`), so
+/// names that differ only in their tail — model versions, a ` · codex`
+/// provider suffix — stay distinguishable. A ` · ` suffix is kept whole
+/// when it fits.
+pub fn trunc_mid(s: &str, max: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+    let total = width(s);
+    if total <= max {
+        return s.to_string();
+    }
+    if max < 6 {
+        return trunc(s, max);
+    }
+    let take_cols = |chars: &mut dyn Iterator<Item = char>, cols: usize| -> String {
+        let mut w = 0;
+        let mut out = String::new();
+        for c in chars {
+            let cw = c.width().unwrap_or(0);
+            if w + cw > cols {
+                break;
+            }
+            w += cw;
+            out.push(c);
+        }
+        out
+    };
+    let budget = max - 1;
+    let tail_w = match s.rfind(" · ") {
+        Some(i) if width(&s[i..]) + 4 <= budget => width(&s[i..]),
+        _ => budget * 2 / 5,
+    }
+    .min(budget.saturating_sub(3));
+    let head = take_cols(&mut s.chars(), budget - tail_w);
+    let tail: String = take_cols(&mut s.chars().rev(), tail_w)
+        .chars()
+        .rev()
+        .collect();
+    format!("{head}…{tail}")
+}
+
 /// Display width of a string.
 pub fn width(s: &str) -> usize {
     unicode_width::UnicodeWidthStr::width(s)
@@ -295,6 +335,23 @@ pub fn superscript(n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn middle_truncation_keeps_the_tail() {
+        assert_eq!(trunc_mid("claude-fable-5-2", 12), "claude-…-5-2");
+        assert_eq!(trunc_mid("claude-opus-5-5", 12), "claude-…-5-5");
+        assert_eq!(trunc_mid("short", 12), "short");
+        assert_eq!(
+            trunc_mid("someone.long@example.com · antigravity", 26),
+            "someone.lon… · antigravity"
+        );
+        for (s, w) in [
+            ("abcdefghijklmnopqrstuvwxyz", 10),
+            ("x · yyyyyyyyyyyyyyyyyyy", 9),
+        ] {
+            assert_eq!(width(&trunc_mid(s, w)), w, "{s} {w}");
+        }
+    }
 
     #[test]
     fn compact_numbers() {

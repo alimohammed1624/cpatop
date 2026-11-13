@@ -128,8 +128,7 @@ pub async fn run(args: RunArgs) -> Result<()> {
     save(&app);
     // `--logout-on-exit`: end the server session too (q alone keeps it for
     // the next start). Wait briefly for the auth task to confirm.
-    if app.settings.logout_on_exit && app.role.is_some() && auth_tx.send(AuthCmd::Logout).is_ok()
-    {
+    if app.settings.logout_on_exit && app.role.is_some() && auth_tx.send(AuthCmd::Logout).is_ok() {
         let wait = async {
             while let Some(m) = rx.recv().await {
                 if matches!(m, Msg::Auth(AuthEvent::LoggedOut)) {

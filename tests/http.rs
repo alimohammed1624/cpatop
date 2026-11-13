@@ -535,7 +535,10 @@ async fn explicit_credential_reuses_a_valid_stored_session_of_its_role() {
     let base = server.uri();
     let store = store_with(
         &dir,
-        &[(&base, "admintok", "admin"), (&base, "keytok", "api_key_viewer")],
+        &[
+            (&base, "admintok", "admin"),
+            (&base, "keytok", "api_key_viewer"),
+        ],
     );
     let (tx, mut rx) = mpsc::unbounded_channel();
     let (_cmd_tx, cmd_rx) = mpsc::unbounded_channel();

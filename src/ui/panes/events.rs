@@ -126,7 +126,7 @@ pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
                 .as_deref()
                 .map(|k| app.key_name_by_label(k))
                 .unwrap_or("-".into());
-            let source = app.privacy(&e.source);
+            let source = app.credential_name(e.auth_index.as_deref().unwrap_or(""), &e.source);
             let result = if e.failed {
                 Span::styled(
                     format!("✗ {}", e.status_code.unwrap_or(0)),
@@ -337,7 +337,7 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         ]),
         Line::from(vec![
             k("source"),
-            v(app.privacy(&e.source)),
+            v(app.credential_name(e.auth_index.as_deref().unwrap_or(""), &e.source)),
             sep(),
             k("type"),
             v(opt(&e.source_type)),

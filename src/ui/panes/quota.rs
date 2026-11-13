@@ -95,16 +95,38 @@ pub fn inspection(f: &mut Frame, app: &App, area: Rect, focused: bool) {
     );
 }
 
+// Plan and status stay at every width (status shrinks to a glyph), so a
+// reached limit never disappears.
 const QUOTA_COLS: [Col; 8] = [
     flex("credential", 14),
-    col("plan", 7, Align::Left, 4),
-    col("window", 13, Align::Left, 0),
-    grow("left", 16, 0),
-    col("resets in", 9, Align::Right, 1),
-    col("tokens", 7, Align::Right, 2),
-    col("cost", 8, Align::Right, 3),
-    col("status", 10, Align::Left, 5),
+    col("plan", 4, Align::Left, 0),
+    col("window", 10, Align::Left, 0),
+    grow("left", 12, 0),
+    col("resets in", 8, Align::Right, 1),
+    col("tokens", 7, Align::Right, 3),
+    col("cost", 8, Align::Right, 4),
+    col("status", 6, Align::Left, 0),
 ];
+
+/// Status cell: the words, or a glyph when the column is narrow.
+fn status_cell(app: &App, status: Option<&str>) -> Vec<Vec<Span<'static>>> {
+    let t = app.theme();
+    let (glyph, short, color) = match status {
+        Some("normal") => ("✓", "ok", t.ok),
+        Some("limit_reached") => ("⚠", "limit", t.warn),
+        Some(s) if s.contains("401") => ("✗", "401", t.err),
+        Some(s) if s.contains("402") => ("✗", "402", t.err),
+        Some(_) => ("✗", "failed", t.err),
+        None => return vec![vec![]],
+    };
+    let words = status.unwrap_or_default().replace('_', " ");
+    let st = Style::default().fg(color);
+    vec![
+        vec![Span::styled(format!("{glyph} {words}"), st)],
+        vec![Span::styled(format!("{glyph} {short}"), st)],
+        vec![Span::styled(glyph.to_string(), st)],
+    ]
+}
 
 pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
@@ -132,12 +154,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
         let name = ident_name(app, i);
         let insp = status.and_then(|s| s.results.iter().find(|r| r.auth_index == i.identity));
         let st_text = insp.map(|r| r.status.replace('_', " ")).unwrap_or_default();
-        let st_style = Style::default().fg(match insp.map(|r| r.status.as_str()) {
-            Some("normal") => t.ok,
-            Some("limit_reached") => t.warn,
-            Some(_) => t.err,
-            None => t.graph_text,
-        });
+        let st_cell = status_cell(app, insp.map(|r| r.status.as_str()));
         let task = tasks.get(&i.identity);
         let quota_rows: Vec<&QuotaRow> = match task {
             Some(Ok(task)) => task
@@ -155,6 +172,11 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                 .map(|s| s.plan.clone())
                 .unwrap_or_else(|| plan(i)),
             _ => plan(i),
+        };
+        let plan_s = if plan_s.is_empty() || plan_s == "unknown" {
+            "—".to_string()
+        } else {
+            plan_s
         };
         let filter = format!("{name} {} {plan_s}", i.kind);
         if quota_rows.is_empty() {
@@ -188,7 +210,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                     .text("", num(-1.0))
                     .text("", num(-1.0))
                     .text("", num(-1.0))
-                    .styled(st_text.clone(), st_style, text(&st_text))
+                    .choice(st_cell.clone(), text(&st_text))
                     .filter(filter.clone()),
             );
             continue;
@@ -246,13 +268,8 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                     )
                     .text(tok, num(r.window_usage_tokens.unwrap_or(0.0)))
                     .text(cost, num(r.window_usage_cost.unwrap_or(0.0)))
-                    .styled(
-                        if first {
-                            st_text.clone()
-                        } else {
-                            String::new()
-                        },
-                        st_style,
+                    .choice(
+                        if first { st_cell.clone() } else { vec![vec![]] },
                         text(&st_text),
                     )
                     .filter(filter.clone()),

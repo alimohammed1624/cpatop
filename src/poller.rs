@@ -117,7 +117,9 @@ impl Query {
             Group::Realtime => self.tab == Tab::Realtime,
             Group::Analysis => self.tab == Tab::Analysis,
             Group::KeyOptions => admin,
-            Group::Credentials => admin && matches!(self.tab, Tab::Credentials | Tab::Quota),
+            // Everywhere credentials are named (usage tables, request log),
+            // so accounts on several providers can be told apart.
+            Group::Credentials => admin && !matches!(self.tab, Tab::Models | Tab::Settings),
             Group::Quota => admin && self.tab == Tab::Quota,
             Group::Models => admin && self.tab == Tab::Models,
             Group::Settings | Group::KeyUsage => admin && self.tab == Tab::Settings,

@@ -304,21 +304,46 @@ fn help_overlay_scrolls_and_closes_only_on_esc_question_q() {
     let k = |c: KeyCode| Event::Key(KeyEvent::new(c, KeyModifiers::NONE));
     app.on_event(k(KeyCode::Char('?')));
     let first = screen(&mut app);
-    assert!(first.contains("navigate") && first.contains("1-"), "{first}");
+    assert!(
+        first.contains("navigate") && first.contains("1-"),
+        "{first}"
+    );
     assert!(!first.contains("log out on the server"), "{first}");
-    for c in [KeyCode::Down, KeyCode::Char('j'), KeyCode::PageDown, KeyCode::Up] {
+    for c in [
+        KeyCode::Down,
+        KeyCode::Char('j'),
+        KeyCode::PageDown,
+        KeyCode::Up,
+    ] {
         app.on_event(k(c));
-        assert!(matches!(app.overlay, Some(Overlay::Help)), "{c:?} closed help");
+        assert!(
+            matches!(app.overlay, Some(Overlay::Help)),
+            "{c:?} closed help"
+        );
     }
     app.on_event(k(KeyCode::Char('G')));
     let last = screen(&mut app);
     assert!(last.contains("log out on the server"), "{last}");
-    assert!(last.contains("privacy: hide e-mails, API keys, IPs"), "{last}");
-    for c in [KeyCode::Left, KeyCode::Tab, KeyCode::Char('x'), KeyCode::Enter] {
+    assert!(
+        last.contains("privacy: hide e-mails, API keys, IPs"),
+        "{last}"
+    );
+    for c in [
+        KeyCode::Left,
+        KeyCode::Tab,
+        KeyCode::Char('x'),
+        KeyCode::Enter,
+    ] {
         app.on_event(k(c));
-        assert!(matches!(app.overlay, Some(Overlay::Help)), "{c:?} closed help");
+        assert!(
+            matches!(app.overlay, Some(Overlay::Help)),
+            "{c:?} closed help"
+        );
     }
-    assert!(!app.settings.privacy, "keys under help do not leak to the dashboard");
+    assert!(
+        !app.settings.privacy,
+        "keys under help do not leak to the dashboard"
+    );
     app.on_event(k(KeyCode::Char('q')));
     assert!(app.overlay.is_none() && !app.should_quit);
     for c in [KeyCode::Esc, KeyCode::Char('?')] {

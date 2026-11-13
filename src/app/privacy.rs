@@ -92,6 +92,62 @@ impl App {
         self.privacy_text(&self.settings.base_url)
     }
 
+    // ------------------------------------------------------------ credentials
+
+    /// The credential behind a key from a usage endpoint: the identity
+    /// (`auth_index`), its masked form (`6d7*********de98aa`) or the id.
+    pub fn identity_for(&self, key: &str) -> Option<&Identity> {
+        let ids = &self.data.identities.get()?.identities;
+        if let Some(i) = ids.iter().find(|i| i.identity == key || i.id == key) {
+            return Some(i);
+        }
+        let (first, last) = (key.find('*')?, key.rfind('*')?);
+        let (pre, suf) = (&key[..first], &key[last + 1..]);
+        if pre.is_empty() || suf.is_empty() {
+            return None;
+        }
+        let mut m = ids
+            .iter()
+            .filter(|i| i.identity.starts_with(pre) && i.identity.ends_with(suf));
+        match (m.next(), m.next()) {
+            (Some(i), None) => Some(i),
+            _ => None,
+        }
+    }
+
+    /// A credential's display name, told apart from credentials that share
+    /// it: the same account on several providers gets ` · claude`,
+    /// ` · codex`…, and `#id` when even that is not unique.
+    pub fn ident_label(&self, i: &Identity) -> String {
+        let base = raw_ident_name(i);
+        let name = self.privacy(base);
+        let Some(page) = self.data.identities.get() else {
+            return name;
+        };
+        let same: Vec<&Identity> = page
+            .identities
+            .iter()
+            .filter(|o| raw_ident_name(o) == base)
+            .collect();
+        if same.len() <= 1 {
+            return name;
+        }
+        let kind = ident_kind(i);
+        if same.iter().filter(|o| ident_kind(o) == kind).count() > 1 {
+            format!("{name} · {kind} #{}", i.id)
+        } else {
+            format!("{name} · {kind}")
+        }
+    }
+
+    /// Name for a credential known by a usage key and server label.
+    pub fn credential_name(&self, key: &str, label: &str) -> String {
+        match self.identity_for(key) {
+            Some(i) => self.ident_label(i),
+            None => self.privacy(label),
+        }
+    }
+
     // ------------------------------------------------------------ key names
 
     /// Distinguishable API-key name: `#3 ci-bot xyz…` / `#1 xyz…`; in
@@ -153,6 +209,26 @@ impl App {
         } else {
             format!("#{} {alias} {prefix}", k.id)
         }
+    }
+}
+
+/// The name a credential is shown under (before privacy).
+pub fn raw_ident_name(i: &Identity) -> &str {
+    if !i.display_name.is_empty() {
+        &i.display_name
+    } else if !i.name.is_empty() {
+        &i.name
+    } else {
+        &i.identity
+    }
+}
+
+/// Provider type of a credential, marking API-key credentials.
+pub fn ident_kind(i: &Identity) -> String {
+    if i.auth_type == 2 {
+        format!("{} (api)", i.kind)
+    } else {
+        i.kind.clone()
     }
 }
 

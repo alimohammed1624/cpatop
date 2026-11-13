@@ -196,17 +196,17 @@ pub fn composition(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused:
         return;
     }
     let mins = an(app).and(window_minutes(app));
-    let is_key = crate::app::dims_for(PaneId::AnComposition, app.role)
+    let dim = crate::app::dims_for(PaneId::AnComposition, app.role)
         .get(app.dim(PaneId::AnComposition))
-        == Some(&"api keys");
+        .copied();
     let rows = comp_items(app)
         .iter()
         .enumerate()
         .map(|(i, c)| {
-            let name = if is_key {
-                app.key_name(&c.key, &c.label)
-            } else {
-                app.privacy(&c.label)
+            let name = match dim {
+                Some("api keys") => app.key_name(&c.key, &c.label),
+                Some("credentials") => app.credential_name(&c.key, &c.label),
+                _ => app.privacy(&c.label),
             };
             let cache = fmt::ratio_pct(c.cache_read_tokens, c.input_tokens);
             TRow::new(c.key.clone())

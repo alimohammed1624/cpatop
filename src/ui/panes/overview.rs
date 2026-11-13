@@ -714,14 +714,14 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
         .get()
         .map(|c| crate::series::until_now(&c.buckets, app.clock.utc()))
         .unwrap_or(usize::MAX);
-    let is_key = app.dim(PaneId::OvDist) == 1;
+    let dim = app.dim(PaneId::OvDist);
     let rows: Vec<TRow> = items
         .iter()
         .map(|i| {
-            let name = if is_key {
-                app.key_name(&i.key, &i.label)
-            } else {
-                app.privacy(&i.label)
+            let name = match dim {
+                1 => app.key_name(&i.key, &i.label),
+                2 => app.credential_name(&i.key, &i.label),
+                _ => app.privacy(&i.label),
             };
             let share = fmt::ratio_pct(i.total_tokens, total).unwrap_or(0.0);
             let cache = fmt::ratio_pct(i.cache_read_tokens, i.input_tokens);

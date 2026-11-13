@@ -9,10 +9,10 @@ expression: s
 │ 402 ■■■■■■ 0   failed ■■■■■■ 0   unknown ■■■■■■ 0   cache only               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─² quota ◆ ───────────────────────────────────────────────────────────────────╮
-│credential        window        left                resets in  tokens     cost│
-│user1@example.com claude        not cached                                    │
-│user3@example.com 5h            ■■■■■■■■■■■■■   0%     1h 05m   9.29M   $18.18│
-│                  Weekly        ■■■■■■■■■■■■■  82%     4d 04h   11.0M   $19.52│
+│credential        plan  window     left          resets in  tokens status     │
+│user1@example.com —     claude     not cached                      ✓ ok       │
+│user3@example.com pro   5h         ■■■■■■■   0%     1h 05m   9.29M ⚠ limit    │
+│                        Weekly     ■■■■■■■  82%     4d 04h   11.0M            │
 │                                                                              │
 │                                                                              │
 │                                                                              │

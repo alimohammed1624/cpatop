@@ -6,9 +6,9 @@ expression: s
 ─ Overview  Realtime  Analysis  Requests  Credentials  Quota  Models  Keys ─────
 ╭─¹ requests ◆ ──────────────────────────────────── ● live · 3/1,172 in today ─╮
 │time     source        model         result   latency    ttft  tokens     cost│
-│16:37:17 user1@exampl… claude-opus-… ✓ 200      1.72s   1.05s   44.5k  $0.0281│
-│16:37:15 user1@exampl… claude-opus-… ✓ 200      1.96s   1.03s   39.7k  $0.0201│
-│16:37:15 user1@exampl… claude-opus-… ✓ 200      1.90s   741ms   41.1k  $0.0579│
+│16:37:17 user1@exampl… claude-o…-5-5 ✓ 200      1.72s   1.05s   44.5k  $0.0281│
+│16:37:15 user1@exampl… claude-o…-5-5 ✓ 200      1.96s   1.03s   39.7k  $0.0201│
+│16:37:15 user1@exampl… claude-o…-5-5 ✓ 200      1.90s   741ms   41.1k  $0.0579│
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -17,7 +17,7 @@ expression: s
 │                                                                              │
 │                                                                              │
 │                                                                              │
-╰─ e result · m model · o source · a key · c clear · / find ───────────────────╯
+╰─ e result · m model · o source · a key · c clear · / find  ▸ claude-o…s-5-5 ─╯
 ╭─² detail ────────────────────────────────────── #1178 · 2026-11-13 16:37:17 ─╮
 │ model claude-opus-5-5  alias claude-opus-5-5  upstream claude-opus-5-5       │
 │ result success 200  endpoint POST /v1/messages  stream true                  │

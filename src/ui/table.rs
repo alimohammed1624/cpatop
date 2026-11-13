@@ -39,6 +39,8 @@ pub struct Col {
     pub align: Align,
     /// 0 = always shown; higher numbers are dropped first when space is short.
     pub prio: u8,
+    /// Truncate in the middle (names: the tail tells them apart).
+    pub mid: bool,
 }
 
 pub const fn col(title: &'static str, width: u16, align: Align, prio: u8) -> Col {
@@ -49,6 +51,7 @@ pub const fn col(title: &'static str, width: u16, align: Align, prio: u8) -> Col
         grow: false,
         align,
         prio,
+        mid: false,
     }
 }
 
@@ -61,6 +64,7 @@ pub const fn flex(title: &'static str, width: u16) -> Col {
         grow: false,
         align: Align::Left,
         prio: 0,
+        mid: true,
     }
 }
 
@@ -73,6 +77,7 @@ pub const fn grow(title: &'static str, width: u16, prio: u8) -> Col {
         grow: true,
         align: Align::Left,
         prio,
+        mid: false,
     }
 }
 
@@ -109,6 +114,9 @@ pub enum Cell {
         values: Vec<f64>,
         color: Color,
     },
+    /// Alternatives from widest to narrowest; the widest that fits is drawn
+    /// (e.g. `limit reached` or just `⚠`).
+    Choice(Vec<Vec<Span<'static>>>),
     /// Meter filling the column, followed by `label`.
     Meter {
         frac: f64,
@@ -122,14 +130,21 @@ impl Cell {
     fn want(&self) -> usize {
         match self {
             Cell::Spans(s) => s.iter().map(|x| x.width()).sum(),
+            Cell::Choice(alts) => alts
+                .first()
+                .map(|s| s.iter().map(|x| x.width()).sum())
+                .unwrap_or(0),
             Cell::Spark { values, .. } => values.len().min(48),
             Cell::Meter { label, .. } => 6 + fmt::width(label),
         }
     }
 
-    fn spans(&self, w: usize, t: &Theme) -> Vec<Span<'static>> {
+    /// Spans at width `w`; `level` is the narrowest alternative every cell
+    /// of a [`Cell::Choice`] column needs, so a column never mixes forms.
+    fn spans(&self, w: usize, t: &Theme, level: usize) -> Vec<Span<'static>> {
         match self {
             Cell::Spans(s) => s.clone(),
+            Cell::Choice(alts) => alts.get(level).or(alts.last()).cloned().unwrap_or_default(),
             Cell::Spark { values, color } => widgets::spark(values, w, t, *color),
             Cell::Meter { frac, color, label } => {
                 let lw = fmt::width(label);
@@ -178,6 +193,12 @@ impl TRow {
     /// Append a cell made of spans.
     pub fn spans(mut self, spans: Vec<Span<'static>>, key: SortKey) -> TRow {
         self.cells.push(Cell::Spans(spans));
+        self.sort.push(key);
+        self
+    }
+    /// Append a cell with narrower alternatives (widest first).
+    pub fn choice(mut self, alts: Vec<Vec<Span<'static>>>, key: SortKey) -> TRow {
+        self.cells.push(Cell::Choice(alts));
         self.sort.push(key);
         self
     }
@@ -368,6 +389,7 @@ fn allocate(cols: &[Col], content: &[usize], width: u16, keep: &[usize]) -> Vec<
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn put(
     buf: &mut Buffer,
     x: u16,
@@ -376,6 +398,7 @@ fn put(
     spans: &[Span<'static>],
     align: Align,
     base: Style,
+    mid: bool,
 ) {
     if w == 0 {
         return;
@@ -386,7 +409,12 @@ fn put(
         // Truncate: flatten to text keeping the first span's style.
         let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
         let style = spans.first().map(|s| s.style).unwrap_or_default();
-        line_spans.push(Span::styled(fmt::trunc(&text, w as usize), style));
+        let cut = if mid {
+            fmt::trunc_mid(&text, w as usize)
+        } else {
+            fmt::trunc(&text, w as usize)
+        };
+        line_spans.push(Span::styled(cut, style));
     } else {
         line_spans.extend(spans.iter().cloned());
     }
@@ -435,6 +463,7 @@ pub fn render(
             &[Span::styled(title, hs)],
             c.align,
             Style::default(),
+            false,
         );
     }
     let body = Rect::new(
@@ -457,6 +486,27 @@ pub fn render(
     }
     st.offset.set(off);
     let sel_style = t.selected();
+    // Alternative level per column: the first at which every cell fits.
+    let level: Vec<usize> = (0..cols.len())
+        .map(|c| {
+            let w = layout
+                .iter()
+                .find(|p| p.col == c)
+                .map(|p| p.width as usize)
+                .unwrap_or(0);
+            (0..4)
+                .find(|k| {
+                    rows.iter().all(|r| match r.cells.get(c) {
+                        Some(Cell::Choice(alts)) => alts
+                            .get(*k)
+                            .or(alts.last())
+                            .is_none_or(|a| a.iter().map(|x| x.width()).sum::<usize>() <= w),
+                        _ => true,
+                    })
+                })
+                .unwrap_or(3)
+        })
+        .collect();
     for (row_i, r) in rows.iter().enumerate().skip(off).take(body.height as usize) {
         let y = body.y + (row_i - off) as u16;
         let selected = row_i == sel;
@@ -470,7 +520,7 @@ pub fn render(
         }
         for p in &layout {
             if let Some(cell) = r.cells.get(p.col) {
-                let spans = cell.spans(p.width as usize, t);
+                let spans = cell.spans(p.width as usize, t, level[p.col]);
                 let spans: Vec<Span<'static>> = if selected && !t.no_color {
                     spans
                         .into_iter()
@@ -494,17 +544,50 @@ pub fn render(
                     &spans,
                     cols[p.col].align,
                     base,
+                    cols[p.col].mid,
                 );
             }
         }
     }
     // Scroll indicator, drawn on the pane's bottom border.
+    let mut right_edge = area.right().saturating_sub(1);
     if rows.len() > body.height as usize && area.width > 12 && area.bottom() < buf.area.bottom() {
         let shown_end = (off + body.height as usize).min(rows.len());
         let s = format!(" {}-{}/{} ", off + 1, shown_end, rows.len());
         let w = fmt::width(&s) as u16;
         let x = area.right().saturating_sub(w + 1);
         buf.set_string(x, area.bottom(), s, Style::default().fg(t.graph_text));
+        right_edge = x;
+    }
+    // The selected row's full name when its name column is cut, on the
+    // bottom border (right-aligned, at most half the width).
+    if focused
+        && area.bottom() < buf.area.bottom()
+        && let Some(p) = layout.iter().find(|p| cols[p.col].mid)
+        && let Some(Cell::Spans(sp)) = rows.get(sel).and_then(|r| r.cells.get(p.col))
+    {
+        let full: String = sp.iter().map(|s| s.content.as_ref()).collect();
+        if fmt::width(&full) > p.width as usize {
+            // Free border to the right of whatever the frame drew there
+            // (key hints on the left).
+            let y = area.bottom();
+            let used = (area.x..right_edge)
+                .rev()
+                .find(|x| !matches!(buf[(*x, y)].symbol(), "─" | " "))
+                .map(|x| x + 2)
+                .unwrap_or(area.x + 1);
+            let room = right_edge.saturating_sub(used) as usize;
+            let s = fmt::trunc_mid(&format!(" ▸ {full} "), room);
+            let w = fmt::width(&s) as u16;
+            if w > 6 {
+                buf.set_string(
+                    right_edge.saturating_sub(w),
+                    area.bottom(),
+                    s,
+                    Style::default().fg(t.title),
+                );
+            }
+        }
     }
     body
 }

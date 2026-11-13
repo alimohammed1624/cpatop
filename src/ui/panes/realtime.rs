@@ -518,6 +518,8 @@ pub fn share(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
                 "Others".to_string()
             } else if dim == 1 {
                 app.key_name(&i.key, &i.label)
+            } else if dim == 2 {
+                app.credential_name(&i.key, &i.label)
             } else {
                 app.privacy(&i.label)
             };

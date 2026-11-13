@@ -19,7 +19,7 @@ expression: s
 ╭─² catalog ──────────────────────── 5 models ─╮╭─³ recalc ────────────────────╮
 │model                     provider  owner     ││ last task completed ·        │
 │claude-fable-5            Claude    anthropic ││ finalizing                   │
-│claude-sonnet-4-5-202509… Claude    anthropic ││ progress  ■■■■■■■■■■ 226/226 │
+│claude-sonnet-4…-20250929 Claude    anthropic ││ progress  ■■■■■■■■■■ 226/226 │
 │codex-auto-review         OpenAI    openai    ││ from      2026-11-12 23:30   │
 │gpt-image-2               OpenAI    openai    ││ updated   2026-11-13 12:50   │
 │gpt-image-2.6             OpenAI    openai    ││ revision  2                  │

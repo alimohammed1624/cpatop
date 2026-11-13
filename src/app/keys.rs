@@ -419,7 +419,9 @@ impl App {
     /// Scroll the help overlay, clamped to its content (known after a draw).
     fn scroll_help(&mut self, delta: isize) {
         let max = self.help_max.get() as isize;
-        self.help_scroll = (self.help_scroll as isize).saturating_add(delta).clamp(0, max) as usize;
+        self.help_scroll = (self.help_scroll as isize)
+            .saturating_add(delta)
+            .clamp(0, max) as usize;
     }
 
     fn move_sel(&mut self, id: PaneId, delta: isize) {
