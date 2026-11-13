@@ -194,6 +194,7 @@ The focused pane lists its own keys in its bottom border; `?` shows them all.
 | `1`–`9` | Hide / show the pane with that number |
 | `p` / `l`, `P` | Next / previous layout preset |
 | `↑↓` `j`/`k`, `PgUp`/`PgDn`, `g`/`G` | Move the selection (mouse wheel scrolls) |
+| `Enter` | Every field of the selected row, untruncated (`↑↓` follow the table, `Esc` closes) |
 | `/` | Find in the focused table (`Enter` keeps, `Esc` clears) |
 | `s` / `S` | Sort by the next column / reverse |
 | `d` | Switch dimension: models, API keys, credentials, providers |
@@ -289,12 +290,16 @@ complete starting point. A user theme with a built-in name replaces it.
   `/auth/api-key-login` and `/auth/logout`. It never changes Keeper settings
   or data, never triggers quota refreshes and never calls the GitHub-backed
   update check.
-- `--privacy` (or `x`) hides every e-mail address (shown as `account-N`),
-  every part of an API key (keys are `key #id`) and every IP address
-  (`‹ip›`, including the server address in the header and inside URLs), in
-  tables, details, pickers, error text and the login and offline screens —
-  handy for screenshots and screen sharing. Host names such as `localhost`
-  stay visible.
+- `--privacy` (or `x`) hides every e-mail address, every part of an API
+  key and every IP address, in tables, details, pickers, error text and the
+  login and offline screens — handy for screenshots and screen sharing.
+  Accounts are shown as `account-N` (N is the server's credential id, so
+  labels are the same in every run), keys as `key #id` (aliases hidden),
+  IPs as `‹ip›`; the server is shown as scheme, host and port only (an IP
+  host becomes `‹ip›`, the path is dropped). User agents keep only their
+  first product token and unknown endpoints read `‹hidden›`. As a last line
+  of defence every rendered frame is scanned for e-mails, IPs and long
+  opaque tokens, which are overwritten in place.
 
 ## Development
 

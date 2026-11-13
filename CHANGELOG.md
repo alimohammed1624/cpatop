@@ -7,6 +7,10 @@ All notable changes to cpatop are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `Enter` on any table opens every field of the selected row, untruncated;
+  `↑↓` move the selection underneath.
+- The Overview distribution charts the selected row's tokens in its spare
+  rows (like the API-key table).
 - One-line installer: `curl -fsSL https://raw.githubusercontent.com/alimohammed1624/cpatop/main/install.sh | sh`
   downloads the prebuilt binary for the machine, checks it against
   `SHA256SUMS` and installs to `~/.local/bin` (`CPATOP_INSTALL_DIR`,
@@ -52,6 +56,26 @@ All notable changes to cpatop are documented here. The format follows
   binary (`cpatop-universal-apple-darwin.tar.gz`) for manual download.
 
 ### Changed
+- Privacy mode is enforced at the rendering boundary: account names,
+  sources, key aliases, endpoints and user agents are replaced (not
+  pattern-scrubbed); the base URL shows only scheme, host and port; free
+  text masks e-mails anywhere (URL paths included), every IPv4/IPv6 in any
+  case or context, cut-off addresses and opaque tokens of 20+ characters;
+  and every rendered frame is scanned and masked as a last resort.
+  `account-N` now comes from the server's credential id, so labels are
+  stable across runs; key aliases are hidden.
+- Names in tables are never cut while optional columns can make room
+  (`account-12 · codex` no longer reads `accoun… · codex`).
+- Keys: name and key columns hidden in every row (privacy mode, no
+  aliases) are dropped.
+- Token, request and latency-density graphs use the single-hue volume
+  ramp; green/amber/red stay reserved for rates and health.
+- The graph cursor highlights its bucket's whole column in reverse video.
+- Large terminals: graph panes stop growing at a readable height, rows go
+  to tables and the charts under them; the activity pane asks only for the
+  rows its maps use; message-only panes (quota history without data) stay
+  one line tall.
+- Both activity maps always carry a title, also when stacked at 80×24.
 - Analysis series are rebuilt on dense, calendar-aligned axes (UTC hours
   or local days) with zeros for missing buckets, clipped to now; averages
   and rates divide by the span the data covers. Analysis refreshes every
@@ -88,6 +112,8 @@ All notable changes to cpatop are documented here. The format follows
   readable (distinct glyphs, reverse video).
 
 ### Fixed
+- Without colour the realtime outcomes legend (`█ ok ░ fail`) moves to the
+  plot when the head line is full instead of being cut at 80×24.
 - Analysis averages and rpm/tpm divided by the nominal range length
   (Σ/30 for `30d`) although the server's range is calendar aligned
   (Oct 14 00:00 → Nov 14 00:00); they now divide by the returned range
