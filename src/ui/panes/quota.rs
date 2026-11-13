@@ -1,7 +1,7 @@
 //! Quota tab: inspection summary, quota windows per credential and history.
 
 use super::credentials::{ident_name, plan};
-use super::{RowChart, frame, placeholder, stale_marker, table_in, table_with_chart};
+use super::{RowChart, frame, placeholder, stale_marker, table_with_chart, time_labels};
 use crate::api::models::{Identity, QuotaRow};
 use crate::app::{App, Hit};
 use crate::fmt;
@@ -348,7 +348,34 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
             );
         }
     }
-    table_in(
+    // Spare rows chart the selected credential's recent requests (the
+    // server's health window), so a quota can be read against its use.
+    let chart_for = |id: &str| -> Option<RowChart> {
+        let i = app
+            .data
+            .identities
+            .get()?
+            .identities
+            .iter()
+            .find(|i| i.identity == id)?;
+        let h = i
+            .credential_health
+            .as_ref()
+            .filter(|h| !h.buckets.is_empty())?;
+        let starts: Vec<String> = h.buckets.iter().map(|b| b.start_time.clone()).collect();
+        Some(RowChart {
+            title: format!(
+                "{} · requests, last {}",
+                ident_name(app, i),
+                fmt::secs(h.window_seconds).replace(" 00m", "")
+            ),
+            labels: time_labels(&starts, false, false),
+            values: h.buckets.iter().map(|b| b.success + b.failure).collect(),
+            fmt: fmt::count,
+            color: None,
+        })
+    };
+    table_with_chart(
         f,
         app,
         hit,
@@ -358,6 +385,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
         &QUOTA_COLS,
         rows,
         "no credentials with quota",
+        &chart_for,
     );
 }
 

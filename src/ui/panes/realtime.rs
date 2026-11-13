@@ -66,9 +66,11 @@ fn trend_text(x: f64) -> String {
 fn trend_span(app: &App, tr: Option<f64>) -> Span<'static> {
     let t = app.theme();
     match tr {
+        // Second half of the window against the first: a direction, not a
+        // verdict, so it is neither green nor red.
         Some(x) => Span::styled(
-            trend_text(x),
-            Style::default().fg(if x >= 0.0 { t.warn } else { t.ok }),
+            format!("trend {}", trend_text(x)),
+            Style::default().fg(t.title),
         ),
         None => Span::raw(""),
     }

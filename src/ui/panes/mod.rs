@@ -98,7 +98,8 @@ pub fn size(app: &App, id: PaneId, w: u16) -> Size {
         CrList => table(app.data.identities.get().map(|p| p.identities.len())),
         CrDetail => Size::at_least(8),
         QuInspection => Size::exact(quota::inspection_lines(app, inner_w).max(1) + 2),
-        QuList => table(quota::list_len(app)),
+        // Spare rows chart the selected credential's recent requests.
+        QuList => table(quota::list_len(app)).soaking(),
         QuHistory => quota::history_size(app),
         MoPricing | MoCatalog => Size::at_least(6),
         MoRecalc => Size::range(5, 10),

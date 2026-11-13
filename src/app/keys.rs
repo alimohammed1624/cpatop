@@ -343,12 +343,21 @@ impl App {
             } else {
                 self.credential_name(&s.value, &label)
             };
-            // Several sources can share a label; the identity tells them apart.
-            let short: String = s.value.chars().take(8).collect();
+            // Several sources can share a label; the identity tells them apart
+            // (privacy mode: the label already does, without the server id).
+            let short: String = if self.settings.privacy {
+                String::new()
+            } else {
+                s.value.chars().take(8).collect()
+            };
             items.push(PickItem::new(
                 Some(s.value.clone()),
                 label,
-                format!("#{short}"),
+                if short.is_empty() {
+                    String::new()
+                } else {
+                    format!("#{short}")
+                },
             ));
         }
         let cur = self.live.filters.source.as_ref().map(|s| s.0.clone());

@@ -403,8 +403,8 @@ const ST_PRESETS: [Preset; 2] = [
     Preset {
         name: "stacked",
         rows: &[
-            row(Fill(2), 0, &[(StKeys, 3), (StServer, 2)]),
-            row(Fill(3), 1, &[(StSessions, 1)]),
+            row(Fill(3), 0, &[(StKeys, 1)]),
+            row(Fill(2), 1, &[(StSessions, 3), (StServer, 2)]),
         ],
     },
     Preset {

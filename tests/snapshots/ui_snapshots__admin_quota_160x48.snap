@@ -13,6 +13,7 @@ expression: s
 │user3@example.com   pro     5h           ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■   0%       1h 05m     9.29M     $18.18   ⚠ limit reached                 │
 │                            Weekly       ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■  82%       4d 04h     11.0M     $19.52                                   │
 │                                                                                                                                                              │
+│ ▸ user1@example.com · requests, last 5h  Σ 0  peak 0                                                                                                         │
 │                                                                                                                                                              │
 │                                                                                                                                                              │
 │                                                                                                                                                              │
@@ -27,8 +28,7 @@ expression: s
 │                                                                                                                                                              │
 │                                                                                                                                                              │
 │                                                                                                                                                              │
-│                                                                                                                                                              │
-│                                                                                                                                                              │
+│                                                                   no activity in this range                                                                  │
 │                                                                                                                                                              │
 │                                                                                                                                                              │
 │                                                                                                                                                              │

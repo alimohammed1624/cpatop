@@ -23,6 +23,22 @@ const PRICE_COLS: [Col; 8] = [
     col("rules", 9, Align::Right, 4),
 ];
 
+/// The pricing columns for an inner width: cache and multiplier columns
+/// are spelled out (`cache read`, `cache write`, `multiplier`) when every
+/// column still fits at its minimum width.
+fn price_cols(width: u16) -> Vec<Col> {
+    let mut cols = PRICE_COLS.to_vec();
+    for (i, t) in [(4, "cache read"), (5, "cache write"), (6, "multiplier")] {
+        cols[i].title = t.into();
+        cols[i].width = cols[i].width.max(t.len() as u16);
+    }
+    let need: u16 = cols.iter().map(|c| c.width + 1).sum::<u16>() - 1;
+    if need > width {
+        return PRICE_COLS.to_vec();
+    }
+    cols
+}
+
 fn price(v: f64) -> String {
     let s = format!("{v:.4}");
     let s = s.trim_end_matches('0').trim_end_matches('.');
@@ -81,7 +97,7 @@ pub fn pricing(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         PaneId::MoPricing,
         inner,
         focused,
-        &PRICE_COLS,
+        &price_cols(inner.width),
         rows,
         "no model prices configured",
     );
