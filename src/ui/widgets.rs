@@ -149,8 +149,10 @@ impl Widget for Graph<'_> {
             .max(f64::MIN_POSITIVE);
         let color_at = |cy: usize| {
             self.color.unwrap_or_else(|| {
+                // Volumes use the single-hue ramp (bright at the top);
+                // good/bad colours are kept for rates and health.
                 let t = (h - 1 - cy) as f32 / (h.max(2) - 1) as f32;
-                self.theme.gradient(t)
+                self.theme.ramp(0.35 + 0.65 * t)
             })
         };
         let units = match self.symbols {
@@ -317,29 +319,27 @@ impl Axes<'_> {
     }
 }
 
-/// Highlight bucket `i` of `n` in a plot area (vertical cursor line).
+/// Highlight bucket `i` of `n` in a plot area: its whole column, top to
+/// bottom, in reverse video (bars inside it stay visible as dark marks).
 pub fn draw_cursor(buf: &mut Buffer, plot: Rect, i: usize, n: usize, t: &Theme) {
     if plot.width == 0 || n == 0 {
         return;
     }
     let (c0, c1) = bucket_cols(i, n, plot.width as usize);
-    let c = (c0 + c1.saturating_sub(1)) / 2;
-    let x = plot.x + c as u16;
-    for y in plot.y..plot.bottom() {
-        let cell = &mut buf[(x, y)];
-        if cell.symbol() == " " {
-            cell.set_char('│').set_fg(t.hi);
-        } else {
-            cell.set_style(
-                Style::default()
-                    .fg(t.hi)
-                    .add_modifier(Modifier::BOLD | Modifier::REVERSED),
-            );
+    let c1 = c1.max(c0 + 1).min(plot.width as usize);
+    for c in c0..c1 {
+        let x = plot.x + c as u16;
+        for y in plot.y..plot.bottom() {
+            let cell = &mut buf[(x, y)];
+            if t.no_color {
+                cell.set_style(Style::default().add_modifier(Modifier::REVERSED));
+            } else {
+                cell.set_style(Style::default().fg(t.bg).bg(t.hi));
+            }
         }
     }
 }
 
-/// Log-log braille scatter plot (TTFT vs latency), coloured by density.
 pub struct Scatter<'a> {
     pub points: &'a [(f64, f64)],
     pub theme: &'a Theme,
@@ -417,7 +417,7 @@ impl Widget for Scatter<'_> {
                     let t =
                         ((density as f32).ln_1p() / (max_density as f32).ln_1p()).clamp(0.0, 1.0);
                     let ch = char::from_u32(0x2800 + bits).unwrap_or('•');
-                    buf[pos].set_char(ch).set_fg(self.theme.gradient(t));
+                    buf[pos].set_char(ch).set_fg(self.theme.ramp(0.3 + 0.7 * t));
                 } else if Some(cx) == ref_col {
                     buf[pos].set_char('┊').set_style(dim);
                 } else if Some(cy) == ref_row {

@@ -721,8 +721,16 @@ mod tests {
         // there is room (8+30+20+7 + 3 gaps = 68).
         let f = fit(&cols, &[8, 30, 20, 6], 68);
         assert_eq!(widths(&f), vec![(0, 8), (1, 30), (2, 20), (3, 7)]);
-        // With less room both are cut, neither is starved.
+        // With less room the optional column gives way rather than cut the
+        // name (the cut part is what tells names apart).
         let f = fit(&cols, &[8, 30, 20, 6], 50);
+        let w = widths(&f);
+        assert!(w.contains(&(2, 20)), "{w:?}");
+        assert!(!w.iter().any(|c| c.0 == 1), "{w:?}");
+        // Without optional columns both are cut, neither is starved.
+        let mut cols2 = cols.clone();
+        cols2[1].prio = 0;
+        let f = fit(&cols2, &[8, 30, 20, 6], 50);
         let w = widths(&f);
         assert!(w[1].1 > 10 && w[2].1 > 12, "{w:?}");
         assert_eq!(f.last().map(|p| p.x + p.width), Some(50));
