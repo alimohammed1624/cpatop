@@ -39,7 +39,7 @@ pub struct Cli {
     #[arg(long)]
     pub no_keyring: bool,
 
-    /// Ignore (and delete) the stored session cookie for this server
+    /// Log out the stored session for this server and start a new one
     #[arg(long)]
     pub fresh_session: bool,
 

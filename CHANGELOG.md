@@ -92,6 +92,13 @@ All notable changes to cpatop are documented here. The format follows
 - Sparklines no longer interpolate between buckets; missing buckets render
   as gaps.
 - The login screen shows warnings and wrapped errors inside its box.
+- `--fresh-session` logs the stored sessions out on the server before
+  forgetting them, instead of leaving them valid until they expire.
+- Command-line errors are one uncoloured `cpatop: …` line on stderr, with a
+  `hint:` where it helps; bad flag values, base URLs, missing config or
+  credential files and unknown themes exit with 2, runtime failures with 1.
+  Starting the dashboard without a terminal reports that instead of
+  panicking. Set `RUST_BACKTRACE=1` for the full error report.
 
 ## [0.1.0] - 2026-11-13
 
