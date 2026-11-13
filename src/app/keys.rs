@@ -814,6 +814,7 @@ impl App {
             }
             KeyCode::Char('x') => {
                 self.settings.privacy = !self.settings.privacy;
+                crate::app::set_output_privacy(self.settings.privacy);
                 self.flash(if self.settings.privacy {
                     "privacy mode on"
                 } else {

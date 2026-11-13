@@ -1,7 +1,7 @@
 use clap::Parser;
 use cpatop::api::client::normalize_base_url;
 use cpatop::api::{ApiError, Client, LoginMode};
-use cpatop::app::App;
+use cpatop::app::{App, output_privacy, scrub_output, set_output_privacy, shown_path};
 use cpatop::cli::{Cli, Command, KeyringAction};
 use cpatop::config::{DEFAULT_BASE_URL, FileConfig, Paths, Settings, UiState};
 use cpatop::secrets::{self, ResolveOptions, Secret};
@@ -44,15 +44,17 @@ impl CliError {
         self
     }
 
+    /// Print to stderr; in privacy mode every line goes through the same
+    /// scrubber as the screen.
     fn print(&self) {
         let verbose = std::env::var_os("RUST_BACKTRACE").is_some_and(|v| !v.is_empty() && v != "0");
         if verbose && let Some(report) = &self.report {
-            eprintln!("{report:?}");
+            eprintln!("{}", scrub_output(&format!("{report:?}")));
             return;
         }
-        eprintln!("cpatop: {}", self.msg);
+        eprintln!("cpatop: {}", scrub_output(&self.msg));
         if let Some(h) = &self.hint {
-            eprintln!("hint: {h}");
+            eprintln!("hint: {}", scrub_output(h));
         }
     }
 }
@@ -78,18 +80,11 @@ impl From<std::io::Error> for CliError {
 }
 
 fn main() -> ExitCode {
-    // Kept for its panic hook; ordinary errors are printed by CliError.
-    // Uncoloured when NO_COLOR is set or stderr is not a terminal.
-    let plain = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty())
-        || !std::io::stderr().is_terminal();
-    let theme = if plain {
-        color_eyre::config::Theme::new()
-    } else {
-        color_eyre::config::Theme::dark()
-    };
-    let _ = color_eyre::config::HookBuilder::default()
-        .theme(theme)
-        .install();
+    // Privacy mode must be known before anything is printed, including
+    // argument errors: from the raw arguments, the config file and the
+    // saved UI state (refined once they are parsed).
+    set_output_privacy(early_privacy());
+    install_hooks();
     let _ = rustls::crypto::ring::default_provider().install_default();
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -98,6 +93,93 @@ fn main() -> ExitCode {
             ExitCode::from(e.code)
         }
     }
+}
+
+/// Error-report and panic hooks. Panic messages are scrubbed (and
+/// uncoloured) in privacy mode; reports are printed by [`CliError::print`].
+fn install_hooks() {
+    // Uncoloured when NO_COLOR is set or stderr is not a terminal.
+    let plain = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty())
+        || !std::io::stderr().is_terminal();
+    let theme = if plain {
+        color_eyre::config::Theme::new()
+    } else {
+        color_eyre::config::Theme::dark()
+    };
+    let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default()
+        .theme(theme)
+        .into_hooks();
+    let (plain_panic, _) = color_eyre::config::HookBuilder::default()
+        .theme(color_eyre::config::Theme::new())
+        .into_hooks();
+    let _ = eyre_hook.install();
+    std::panic::set_hook(Box::new(move |info| {
+        if output_privacy() {
+            eprintln!(
+                "{}",
+                scrub_output(&plain_panic.panic_report(info).to_string())
+            );
+        } else {
+            eprintln!("{}", panic_hook.panic_report(info));
+        }
+    }));
+}
+
+/// Whether privacy mode is on before the arguments are parsed: `--privacy`
+/// among the raw arguments, or `privacy` in the config file (default or
+/// `--config`) or the saved UI state.
+fn early_privacy() -> bool {
+    let args: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    if args
+        .iter()
+        .any(|a| a == "--privacy" || a.starts_with("--privacy="))
+    {
+        return true;
+    }
+    let paths = Paths::discover();
+    let config = args
+        .iter()
+        .position(|a| a == "--config")
+        .and_then(|i| args.get(i + 1).map(std::path::PathBuf::from))
+        .or_else(|| {
+            args.iter()
+                .find_map(|a| a.strip_prefix("--config=").map(std::path::PathBuf::from))
+        })
+        .or_else(|| paths.config_file());
+    let file = config
+        .and_then(|p| FileConfig::load(&p).ok().flatten())
+        .and_then(|c| c.privacy);
+    let state = paths
+        .ui_state_file()
+        .map(|p| UiState::load(&p))
+        .and_then(|s| s.privacy);
+    state.or(file).unwrap_or(false)
+}
+
+/// Parse the arguments. Errors (and help, which can show environment
+/// values) are scrubbed in privacy mode.
+fn parse_cli() -> Cli {
+    match Cli::try_parse() {
+        Ok(c) => c,
+        Err(e) if output_privacy() => {
+            let text = scrub_output(&e.render().to_string());
+            if e.use_stderr() {
+                eprint!("{text}");
+            } else {
+                print!("{text}");
+            }
+            std::process::exit(e.exit_code());
+        }
+        Err(e) => e.exit(),
+    }
+}
+
+/// Print a subcommand's output line, scrubbed in privacy mode.
+fn out(s: impl AsRef<str>) {
+    println!("{}", scrub_output(s.as_ref()));
 }
 
 fn current_thread_runtime() -> Result<tokio::runtime::Runtime, CliError> {
@@ -131,7 +213,7 @@ fn logout_stored(store: &SessionStore, base_url: &str) -> Result<Vec<RoleLogout>
 }
 
 fn run() -> Result<(), CliError> {
-    let cli = Cli::parse();
+    let cli = parse_cli();
     let paths = Paths::discover();
 
     let config_path = cli.config.clone().or_else(|| paths.config_file());
@@ -139,7 +221,7 @@ fn run() -> Result<(), CliError> {
         && !p.exists()
     {
         return Err(
-            CliError::usage(format!("config file {} not found", p.display())).hint(
+            CliError::usage(format!("config file {} not found", shown_path(p))).hint(
                 "create it (see config.example.toml) or drop --config; \
                  `cpatop paths` shows the default location",
             ),
@@ -155,6 +237,7 @@ fn run() -> Result<(), CliError> {
         .ui_state_file()
         .map(|p| UiState::load(&p))
         .unwrap_or_default();
+    set_output_privacy(cli.privacy || ui_state.privacy.or(file_cfg.privacy).unwrap_or(false));
 
     let raw_base = cli
         .base_url
@@ -174,7 +257,7 @@ fn run() -> Result<(), CliError> {
                     CliError::usage(format!("unknown theme {name:?}"))
                         .hint("`cpatop themes` lists the available themes")
                 })?;
-                print!("{}", theme::to_toml(t));
+                print!("{}", scrub_output(&theme::to_toml(t)));
             } else {
                 for t in &themes {
                     let kind = if theme::BUILTIN.contains(&t.name.as_str()) {
@@ -182,10 +265,10 @@ fn run() -> Result<(), CliError> {
                     } else {
                         "user"
                     };
-                    println!("{:<14} {kind}", t.name);
+                    out(format!("{:<14} {kind}", t.name));
                 }
                 for e in theme_errors {
-                    eprintln!("warning: {e}");
+                    eprintln!("warning: {}", scrub_output(&e));
                 }
             }
             return Ok(());
@@ -195,11 +278,11 @@ fn run() -> Result<(), CliError> {
                 p.map(|p| p.display().to_string())
                     .unwrap_or_else(|| "(unavailable)".into())
             };
-            println!("config file : {}", show(config_path.clone()));
-            println!("ui state    : {}", show(paths.ui_state_file()));
-            println!("themes dir  : {}", show(paths.themes_dir()));
-            println!("session     : {}", show(paths.session_file()));
-            println!("update cache: {}", show(paths.update_cache_file()));
+            out(format!("config file : {}", show(config_path.clone())));
+            out(format!("ui state    : {}", show(paths.ui_state_file())));
+            out(format!("themes dir  : {}", show(paths.themes_dir())));
+            out(format!("session     : {}", show(paths.session_file())));
+            out(format!("update cache: {}", show(paths.update_cache_file())));
             return Ok(());
         }
         Some(Command::CheckUpdate) => {
@@ -207,7 +290,7 @@ fn run() -> Result<(), CliError> {
             let rt = current_thread_runtime()?;
             let cache = paths.update_cache_file();
             let r = rt.block_on(update::check_and_cache(cache.as_deref()));
-            println!("{}", update::report(&r, update::CURRENT));
+            out(update::report(&r, update::CURRENT));
             return Ok(());
         }
         Some(Command::Keyring { action }) => {
@@ -217,26 +300,28 @@ fn run() -> Result<(), CliError> {
                         LoginMode::Admin => "Admin password",
                         LoginMode::ApiKey => "CPA API key",
                     };
-                    let value = rpassword::prompt_password(format!("{label} for {base_url}: "))
-                        .map_err(|e| {
-                            CliError::runtime(format!("could not read from the terminal: {e}"))
-                        })?;
+                    let value = rpassword::prompt_password(scrub_output(&format!(
+                        "{label} for {base_url}: "
+                    )))
+                    .map_err(|e| {
+                        CliError::runtime(format!("could not read from the terminal: {e}"))
+                    })?;
                     let secret = Secret::new(value.trim().to_string());
                     drop(value);
                     if secret.is_empty() {
                         return Err(CliError::runtime("nothing entered"));
                     }
                     secrets::keyring_set(*mode, &base_url, &secret).map_err(CliError::runtime)?;
-                    println!(
+                    out(format!(
                         "stored in the OS keyring as {}",
                         secrets::keyring_user(*mode, &base_url)
-                    );
+                    ));
                     Ok(())
                 }
                 KeyringAction::Delete { mode } => {
                     let existed =
                         secrets::keyring_delete(*mode, &base_url).map_err(CliError::runtime)?;
-                    println!("{}", if existed { "removed" } else { "nothing stored" });
+                    out(if existed { "removed" } else { "nothing stored" });
                     Ok(())
                 }
             };
@@ -245,12 +330,12 @@ fn run() -> Result<(), CliError> {
             let store = SessionStore::new(paths.session_file());
             let results = logout_stored(&store, &base_url)?;
             if results.is_empty() {
-                println!("no stored session for {base_url}");
+                out(format!("no stored session for {base_url}"));
             }
             for (role, r) in results {
                 match r {
-                    Ok(()) => println!("logged out of {base_url} ({role})"),
-                    Err(e) => println!("forgot the local {role} session ({e})"),
+                    Ok(()) => out(format!("logged out of {base_url} ({role})")),
+                    Err(e) => out(format!("forgot the local {role} session ({e})")),
                 }
             }
             return Ok(());

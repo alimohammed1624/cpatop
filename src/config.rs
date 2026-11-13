@@ -67,11 +67,15 @@ pub struct FileConfig {
 impl FileConfig {
     pub fn load(path: &Path) -> Result<Option<FileConfig>, String> {
         match std::fs::read_to_string(path) {
-            Ok(s) => toml::from_str(&s)
-                .map(Some)
-                .map_err(|e| format!("{}: {e}", path.display())),
+            Ok(s) => toml::from_str(&s).map(Some).map_err(|e| {
+                format!(
+                    "{}: {}",
+                    crate::app::shown_path(path),
+                    crate::app::scrub_output(&e.to_string())
+                )
+            }),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(format!("{}: {e}", path.display())),
+            Err(e) => Err(format!("{}: {e}", crate::app::shown_path(path))),
         }
     }
 }

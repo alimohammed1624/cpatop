@@ -166,7 +166,7 @@ pub fn write_private(path: &Path, data: &[u8]) -> Result<(), String> {
         }
         let mut f = opts
             .open(&tmp)
-            .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+            .map_err(|e| format!("cannot write {}: {e}", crate::app::shown_path(&tmp)))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -175,7 +175,8 @@ pub fn write_private(path: &Path, data: &[u8]) -> Result<(), String> {
         f.write_all(data).map_err(|e| e.to_string())?;
         f.sync_all().ok();
     }
-    std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
+    std::fs::rename(&tmp, path)
+        .map_err(|e| format!("cannot write {}: {e}", crate::app::shown_path(path)))
 }
 
 /// Create a directory (and parents) with mode 0700 on Unix.
@@ -191,7 +192,7 @@ pub fn create_private_dir(dir: &Path) -> Result<(), String> {
         b.mode(0o700);
     }
     b.create(dir)
-        .map_err(|e| format!("cannot create {}: {e}", dir.display()))
+        .map_err(|e| format!("cannot create {}: {e}", crate::app::shown_path(dir)))
 }
 
 #[cfg(test)]

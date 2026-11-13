@@ -350,7 +350,7 @@ pub fn load_user_themes(dir: &Path) -> (Vec<Theme>, Vec<String>) {
             .and_then(|f| f.apply(&base, &stem));
         match parsed {
             Ok(t) => themes.push(t),
-            Err(e) => errors.push(format!("theme {}: {e}", p.display())),
+            Err(e) => errors.push(format!("theme {}: {e}", crate::app::shown_path(&p))),
         }
     }
     (themes, errors)

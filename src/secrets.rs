@@ -58,7 +58,7 @@ pub enum Source {
 impl std::fmt::Display for Source {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Source::File(p) => write!(f, "file {}", p.display()),
+            Source::File(p) => write!(f, "file {}", crate::app::shown_path(p)),
             Source::Env(v) => write!(f, "${v}"),
             Source::Keyring => f.write_str("OS keyring"),
             Source::Prompt => f.write_str("login screen"),
@@ -128,15 +128,27 @@ pub struct ResolveOptions {
 }
 
 /// Read a secret from a file, trimming surrounding whitespace / newline.
-pub fn read_secret_file(path: &Path) -> Result<(Secret, Option<String>), String> {
-    let raw = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read secret file {}: {e}", path.display()))?;
+/// `what` names the file in messages (`password file`); its path is shown
+/// as `(‹path›)` in privacy mode.
+pub fn read_secret_file(path: &Path, what: &str) -> Result<(Secret, Option<String>), String> {
+    let shown = crate::app::shown_path(path);
+    let raw = std::fs::read_to_string(path).map_err(|e| {
+        // The OS message, without anything that could repeat the path.
+        let reason = match e.kind() {
+            std::io::ErrorKind::NotFound => "no such file".to_string(),
+            std::io::ErrorKind::PermissionDenied => "permission denied".to_string(),
+            std::io::ErrorKind::IsADirectory => "is a directory".to_string(),
+            std::io::ErrorKind::InvalidData => "not UTF-8 text".to_string(),
+            _ => crate::app::scrub_output(&e.to_string()),
+        };
+        format!("cannot read {what} {shown}: {reason}")
+    })?;
     let s = raw.trim();
     if s.is_empty() {
-        return Err(format!("secret file {} is empty", path.display()));
+        return Err(format!("{what} {shown} is empty"));
     }
     if s.len() > 4000 {
-        return Err(format!("secret file {} is too large", path.display()));
+        return Err(format!("{what} {shown} is too large"));
     }
     let mut warning = None;
     #[cfg(unix)]
@@ -146,8 +158,7 @@ pub fn read_secret_file(path: &Path) -> Result<(Secret, Option<String>), String>
             && meta.permissions().mode() & 0o077 != 0
         {
             warning = Some(format!(
-                "{} is readable by other users; consider chmod 600",
-                path.display()
+                "{what} {shown} is readable by other users; consider chmod 600"
             ));
         }
     }
@@ -169,13 +180,17 @@ pub fn resolve(opts: &ResolveOptions) -> Result<Credentials, String> {
         ..Default::default()
     };
     for mode in [LoginMode::Admin, LoginMode::ApiKey] {
-        let (file, env) = match mode {
-            LoginMode::Admin => (opts.password_file.as_ref(), "CPATOP_PASSWORD"),
-            LoginMode::ApiKey => (opts.api_key_file.as_ref(), "CPATOP_API_KEY"),
+        let (file, env, what) = match mode {
+            LoginMode::Admin => (
+                opts.password_file.as_ref(),
+                "CPATOP_PASSWORD",
+                "password file",
+            ),
+            LoginMode::ApiKey => (opts.api_key_file.as_ref(), "CPATOP_API_KEY", "API key file"),
         };
         let mut found = None;
         if let Some(path) = file {
-            let (secret, warning) = read_secret_file(path)?;
+            let (secret, warning) = read_secret_file(path, what)?;
             out.warnings.extend(warning);
             found = Some(Credential {
                 mode,
@@ -352,10 +367,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("pw");
         std::fs::write(&p, "  s3cret\n").unwrap();
-        let (s, _) = read_secret_file(&p).unwrap();
+        let (s, _) = read_secret_file(&p, "password file").unwrap();
         assert_eq!(s.expose(), "s3cret");
         std::fs::write(&p, "\n").unwrap();
-        assert!(read_secret_file(&p).is_err());
+        assert!(read_secret_file(&p, "password file").is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
