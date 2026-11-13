@@ -193,7 +193,8 @@ impl App {
             return false;
         }
         let r = TimeRange::Custom(clamped);
-        self.set_range(r);
+        // Not a choice of the user's: a command-line range stays unsaved.
+        self.apply_range(r);
         self.flash(format!("range moved out of bounds — now {}", r.label()));
         true
     }

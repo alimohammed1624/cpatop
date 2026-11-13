@@ -1432,3 +1432,64 @@ fn command_line_privacy_is_not_persisted() {
     assert!(!app.settings.privacy);
     assert_eq!(app.ui_state().privacy, Some(false));
 }
+
+/// A setting changed in the app is saved even when the change ends on the
+/// command-line value (`--privacy`, then `x` twice), and survives a restart
+/// without the flag; untouched overrides are not saved (M1).
+#[test]
+fn explicit_changes_back_to_the_command_line_value_persist_across_restart() {
+    use cpatop::range::TimeRange;
+    use crossterm::event::KeyCode;
+    let dir = std::env::temp_dir().join(format!("cpatop-m1-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("ui.toml");
+    // Saved before: privacy off, range 7d, symbols braille, refresh 5s.
+    let before = UiState {
+        privacy: Some(false),
+        range: Some(TimeRange::Days(7)),
+        refresh_secs: Some(5),
+        ..Default::default()
+    };
+    before.save(&path).unwrap();
+
+    // Run 1: `--privacy --range today --refresh 9 --symbols …`.
+    let mut app = populated(Role::Admin);
+    app.saved_ui = UiState::load(&path);
+    app.settings.privacy = true;
+    app.range = TimeRange::Today;
+    app.settings.refresh_secs = 9;
+    let sym = app.settings.graph_symbols;
+    app.cli_overrides = UiState {
+        privacy: Some(true),
+        range: Some(TimeRange::Today),
+        refresh_secs: Some(9),
+        graph_symbols: Some(sym),
+        ..Default::default()
+    };
+    render(&mut app, 80, 24);
+    // Privacy off and on again; range there and back; refresh untouched.
+    press(&mut app, KeyCode::Char('x'));
+    press(&mut app, KeyCode::Char('x'));
+    assert!(app.settings.privacy);
+    press(&mut app, KeyCode::Char(']'));
+    press(&mut app, KeyCode::Char('['));
+    assert_eq!(app.range, TimeRange::Today);
+    // Symbols cycled all the way round.
+    let mut n = 0;
+    loop {
+        press(&mut app, KeyCode::Char('b'));
+        n += 1;
+        if app.settings.graph_symbols == sym || n > 10 {
+            break;
+        }
+    }
+    app.ui_state().save(&path).unwrap();
+
+    // Run 2 without flags reads what run 1 saved.
+    let st = UiState::load(&path);
+    assert_eq!(st.privacy, Some(true), "privacy toggled on in the app");
+    assert_eq!(st.range, Some(TimeRange::Today), "range picked in the app");
+    assert_eq!(st.graph_symbols, Some(sym), "symbols cycled in the app");
+    assert_eq!(st.refresh_secs, Some(5), "untouched --refresh not saved");
+    let _ = std::fs::remove_dir_all(&dir);
+}

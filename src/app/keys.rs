@@ -472,6 +472,7 @@ impl App {
         } else {
             (self.theme_idx + n - 1) % n
         };
+        self.touched.theme = true;
         let name = self.theme().name.clone();
         self.flash(format!("theme: {name}"));
         self.effects.push(Effect::SaveState);
@@ -764,11 +765,13 @@ impl App {
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.settings.refresh_secs = step_refresh(self.settings.refresh_secs, true);
+                self.touched.refresh_secs = true;
                 self.flash(format!("refresh every {}s", self.settings.refresh_secs));
                 self.effects.push(Effect::SaveState);
             }
             KeyCode::Char('-') | KeyCode::Char('_') => {
                 self.settings.refresh_secs = step_refresh(self.settings.refresh_secs, false);
+                self.touched.refresh_secs = true;
                 self.flash(format!("refresh every {}s", self.settings.refresh_secs));
                 self.effects.push(Effect::SaveState);
             }
@@ -825,11 +828,13 @@ impl App {
             }
             KeyCode::Char('b') => {
                 self.settings.graph_symbols = self.settings.graph_symbols.next();
+                self.touched.graph_symbols = true;
                 self.flash(format!("graphs: {}", self.settings.graph_symbols.name()));
                 self.effects.push(Effect::SaveState);
             }
             KeyCode::Char('x') => {
                 self.settings.privacy = !self.settings.privacy;
+                self.touched.privacy = true;
                 crate::app::set_output_privacy(self.settings.privacy);
                 self.flash(if self.settings.privacy {
                     "privacy mode on"

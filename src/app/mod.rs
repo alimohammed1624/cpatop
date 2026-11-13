@@ -106,6 +106,16 @@ pub struct Data {
     pub version: Loaded<VersionInfo>,
 }
 
+/// Settings the user changed in the app this run.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Touched {
+    pub privacy: bool,
+    pub range: bool,
+    pub theme: bool,
+    pub graph_symbols: bool,
+    pub refresh_secs: bool,
+}
+
 /// Per-table UI state.
 #[derive(Debug, Default)]
 pub struct TableState {
@@ -282,11 +292,13 @@ pub struct App {
     /// (should stay 0 — panes replace identifiers themselves).
     pub privacy_guard_hits: Cell<usize>,
     /// Settings given on the command line for this run only (`--privacy`,
-    /// `--range`, `--theme`, `--symbols`, `--refresh`): while a setting
-    /// still has its command-line value it is saved as it was in
-    /// `saved_ui`, so an override never sticks to the next start; a change
-    /// made in the app is saved as usual.
+    /// `--range`, `--theme`, `--symbols`, `--refresh`): until the setting is
+    /// changed in the app it is saved as it was in `saved_ui`, so an
+    /// override never sticks to the next start; a change made in the app is
+    /// saved as usual, even when it ends on the command-line value.
     pub cli_overrides: UiState,
+    /// Settings changed in the app this run (see `cli_overrides`).
+    pub touched: Touched,
     /// The UI state as loaded at start.
     pub saved_ui: UiState,
     /// Tag of a newer cpatop release, from the background update check.
@@ -386,6 +398,7 @@ impl App {
                 .unwrap_or_else(|| fastrand::u64(1..=i64::MAX as u64)),
             privacy_guard_hits: Cell::new(0),
             cli_overrides: UiState::default(),
+            touched: Touched::default(),
             saved_ui: ui.clone(),
             update_available: None,
             server_edit: None,
@@ -451,21 +464,22 @@ impl App {
             pane_order: Some(layout::PANE_ORDER),
             ..Default::default()
         };
-        // Command-line values are for this run only.
-        let (o, s) = (&self.cli_overrides, &self.saved_ui);
-        if o.privacy.is_some() && o.privacy == st.privacy {
+        // Command-line values are for this run only: a setting given on the
+        // command line and not changed in the app keeps its saved value.
+        let (o, s, t) = (&self.cli_overrides, &self.saved_ui, self.touched);
+        if o.privacy.is_some() && !t.privacy {
             st.privacy = s.privacy;
         }
-        if o.range.is_some() && o.range == st.range {
+        if o.range.is_some() && !t.range {
             st.range = s.range;
         }
-        if o.theme.is_some() && o.theme == st.theme {
+        if o.theme.is_some() && !t.theme {
             st.theme = s.theme.clone();
         }
-        if o.graph_symbols.is_some() && o.graph_symbols == st.graph_symbols {
+        if o.graph_symbols.is_some() && !t.graph_symbols {
             st.graph_symbols = s.graph_symbols;
         }
-        if o.refresh_secs.is_some() && o.refresh_secs == st.refresh_secs {
+        if o.refresh_secs.is_some() && !t.refresh_secs {
             st.refresh_secs = s.refresh_secs;
         }
         for (t, i) in &self.layout_idx {
@@ -860,7 +874,14 @@ impl App {
         self.nonce += 1;
     }
 
+    /// The user picked range `r`: it is saved even when given on the
+    /// command line.
     pub fn set_range(&mut self, r: TimeRange) {
+        self.touched.range = true;
+        self.apply_range(r);
+    }
+
+    fn apply_range(&mut self, r: TimeRange) {
         if r != self.range {
             self.range = r;
             self.discard_scoped();
