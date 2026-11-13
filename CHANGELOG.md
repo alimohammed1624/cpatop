@@ -112,6 +112,12 @@ All notable changes to cpatop are documented here. The format follows
   readable (distinct glyphs, reverse video).
 
 ### Fixed
+- Without colour the active tab is bracketed (`[Quota]`); some terminals
+  drop bold and reverse along with colour.
+- Quota charts the selected credential's recent requests under the table;
+  the Keys stacked layout gives the key chart the full width.
+- Realtime trends are labelled (`trend ↓12%`, second half vs first) and
+  neutral in colour; pricing headers are spelled out when there is room.
 - Without colour the realtime outcomes legend (`█ ok ░ fail`) moves to the
   plot when the head line is full instead of being cut at 80×24.
 - Analysis averages and rpm/tpm divided by the nominal range length

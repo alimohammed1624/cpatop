@@ -231,7 +231,13 @@ fn tab_bar(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect) {
         } else {
             tab.short_title().to_string()
         };
-        let label = format!(" {title} ");
+        // Without colour some terminals drop bold/reverse too: the active
+        // tab is also marked by brackets.
+        let label = if t.no_color && *tab == app.tab {
+            format!("[{title}]")
+        } else {
+            format!(" {title} ")
+        };
         let w = label.chars().count() as u16;
         let edge = if bracketed { 1 } else { 0 };
         if x + w + 2 * edge > area.right() {
