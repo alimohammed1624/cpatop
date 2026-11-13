@@ -6,48 +6,7 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-- Privacy: e-mail addresses with quoted local parts and escaped quotes
-  (`"alice \"bob\" smith"@example.org`) are masked from the start of their
-  field on screen, in typed input and on stderr; nothing of the local part
-  is left.
-- Privacy: `/` filters and picker searches are hidden as they are typed
-  (`••••• 5`), from the first character, also in pane titles; the range
-  editor shows only digits and separators.
-- Privacy: the change-server field shows the host name and port in clear,
-  like the header, and hides IP addresses, user info and the path.
-- `--privacy`, `--range`, `--theme`, `--symbols` and `--refresh` on the
-  command line apply to that run only and are no longer saved to
-  `ui-state.toml`; changes made in the app still are.
-- `cpatop --privacy paths` shows `~/.config/cpatop/…` instead of `‹key›`;
-  credential file errors name the option (`--password-file`) and show the
-  path only without privacy; messages show `‹path›`, not `(‹path›)`.
-- Daily charts start each day at the server's midnight, not UTC midnight:
-  with the server at +05:30 today's bucket no longer disappears from the
-  Overview trend, distribution sparklines and Keys chart for the first
-  hours after midnight.
-- Charts of `today` keep the whole day on the time axis (the part still to
-  come blank, the axis dotted) instead of stretching the first bucket into
-  a wall; totals and peaks count only buckets that have started.
-- The realtime cache-hit chart runs from 0 % like every other chart.
-- Panes too short for their content show a one-line summary instead of an
-  empty box; collapsed tables give a real summary instead of `0 rows`;
-  spare rows bring a collapsed pane back (quota table at 50×12).
-- `?` help lists only keys that work for the role (API-key sessions:
-  `F2…F4`, no API-key picker, requests or credential-name keys).
-- Requests title reads `51 loaded of 4,585 · 24h`; a plan from the quota
-  cache reads `(from quota)` everywhere.
-
-### Added
-- Hidden panes are listed next to the layout name (`hidden ²³`); `0` shows
-  them all.
-
-### Changed
-- GitHub Actions is the primary CI again (push to `main`, pull requests,
-  manual) and builds releases on `v*` tags; the local `scripts/ci.sh`,
-  `scripts/release.sh` and git hooks are an optional fallback.
-
-## [0.2.0] - 2026-11-13
+## [0.2.0] - 2026-11-14
 
 A polish and hardening release. Privacy mode now covers everything cpatop
 shows or prints; tables, graphs and panes use the whole terminal from 50×12
@@ -55,6 +14,8 @@ to 220×60; every table row opens its full record; a wrong server URL can be
 fixed in the app; and cpatop tells you when a newer release is out.
 
 ### Added
+- Hidden panes are listed next to the layout name (`hidden ²³`); `0` shows
+  them all.
 - Offline and login screens: change the server URL in the app (`b` on the
   offline screen, `Ctrl-S` on the login screen). cpatop normalises the URL,
   checks that it answers like a Keeper, switches to it (stopping every
@@ -127,6 +88,25 @@ fixed in the app; and cpatop tells you when a newer release is out.
   binary (`cpatop-universal-apple-darwin.tar.gz`) for manual download.
 
 ### Changed
+- The Analysis title says where the server's hourly buckets start
+  (`server buckets from 00:30`), the daily Overview trend where its days
+  are cut (`days from 00:30`), and `?` help explains under "reading the
+  numbers" why `today` differs between Overview and Analysis.
+- The activity grid's Σ is labelled with its span (`rolling 7×24h`), as it
+  is not the calendar total of the totals and trend panes.
+- Realtime "cache reach" is now "cache-hit requests" (requests that read
+  any cached tokens), explained in help next to "cache read".
+- `today` sparklines draw the rest of the day as a dotted baseline, like
+  the charts.
+- Missing values read `—` in every table and readout.
+- Help lists the server-URL key under its own "offline / login screen"
+  heading.
+- Wide tables with a bar and no name column (Keys) keep their columns close
+  and give the rest of the width to the bar.
+- CI runs on GitHub Actions (push to `main`, pull requests, manual) and
+  builds releases on `v*` tags; `scripts/ci.sh`, `scripts/release.sh`
+  (macOS builds on a Mac over ssh) and the git hooks from
+  `scripts/setup-hooks.sh` are an optional local fallback.
 - Privacy mode now also masks URL query strings and fragments (endpoints
   read `/v1/messages?…`), the whole run around any `@` (every RFC
   local-part character, quoted local parts, e-mails inside paths), and
@@ -215,14 +195,56 @@ fixed in the app; and cpatop tells you when a newer release is out.
   the heatmap ranks model columns by tokens.
 - Without colour (`NO_COLOR`) meters, heat cells and selections stay
   readable (distinct glyphs, reverse video).
-- CI and releases run locally instead of on GitHub Actions:
-  `scripts/ci.sh` (started in the background by a `post-commit` hook on
-  `main`, enforced by a `pre-push` hook) and `scripts/release.sh vX.Y.Z`
-  (Linux builds locally, macOS builds on a Mac over ssh; same assets and
-  `SHA256SUMS` as before). Enable the hooks with `scripts/setup-hooks.sh`.
-  The GitHub workflows now run only when started by hand.
 
 ### Fixed
+- A setting changed in the app is saved even when it ends on the
+  command-line value: `--privacy`, then `x` twice, keeps privacy on at the
+  next start without the flag. Untouched command-line values still are not
+  saved.
+- `SIGTERM`, `SIGHUP` and `SIGINT` quit like `q`: the terminal leaves the
+  alternate screen and mouse mode, and `--logout-on-exit` ends the server
+  session and forgets the stored one. Errors and panics take the same way
+  out; a second signal stops waiting for the logout.
+- Hourly charts draw each bucket over its real time span: with the server
+  at +05:30 its buckets run `HH:30`–`HH+1:30`, and bars no longer sit 30–60
+  minutes late. The first `today` bucket covers 00:00–00:30, the one in
+  progress and the solid axis end at now (Overview trend, distribution and
+  Keys charts, Analysis tokens chart, sparklines).
+- The graph cursor stops at the bucket in progress (`→`, `G`, clicks).
+- 50×12: the quota table keeps its status glyph and more rows (compact
+  inspection summary on short terminals); panes sized to their content
+  (the Realtime window) no longer take blank rows; the Realtime header
+  drops the word "window" before cutting `? help`.
+- Privacy: e-mail addresses with quoted local parts and escaped quotes
+  (`"alice \"bob\" smith"@example.org`) are masked from the start of their
+  field on screen, in typed input and on stderr; nothing of the local part
+  is left.
+- Privacy: `/` filters and picker searches are hidden as they are typed
+  (`••••• 5`), from the first character, also in pane titles; the range
+  editor shows only digits and separators.
+- Privacy: the change-server field shows the host name and port in clear,
+  like the header, and hides IP addresses, user info and the path.
+- `--privacy`, `--range`, `--theme`, `--symbols` and `--refresh` on the
+  command line apply to that run only and are no longer saved to
+  `ui-state.toml`; changes made in the app still are.
+- `cpatop --privacy paths` shows `~/.config/cpatop/…` instead of `‹key›`;
+  credential file errors name the option (`--password-file`) and show the
+  path only without privacy; messages show `‹path›`, not `(‹path›)`.
+- Daily charts start each day at the server's midnight, not UTC midnight:
+  with the server at +05:30 today's bucket no longer disappears from the
+  Overview trend, distribution sparklines and Keys chart for the first
+  hours after midnight.
+- Charts of `today` keep the whole day on the time axis (the part still to
+  come blank, the axis dotted) instead of stretching the first bucket into
+  a wall; totals and peaks count only buckets that have started.
+- The realtime cache-hit chart runs from 0 % like every other chart.
+- Panes too short for their content show a one-line summary instead of an
+  empty box; collapsed tables give a real summary instead of `0 rows`;
+  spare rows bring a collapsed pane back (quota table at 50×12).
+- `?` help lists only keys that work for the role (API-key sessions:
+  `F2…F4`, no API-key picker, requests or credential-name keys).
+- Requests title reads `51 loaded of 4,585 · 24h`; a plan from the quota
+  cache reads `(from quota)` everywhere.
 - Table sparklines top out at `▇` so bars in neighbouring rows no longer
   merge into one tall block; the screenshot renderer clips block glyphs
   per cell. The graph cursor reads `11-13 00:00` (not `11-13 00`).

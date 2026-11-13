@@ -178,13 +178,16 @@ key when both credentials exist), `--privacy` (hide e-mails, keys and IPs),
 `--no-update-check`. Connection, credential and display flags may also follow a
 subcommand (`cpatop logout --base-url http://host:8318`). `--theme`, `--range`,
 `--refresh`, `--symbols` and `--privacy` apply to that run only; changes made in
-the app (`t`, `r`, `+`/`-`, `b`, `x`) are remembered.
+the app (`t`, `r`, `+`/`-`, `b`, `x`) are remembered, also when they end on the
+command-line value (`--privacy`, then `x` twice, keeps privacy on).
 
 Sessions are remembered per server and role, and a stored session is checked
 with the server (`GET /auth/session`) and reused on the next start — cpatop
 only logs in again when it is no longer valid. **`q` keeps the server session**
 for next time; `cpatop logout` (or `X X` in the app) ends it, and
-`--logout-on-exit` (config `logout_on_exit = true`) ends it whenever you quit. A credential given explicitly
+`--logout-on-exit` (config `logout_on_exit = true`) ends it whenever you quit —
+also when cpatop is stopped by `SIGTERM`, `SIGHUP` (terminal closed) or
+`SIGINT`, which restore the terminal like `q`. A credential given explicitly
 for this run (`--password-file`, `--api-key-file`, `CPATOP_PASSWORD`,
 `CPATOP_API_KEY`) decides the role, so `--api-key-file` always opens the
 per-key dashboard even when an admin session is stored.
@@ -217,7 +220,8 @@ The focused pane lists its own keys in its bottom border; `?` shows them all.
 | `+` / `-` | Slower / faster refresh |
 | `R` | Refresh now |
 | `t` / `T` | Next / previous theme |
-| `b` | Graph symbols: braille / block / ascii; on the offline screen: change the server URL (`Ctrl-S` on the login screen) |
+| `b` | Graph symbols: braille / block / ascii |
+| `b` (offline screen), `Ctrl-S` (login screen) | Change the server URL |
 | `x` | Privacy mode: hide e-mails, API keys and IP addresses, and what you type into `/` and picker searches (remembered) |
 | `X` `X` | Log out on the server (press twice within 3 s) |
 | `Esc` | Close the overlay / clear the filter or cursor — never quits |
@@ -332,9 +336,16 @@ complete starting point. A user theme with a built-in name replaces it.
   `cpatop check-update` checks on demand (ignoring the cache and the
   opt-outs) and prints one line; `cpatop --version` never goes online.
 - Keeper buckets hourly series on UTC hours. In a zone with a half-hour
-  offset (+05:30) buckets start at :30 local time; the first `today` bucket
-  holds only local midnight to the next UTC hour and is labelled `00:00`,
-  and axis ticks sit on whole local hours.
+  offset (+05:30) buckets start at :30 local time; charts draw each bucket
+  over its real time span (the first `today` bucket covers only 00:00–00:30,
+  the one in progress ends at now, and so does the solid axis), and axis
+  ticks sit on whole local hours. cpatop shows the server's numbers as they
+  are, so in such a zone `today` differs between tabs: Overview counts from
+  00:00, Analysis from the first UTC hour (its title reads `server buckets
+  from 00:30`), and Overview's daily buckets run 00:30 → 00:30 (`days from
+  00:30`). The activity grid's Σ covers the last N×24 hours (`rolling
+  7×24h`), not calendar days. `?` help has these under "reading the
+  numbers".
 - Credentials that share a name carry their provider (`account-1 · claude`);
   where space is short the provider is abbreviated so the name stays whole:
   `cl` claude, `cx` codex, `ag` antigravity, `gm` gemini, `gc` gemini-cli,
