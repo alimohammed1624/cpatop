@@ -498,6 +498,10 @@ pub struct Analysis {
     pub cost_summary: CostSummary,
     #[serde(deserialize_with = "nd")]
     pub model_efficiency: Vec<ModelEfficiency>,
+    /// Slots of the range that have not started yet (the rest of `today`),
+    /// set by `series::densify_analysis`; charts keep them on the axis.
+    #[serde(skip)]
+    pub future_buckets: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]

@@ -168,6 +168,18 @@ pub fn densify_analysis(a: &mut Analysis, now: DateTime<Utc>) {
     let Some(axis) = Axis::build(start, end, daily, now, &extra) else {
         return;
     };
+    // The slots between now and the range end (the rest of `today`).
+    a.future_buckets = Axis::build(start, end, daily, end.with_timezone(&Utc), &[])
+        .map(|full| {
+            let last = axis.keys.last().copied();
+            full.keys
+                .iter()
+                .zip(&full.labels)
+                .filter(|(k, _)| last.is_none_or(|l| **k > l))
+                .map(|(_, l)| l.clone())
+                .collect()
+        })
+        .unwrap_or_default();
     // Token usage: sum buckets per slot.
     let mut slots: BTreeMap<usize, TokenUsageBucket> = BTreeMap::new();
     for b in &a.token_usage {
@@ -376,6 +388,8 @@ mod tests {
         assert_eq!(a.model_usage.buckets.len(), 31);
         assert_eq!(a.model_usage.series[0].total_tokens[29], 3.0);
         assert_eq!(a.model_usage.series[0].total_tokens[30], 3.0);
+        // Daily: today is the last slot, nothing is in the future.
+        assert!(a.future_buckets.is_empty());
     }
 
     #[test]
@@ -432,6 +446,10 @@ mod tests {
         assert_eq!(a.token_usage.len(), 20);
         assert_eq!(a.token_usage[4].total_tokens, 7.0);
         assert_eq!(a.token_usage[19].total_tokens, 9.0);
+        // 19:30 … 23:30 are still to come.
+        assert_eq!(a.future_buckets.len(), 5);
+        assert_eq!(a.future_buckets[0], "2026-11-13T19:30:00+05:30");
+        assert_eq!(a.future_buckets[4], "2026-11-13T23:30:00+05:30");
     }
 
     #[test]

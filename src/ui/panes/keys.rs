@@ -145,11 +145,16 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
     let chart_for = |id: &str| -> Option<RowChart> {
         let c = app.data.key_usage.get()?;
         let item = c.api_keys.iter().find(|k| k.key == id);
+        // Buckets after now (the rest of `today`) keep their slots, blank.
         let keep = crate::series::until_now(&c.buckets, app.server_now());
-        let n = keep.min(c.buckets.len());
-        let values = item
+        let n = c.buckets.len();
+        let mut values = item
             .map(|i| i.token_series[..n.min(i.token_series.len())].to_vec())
             .unwrap_or_else(|| vec![0.0; n]);
+        values.resize(n, 0.0);
+        for v in values.iter_mut().skip(keep) {
+            *v = f64::NAN;
+        }
         let label = keys
             .items
             .iter()

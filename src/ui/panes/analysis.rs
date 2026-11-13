@@ -2,8 +2,8 @@
 
 use super::realtime::scatter_pane;
 use super::{
-    Series, chart, cursor, cursor_time, dim_key_field, dim_tabs, frame, placeholder, stale_marker,
-    table_in, time_labels, token_details,
+    Series, chart_until, cursor, cursor_time, dim_key_field, dim_tabs, frame, placeholder,
+    stale_marker, table_in, time_labels, token_details,
 };
 use crate::api::models::{Analysis, CompositionItem};
 use crate::app::{App, Hit};
@@ -61,8 +61,21 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
     let Some(a) = an(app) else { return };
     let series: Vec<f64> = a.token_usage.iter().map(|b| b.total_tokens).collect();
     let buckets: Vec<String> = a.token_usage.iter().map(|b| b.bucket.clone()).collect();
-    let cur = cursor(app, PaneId::AnTokens, series.len());
+    // The rest of `today` stays on the axis, blank, after the last bucket.
+    let started = series.len();
+    let mut values = series.clone();
+    values.resize(started + a.future_buckets.len(), f64::NAN);
+    let mut slots = buckets.clone();
+    slots.extend(a.future_buckets.iter().cloned());
+    let cur = cursor(app, PaneId::AnTokens, values.len());
     let items = match cur {
+        Some(i) if i >= started => vec![
+            vec![Span::styled(
+                format!("▸ {}", cursor_time(&slots[i], daily(a))),
+                Style::default().fg(t.hi),
+            )],
+            vec![Span::styled("not yet", Style::default().fg(t.graph_text))],
+        ],
         Some(i) => {
             let b = &a.token_usage[i];
             vec![
@@ -140,8 +153,8 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         widgets::message(f.buffer_mut(), g, "no usage in this range", t.graph_text);
         return;
     }
-    let labels = time_labels(&buckets, daily(a), false);
-    chart(
+    let labels = time_labels(&slots, daily(a), false);
+    chart_until(
         f,
         app,
         hit,
@@ -149,7 +162,7 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         g,
         &labels,
         &Series {
-            values: &series,
+            values: &values,
             fmt: fmt::compact,
             color: None,
             max: None,
@@ -157,6 +170,7 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         },
         app.settings.graph_symbols,
         true,
+        (started < values.len()).then_some(started),
     );
 }
 
