@@ -90,6 +90,9 @@ All notable changes to cpatop are documented here. The format follows
   nearly empty (`↑8800.0%`): with fewer than 5 requests before the midpoint
   no trend is shown, and larger changes read `↑>999%`. Model speed halves
   without samples read `no samples` instead of `-`.
+- Hourly graphs in zones with a half-hour offset (+05:30) labelled their
+  x axis `23:30 04:30 09:30`; ticks now sit on whole local hours (`00:00
+  06:00 12:00`), placed inside the UTC-hour buckets.
 - `--privacy` now also hides IP addresses in the server address (header,
   Keys server pane, login and offline screens) and inside URLs, catches
   lowercase opaque keys (`sk-…`) and IP-valued aliases; `--help` and the
