@@ -225,16 +225,22 @@ pub fn until(s: &str, now: DateTime<Utc>) -> Option<u64> {
     Some(d.num_seconds().max(0) as u64)
 }
 
-/// Redact a server-provided API key label so only a short prefix remains.
+/// Redact a server-provided API key label to `prefix…suffix`, like the web
+/// dashboard.
 ///
-/// The Keeper masks keys as `abc*********last6`; we drop everything after the
-/// prefix so the tail of the real key is never shown. Long opaque strings that
-/// look like raw keys are cut to six characters.
+/// The Keeper masks keys as `abc*********last6`: the short prefix and the
+/// six-character suffix it already exposes are kept (the suffix is what tells
+/// keys with the same prefix apart), the stars become `…`. Long opaque strings
+/// that look like raw keys are cut to their first six characters.
 pub fn redact_key(s: &str) -> String {
     let s = s.trim();
-    if let Some(star) = s.find('*') {
-        let prefix: String = s[..star].chars().take(6).collect();
-        return format!("{prefix}…");
+    if let (Some(first), Some(last)) = (s.find('*'), s.rfind('*')) {
+        let prefix: String = s[..first].chars().take(6).collect();
+        let tail = s[last + 1..].trim_end_matches('…');
+        // Never more than the six characters the server shows.
+        let n = tail.chars().count();
+        let suffix: String = tail.chars().skip(n.saturating_sub(6)).collect();
+        return format!("{prefix}…{suffix}");
     }
     if let Some(rest) = s.strip_prefix("legacy:") {
         let p: String = rest.chars().take(6).collect();
@@ -376,7 +382,9 @@ mod tests {
 
     #[test]
     fn redaction() {
-        assert_eq!(redact_key("abc*********defghi"), "abc…");
+        assert_eq!(redact_key("abc*********defghi"), "abc…defghi");
+        assert_eq!(redact_key("abc***…"), "abc…");
+        assert_eq!(redact_key("abc***0123456789"), "abc…456789");
         assert_eq!(redact_key("my-alias"), "my-alias");
         assert_eq!(redact_key("sk-abcdefghijklmnopqrstuvwxyz"), "sk-abc…");
         assert_eq!(redact_key("legacy:0123456789abcdef"), "legacy:012345…");
