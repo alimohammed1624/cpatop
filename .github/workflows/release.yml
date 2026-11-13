@@ -1,7 +1,9 @@
 name: Release
 
 # Push a tag like v0.2.0 to build release binaries and attach them to a
-# GitHub release for that tag.
+# GitHub release for that tag. The tag must equal "v" + the version in
+# Cargo.toml. Running the workflow by hand (workflow_dispatch) on a branch is
+# a dry run: it checks and builds every archive but never publishes a release.
 #
 # Asset names are deliberately version-independent (cpatop-<target>.tar.gz,
 # containing a top-level cpatop-<target>/ dir) so that
@@ -19,7 +21,30 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches Cargo.toml version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $version (expected v$version)"
+            exit 1
+          fi
+          echo "tag $GITHUB_REF_NAME matches Cargo.toml version $version"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+
   build:
+    needs: check
     strategy:
       fail-fast: false
       matrix:
@@ -96,6 +121,8 @@ jobs:
 
   release:
     needs: [build, macos-universal]
+    # Only a pushed v* tag publishes; a manual run on a branch is a dry run.
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
