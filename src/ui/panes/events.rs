@@ -97,7 +97,9 @@ fn status_spans(app: &App) -> Vec<Span<'static>> {
 
 /// Lines of the detail pane at an inner width (fields wrap when narrow).
 pub fn detail_lines(width: u16) -> u16 {
-    if width >= 76 {
+    if width >= TWO_COLUMNS {
+        4
+    } else if width >= 76 {
         8
     } else if width >= 56 {
         10
@@ -368,13 +370,46 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             v(fmt::trunc(&app.user_agent(&opt(&e.user_agent)), 80)),
         ]),
     ];
-    f.render_widget(
-        Paragraph::new(lines).wrap(Wrap { trim: true }),
-        Rect::new(
-            inner.x + 1,
-            inner.y,
-            inner.width.saturating_sub(1),
-            inner.height,
-        ),
+    let body = Rect::new(
+        inner.x + 1,
+        inner.y,
+        inner.width.saturating_sub(1),
+        inner.height,
     );
+    // Wide panes set the fields side by side (request and tokens on the
+    // left, cost and origin on the right) instead of leaving most of the
+    // pane blank.
+    if body.width >= TWO_COLUMNS && lines.len() == 8 {
+        let tw = body.width as usize;
+        let (left, right) = lines.split_at(4);
+        // The right column starts half-way across (or after the longest
+        // left line), so both halves share the width.
+        let lw = left
+            .iter()
+            .map(Line::width)
+            .max()
+            .unwrap_or(0)
+            .max((tw - DETAIL_GAP) / 2)
+            .min(tw - DETAIL_GAP - MIN_RIGHT);
+        let rx = body.x + (lw + DETAIL_GAP) as u16;
+        let rw = tw - lw - DETAIL_GAP;
+        let buf = f.buffer_mut();
+        for (i, (l, r)) in left.iter().zip(right).enumerate() {
+            let y = body.y + i as u16;
+            if y >= body.bottom() {
+                break;
+            }
+            let fit =
+                |l: &Line<'static>, w: usize| Line::from(super::fit_spans(l.spans.clone(), w));
+            buf.set_line(body.x, y, &fit(l, lw), lw as u16);
+            buf.set_line(rx, y, &fit(r, rw), rw as u16);
+        }
+        return;
+    }
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), body);
 }
+
+/// Text width from which the detail fields are set in two columns.
+const TWO_COLUMNS: u16 = 150;
+const DETAIL_GAP: usize = 4;
+const MIN_RIGHT: usize = 60;

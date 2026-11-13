@@ -336,6 +336,31 @@ pub fn content_widths(cols: &[Col], rows: &[TRow]) -> Vec<usize> {
         .collect()
 }
 
+/// Width a table reads well at with every column shown: each column at
+/// its content (sparklines at two characters per bucket, meters at a
+/// readable length), with two cells of breathing room per gap. Panes whose
+/// table is narrower than their share of a row give the rest away.
+pub fn natural_width(cols: &[Col], rows: &[TRow]) -> u16 {
+    const METER: usize = 24;
+    const SPARK_MAX: usize = 72;
+    let content = content_widths(cols, rows);
+    let w: usize = cols
+        .iter()
+        .zip(&content)
+        .map(|(c, n)| {
+            let n = if c.spark {
+                (n * 2).min(SPARK_MAX)
+            } else if c.grow {
+                (*n).max(METER)
+            } else {
+                *n
+            };
+            n.max(c.width as usize)
+        })
+        .sum();
+    (w + cols.len().saturating_sub(1) * 3).min(u16::MAX as usize) as u16
+}
+
 /// A placed column: index, x offset within the table, width.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Placed {
@@ -427,7 +452,7 @@ fn allocate(cols: &[Col], content: &[usize], width: u16, keep: &[usize]) -> Vec<
         }
     }
     // Meters take what is left up to a readable length, then sparklines
-    // (which can use any width), then meters up to their maximum.
+    // (up to three characters per bucket), then meters up to 48.
     const METER_SOFT: u16 = 32;
     const MAX_GROW: u16 = 48;
     const MAX_SPARK: u16 = 160;
@@ -468,16 +493,49 @@ fn allocate(cols: &[Col], content: &[usize], width: u16, keep: &[usize]) -> Vec<
     // Then breathing room between columns (up to two extra cells per gap).
     let gaps = keep.len().saturating_sub(1) as u16;
     let extra = spare.checked_div(gaps).unwrap_or(0).min(2);
+    spare -= extra * gaps;
+    // A wide pane is filled to its right edge, in this order: meters up to
+    // a long bar, columns spread apart (gaps of up to eight cells), the
+    // name columns (numbers stay near the names they describe until
+    // nothing else can use the width), and last the gaps without limit.
+    const MAX_FILL: u16 = 72;
+    const MAX_GAP_EXTRA: u16 = 7;
+    grow(&meters, MAX_FILL, &mut spare);
+    let mut gap_extra = vec![extra; keep.len()];
+    if spare > 0 && gaps > 0 {
+        let more = (spare / gaps).min(MAX_GAP_EXTRA - extra);
+        let rem = if more == MAX_GAP_EXTRA - extra {
+            0
+        } else {
+            spare % gaps
+        };
+        for (j, g) in gap_extra.iter_mut().take(gaps as usize).enumerate() {
+            *g += more + u16::from((j as u16) < rem);
+        }
+        spare -= more * gaps + rem;
+    }
+    let names: Vec<usize> = (0..keep.len()).filter(|k| cols[keep[*k]].mid).collect();
+    if spare > 0 && !names.is_empty() {
+        let n = names.len() as u16;
+        for (j, k) in names.iter().enumerate() {
+            widths[*k] += spare / n + u16::from((j as u16) < spare % n);
+        }
+    } else if spare > 0 && gaps > 0 {
+        for (j, g) in gap_extra.iter_mut().take(gaps as usize).enumerate() {
+            *g += spare / gaps + u16::from((j as u16) < spare % gaps);
+        }
+    }
     let mut x = 0u16;
     keep.iter()
         .zip(widths)
-        .map(|(i, w)| {
+        .zip(gap_extra)
+        .map(|((i, w), g)| {
             let p = Placed {
                 col: *i,
                 x,
                 width: w,
             };
-            x += w + 1 + extra;
+            x += w + 1 + g;
             p
         })
         .collect()
@@ -706,18 +764,39 @@ mod tests {
     }
 
     #[test]
-    fn names_are_capped_at_their_content() {
-        // A 160-column table with 16-character names must not stretch the
-        // name column to 140 and push the numbers to the far right.
+    fn names_take_slack_only_after_the_gaps() {
         let cols = [
             flex("name", 12),
             col("tokens", 7, Align::Right, 0),
             col("req", 7, Align::Right, 0),
         ];
-        let f = fit(&cols, &[16, 6, 5], 160);
+        // A little room: gaps widen by up to two cells, names keep their
+        // content width.
+        let f = fit(&cols, &[16, 6, 5], 36);
         assert_eq!(widths(&f), vec![(0, 16), (1, 7), (2, 7)]);
-        // Gaps widen by at most two cells.
         assert_eq!(f[1].x, 16 + 3);
+        // More: columns spread out (gaps of up to eight cells)…
+        let f = fit(&cols, &[16, 6, 5], 46);
+        assert_eq!(widths(&f), vec![(0, 16), (1, 7), (2, 7)]);
+        assert_eq!(f[1].x, 16 + 8);
+        // …and past that the name column fills the pane.
+        let f = fit(&cols, &[16, 6, 5], 160);
+        assert_eq!(f[1].x - f[0].width, 8);
+        assert_eq!(f.last().map(|p| p.x + p.width), Some(160));
+    }
+
+    #[test]
+    fn wide_tables_fill_their_pane() {
+        // Without meters or names the gaps share the width.
+        let cols = [
+            col("time", 8, Align::Left, 0),
+            col("tokens", 7, Align::Right, 0),
+            col("req", 7, Align::Right, 0),
+        ];
+        for w in [40, 100, 220] {
+            let f = fit(&cols, &[8, 6, 5], w);
+            assert_eq!(f.last().map(|p| p.x + p.width), Some(w), "{w}");
+        }
     }
 
     #[test]
@@ -772,9 +851,19 @@ mod tests {
         assert_eq!(f[0].width, 10);
         assert_eq!(f[2].width, 5);
         assert_eq!(f[1].width, 60 - 10 - 5 - 2);
-        // ...but not without limit.
+        // On a wide pane they grow to a long bar, the columns spread
+        // apart, and the name column takes the rest: the table fills it.
         let f = fit(&cols, &[10, 12, 4], 200);
-        assert_eq!(f[1].width, 48);
+        assert_eq!(f[1].width, 72);
+        assert_eq!(f[1].x - f[0].width, 8);
+        assert_eq!(f[2].x - (f[1].x + f[1].width), 8);
+        assert_eq!(f.last().map(|p| p.x + p.width), Some(200));
+        // Without a name column the meter stops at a long bar and the
+        // columns spread.
+        let cols = [grow("share", 12, 1), col("req", 5, Align::Right, 0)];
+        let f = fit(&cols, &[12, 4], 200);
+        assert_eq!(f[0].width, 72);
+        assert_eq!(f.last().map(|p| p.x + p.width), Some(200));
     }
 
     #[test]
