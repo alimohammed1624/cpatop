@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Build and publish a cpatop release from this machine plus the Mac,
-# replacing .github/workflows/release.yml.
+# Fallback: build and publish a cpatop release from this machine plus a Mac.
+# The primary path is GitHub Actions: pushing a vX.Y.Z tag runs
+# .github/workflows/release.yml, which builds the same assets and publishes.
+# Use this script only when Actions is unavailable. The tag it pushes still
+# starts the workflow, which then finds the release already made and leaves
+# it alone.
 #
 #   scripts/release.sh vX.Y.Z [--dry-run]
 #
@@ -15,7 +19,7 @@
 #   aarch64-apple-darwin, x86_64-apple-darwin, universal (lipo)  on the Mac
 # and packages dist/cpatop-<target>.tar.gz (cpatop-<target>/{cpatop,README.md,
 # LICENSE,CHANGELOG.md,config.example.toml}) plus dist/SHA256SUMS, exactly as
-# the workflow did and install.sh expects. A real release then tags
+# the release workflow does and install.sh expects. A real release then tags
 # (git tag -a), pushes the tag and runs `gh release create` with the notes
 # and all assets. --dry-run stops after packaging.
 #

@@ -355,39 +355,65 @@ complete starting point. A user theme with a built-in name replaces it.
 
 ## Development
 
+CI and releases run on GitHub Actions (`.github/workflows/`):
+
+- **CI** (`ci.yml`) runs on every push to `main`, every pull request and by
+  hand: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`
+  and `cargo test` on Linux, clippy and tests on macOS, a static
+  `x86_64-unknown-linux-musl` release build, shellcheck and actionlint. A
+  new push to a pull request cancels its older runs.
+- **Releases** (`release.yml`): bump `version` in `Cargo.toml`, add a
+  `## [X.Y.Z]` CHANGELOG section (it becomes the release text), merge to
+  `main`, then push a matching tag:
+
+  ```sh
+  git tag -a v0.3.0 -m "cpatop v0.3.0" && git push origin v0.3.0
+  ```
+
+  The workflow checks that the tag equals `v` + the `Cargo.toml` version and
+  is on `main`, runs fmt, clippy and the tests, builds the Linux musl
+  (`x86_64`, `aarch64`) and macOS (`x86_64`, `aarch64`, `universal`)
+  archives, installs each platform's archive with `install.sh` on a matching
+  runner, and publishes them with `SHA256SUMS`. A tag with a `-suffix`
+  (`v0.3.0-rc.1`) makes a pre-release. Running it by hand from the Actions
+  tab is a dry run: everything except publishing, with the archives kept as
+  the `dist` artifact.
+
+### Optional local tooling
+
+Nothing below is required; it is a local pre-flight and a fallback for when
+GitHub Actions is unavailable.
+
 ```sh
-scripts/setup-hooks.sh     # once per clone: enable the git hooks, check tools
 scripts/ci.sh              # fmt, clippy -D warnings, tests, musl build, lints
+scripts/setup-hooks.sh     # opt in to the git hooks below, check tools
 ```
 
-CI runs locally rather than on GitHub Actions (the workflows in
-`.github/workflows/` are a manual fallback only):
-
-- `scripts/ci.sh` tests the committed `HEAD` (`--sha REV` for another
-  commit): `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
-  `cargo test`, a static `x86_64-unknown-linux-musl` build, shellcheck and
-  actionlint. `--quick` runs only fmt, clippy and tests; `--mac` also runs
-  them (plus an `aarch64-apple-darwin` build) on a Mac over ssh, reported as
-  skipped if the Mac is offline. The log and result go to
+- `scripts/ci.sh` runs the CI checks on the committed `HEAD` (`--sha REV`
+  for another commit). `--quick` runs only fmt, clippy and tests; `--mac`
+  also runs them (plus an `aarch64-apple-darwin` build) on a Mac over ssh,
+  reported as skipped if the Mac is offline. The log and result go to
   `.git/cpatop-ci/<sha>.log` and `.status`.
-- The `post-commit` hook runs `scripts/ci.sh --mac` in the background for
-  every commit on `main` and shows a desktop notification when it is done
-  (`notify-send` or D-Bus; if neither works, or on failure, the next hook
-  prints the result).
-  `CPATOP_SKIP_CI=1` skips it; `CPATOP_CI_ARGS` overrides the flags.
-- The `pre-push` hook refuses to push `main` if its local CI failed. If CI is
-  missing or still running, `CPATOP_PREPUSH=wait` (default) waits for it or
-  runs it, `warn` pushes anyway, `block` refuses. `git push --no-verify`
-  bypasses the hook.
-- `scripts/release.sh vX.Y.Z` releases from a clean `main` that is pushed
-  and has passed local CI, with the tag equal to `v` + the `Cargo.toml`
-  version and a `## [X.Y.Z]` CHANGELOG section (the release notes). It builds
-  both Linux musl archives here, the macOS ones (`aarch64`, `x86_64`,
-  `universal`) on the Mac, writes `dist/` with `SHA256SUMS`, then tags,
-  pushes the tag and runs `gh release create`. `--dry-run` stops after
-  `dist/`.
+- Git hooks, off until you run `scripts/setup-hooks.sh` (it sets
+  `core.hooksPath=.githooks`; `git config --unset core.hooksPath` turns them
+  off again):
+  - `post-commit` runs `scripts/ci.sh --mac` in the background for every
+    commit on `main` and shows a desktop notification when it is done
+    (`notify-send` or D-Bus; if neither works, or on failure, the next hook
+    prints the result). `CPATOP_SKIP_CI=1` skips it; `CPATOP_CI_ARGS`
+    overrides the flags.
+  - `pre-push` refuses to push `main` if its local CI failed. If CI is
+    missing or still running, `CPATOP_PREPUSH=wait` (default) waits for it
+    or runs it, `warn` pushes anyway, `block` refuses. `git push
+    --no-verify` bypasses it.
+- `scripts/release.sh vX.Y.Z` is the fallback release path: from a clean,
+  pushed `main` that has passed local CI, it builds both Linux musl archives
+  here and the macOS ones on a Mac, writes `dist/` with the same assets and
+  `SHA256SUMS` as the workflow, then tags, pushes the tag and runs
+  `gh release create`. `--dry-run` stops after `dist/`. The pushed tag also
+  starts the release workflow, which leaves the existing release alone.
 
-Needs Rust, `flock`, `ssh`, and for the full run and releases
+The local tools need Rust, `flock`, `ssh`, and for the full run and releases
 `cargo-zigbuild` with zig (`uv tool install cargo-zigbuild`) and the
 `x86_64-unknown-linux-musl` / `aarch64-unknown-linux-musl` targets;
 shellcheck, actionlint, `notify-send` and `gh` are optional (`gh` publishes
