@@ -204,7 +204,7 @@ fn collapsed_summary(app: &App, id: PaneId) -> Option<String> {
             .map(|(n, v)| {
                 format!(
                     "{} {}",
-                    fmt::trunc(n, 18),
+                    fmt::trunc(&app.privacy(n), 18),
                     fmt::pct(fmt::ratio_pct(*v, total).unwrap_or(0.0), 0)
                 )
             })
@@ -249,7 +249,7 @@ fn collapsed_summary(app: &App, id: PaneId) -> Option<String> {
             .map(|s| {
                 format!(
                     "{} {}",
-                    fmt::trunc(&s.model, 18),
+                    fmt::trunc(&app.privacy(&s.model), 18),
                     s.second_half.mean_tps.map(fmt::tps).unwrap_or("-".into())
                 )
             })
@@ -309,7 +309,7 @@ fn collapsed_summary(app: &App, id: PaneId) -> Option<String> {
                     let mean = (n > 0.0).then(|| sum / n);
                     format!(
                         "{} {}",
-                        fmt::trunc(&s.model, 18),
+                        fmt::trunc(&app.privacy(&s.model), 18),
                         mean.map(fmt::tps).unwrap_or("-".into())
                     )
                 })

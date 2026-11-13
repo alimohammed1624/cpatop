@@ -86,8 +86,11 @@ fn status_spans(app: &App) -> Vec<Span<'static>> {
     if let Some(m) = &f.model {
         v.push(Span::styled(format!(" · {m}"), hi));
     }
-    if let Some((_, label)) = &f.source {
-        v.push(Span::styled(format!(" · {}", app.privacy(label)), hi));
+    if let Some((value, label)) = &f.source {
+        v.push(Span::styled(
+            format!(" · {}", app.credential_name(value, label)),
+            hi,
+        ));
     }
     v
 }
@@ -195,7 +198,7 @@ pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
                     e.model,
                     source,
                     key,
-                    e.endpoint.as_deref().unwrap_or("")
+                    app.endpoint(e.endpoint.as_deref().unwrap_or(""))
                 ))
         })
         .collect();
@@ -280,7 +283,7 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             },
             sep(),
             k("endpoint"),
-            v(opt(&e.endpoint)),
+            v(app.endpoint(&opt(&e.endpoint))),
             sep(),
             k("stream"),
             v(e.stream.map(|s| s.to_string()).unwrap_or("-".into())),
@@ -362,7 +365,7 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         ]),
         Line::from(vec![
             k("agent"),
-            v(fmt::trunc(&app.privacy_text(&opt(&e.user_agent)), 80)),
+            v(fmt::trunc(&app.user_agent(&opt(&e.user_agent)), 80)),
         ]),
     ];
     f.render_widget(

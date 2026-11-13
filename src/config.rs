@@ -84,6 +84,8 @@ pub struct UiState {
     pub refresh_secs: Option<u64>,
     pub graph_symbols: Option<GraphSymbols>,
     pub privacy: Option<bool>,
+    /// Key for privacy-mode tags of names that are not a known credential.
+    pub privacy_salt: Option<u64>,
     /// Layout preset index per tab.
     pub layout: BTreeMap<String, usize>,
     /// Hidden pane numbers per tab.

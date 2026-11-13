@@ -11,8 +11,8 @@ mod privacy;
 pub use live::{EventFilters, LiveState, LiveStatus, ResultFilter};
 pub use overlay::{Overlay, PickItem, PickKind, Picker, RangeEditor, Unit};
 pub use privacy::{
-    IP_MASK, contains_ip, ident_kind, is_identifier, is_ip, looks_like_key, mask_ips,
-    raw_ident_name,
+    HIDDEN, IP_MASK, Sensitive, contains_ip, guard_buffer, ident_kind, is_identifier, is_ip,
+    is_sensitive, looks_like_key, mask_ips, raw_ident_name, scrub, sensitive_spans,
 };
 
 use crate::api::models::*;
@@ -249,8 +249,15 @@ pub struct App {
     pub help_scroll: usize,
     pub help_max: Cell<usize>,
     pub help_page: Cell<usize>,
-    /// Privacy mode: stable `account-N` numbers per hidden identifier.
-    pub privacy_aliases: RefCell<HashMap<String, usize>>,
+    /// Privacy mode: account names → credential id, cached per credential
+    /// list (keyed by its load time).
+    pub privacy_aliases: RefCell<(Option<Instant>, HashMap<String, u64>)>,
+    /// Privacy mode: key for the tags of names that are not a credential
+    /// (persisted in the UI state so tags are stable across runs).
+    pub privacy_salt: u64,
+    /// Privacy mode: spans the render guard masked in the last frame
+    /// (should stay 0 — panes replace identifiers themselves).
+    pub privacy_guard_hits: Cell<usize>,
 }
 
 /// Dimensions of multi-dimension tables (`d` cycles them).
@@ -325,7 +332,11 @@ impl App {
             help_scroll: 0,
             help_max: Cell::new(0),
             help_page: Cell::new(10),
-            privacy_aliases: RefCell::new(HashMap::new()),
+            privacy_aliases: RefCell::new((None, HashMap::new())),
+            privacy_salt: ui
+                .privacy_salt
+                .unwrap_or_else(|| fastrand::u64(1..=i64::MAX as u64)),
+            privacy_guard_hits: Cell::new(0),
         };
         app.restore_ui(ui);
         app
@@ -374,6 +385,7 @@ impl App {
             refresh_secs: Some(self.settings.refresh_secs),
             graph_symbols: Some(self.settings.graph_symbols),
             privacy: Some(self.settings.privacy),
+            privacy_salt: Some(self.privacy_salt),
             tab: self.tab_by_role.clone(),
             ..Default::default()
         };

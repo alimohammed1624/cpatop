@@ -5,10 +5,10 @@ expression: s
  cpatop ⌂ localhost:8318 │ admin │ ◷ today │ ⟳ 1m │ ↻ 0s ago │ ● ok      ? help
 ─ Overview  Realtime  Analysis  Requests  Credentials  Quota  Models  Keys ─────
 ╭─¹ api keys ◆ ─ 3 active · usage today · 0s… ─╮╭─³ server ───── cpatop 0.1.0 ─╮
-│  id  name          key       tokens      req ││ server      localhost:8318   │
-│  #1  —             dem…        131M    1,265 ││ version     v2.1.0           │
-│  #2  —             dem…           -        - ││ running     yes  syncing yes │
-│  #3  —             tst…           -        - ││ timezone    Asia/Kolkata     │
+│  id key     type     tokens     req     cost ││ server      localhost:8318   │
+│  #1 dem…    native     131M   1,265   $93.02 ││ version     v2.1.0           │
+│  #2 dem…    native        -       -        - ││ running     yes  syncing yes │
+│  #3 tst…    native        -       -        - ││ timezone    Asia/Kolkata     │
 │                                              ││ request log no               │
 │                                              ││ poller      empty            │
 │                                              ││ polling     10s / 60s        │

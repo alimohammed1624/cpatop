@@ -317,7 +317,7 @@ impl App {
             let label = if label.is_empty() {
                 s.value.clone()
             } else {
-                self.privacy(&label)
+                self.credential_name(&s.value, &label)
             };
             // Several sources can share a label; the identity tells them apart.
             let short: String = s.value.chars().take(8).collect();

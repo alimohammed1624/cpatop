@@ -254,6 +254,44 @@ impl TRow {
     }
 }
 
+/// Drop those of the `candidates` columns whose cells are blank (`""`,
+/// `-`, `—`) in every row, e.g. names and keys that privacy mode hides.
+/// Sort keys go with them.
+pub fn drop_blank_cols(cols: &[Col], rows: &mut [TRow], candidates: &[usize]) -> Vec<Col> {
+    let blank = |c: &Cell| match c {
+        Cell::Spans(v) => {
+            let s: String = v.iter().map(|s| s.content.as_ref()).collect();
+            matches!(s.trim(), "" | "-" | "—")
+        }
+        _ => false,
+    };
+    if rows.is_empty() {
+        return cols.to_vec();
+    }
+    let keep: Vec<bool> = (0..cols.len())
+        .map(|i| {
+            !candidates.contains(&i) || !rows.iter().all(|r| r.cells.get(i).is_some_and(blank))
+        })
+        .collect();
+    for r in rows.iter_mut() {
+        let mut i = 0;
+        r.cells.retain(|_| {
+            i += 1;
+            keep.get(i - 1).copied().unwrap_or(true)
+        });
+        let mut i = 0;
+        r.sort.retain(|_| {
+            i += 1;
+            keep.get(i - 1).copied().unwrap_or(true)
+        });
+    }
+    cols.iter()
+        .zip(&keep)
+        .filter(|(_, k)| **k)
+        .map(|(c, _)| c.clone())
+        .collect()
+}
+
 /// Apply the state's filter and sort.
 pub fn order(mut rows: Vec<TRow>, st: &TableState) -> Vec<TRow> {
     if !st.filter.is_empty() {
@@ -325,14 +363,16 @@ pub fn fit(cols: &[Col], content: &[usize], width: u16) -> Vec<Placed> {
     loop {
         let placed = allocate(cols, content, width, &keep);
         // Names matter more than optional statistics: while an always-shown
-        // text column is cut by several characters, drop optional columns
-        // (priority 4 and up).
+        // text column is cut (names: at all — the cut part is what tells
+        // `account-12 · codex` from `account-14 · codex`; other text by
+        // several characters), drop optional columns (priority 4 and up).
         let starved = placed.iter().any(|p| {
             let c = &cols[p.col];
+            let slack = if c.mid { 0 } else { 3 };
             c.prio == 0
                 && !c.grow
                 && c.align == Align::Left
-                && content.get(p.col).copied().unwrap_or(0) as u16 > p.width + 3
+                && content.get(p.col).copied().unwrap_or(0) as u16 > p.width + slack
         });
         if starved && drop_one(&mut keep, 4) {
             continue;

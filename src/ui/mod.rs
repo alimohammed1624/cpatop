@@ -28,6 +28,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     hit.picker.clear();
     render(f, app, &mut hit);
     app.hit = hit;
+    // Privacy mode: the last line of defence runs on the finished frame.
+    if app.settings.privacy {
+        let n = crate::app::guard_buffer(f.buffer_mut());
+        app.privacy_guard_hits.set(n);
+    }
 }
 
 fn render(f: &mut Frame, app: &App, hit: &mut Hit) {

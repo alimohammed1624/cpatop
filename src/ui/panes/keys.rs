@@ -55,7 +55,7 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
         .map(|u| u.iter().map(|c| c.total_tokens).sum())
         .unwrap_or(0.0);
     let now = app.clock.utc();
-    let rows = keys
+    let mut rows: Vec<TRow> = keys
         .items
         .iter()
         .map(|k| {
@@ -64,9 +64,8 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
             } else {
                 fmt::redact_key(&k.display_key)
             };
-            let name = if k.key_alias.is_empty()
-                || (app.settings.privacy && crate::app::is_identifier(&k.key_alias))
-            {
+            // Aliases are chosen names: privacy mode replaces them.
+            let name = if k.key_alias.is_empty() || app.settings.privacy {
                 "—".to_string()
             } else {
                 k.key_alias.clone()
@@ -110,6 +109,8 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
                 .filter(format!("#{} {name} {masked} {kind}", k.id))
         })
         .collect();
+    // Names and keys hidden in every row (privacy mode) take no width.
+    let cols = crate::ui::table::drop_blank_cols(&KEY_COLS, &mut rows, &[1, 2]);
     // Spare rows show the selected key's token trend for the range.
     let chart_for = |id: &str| -> Option<RowChart> {
         let c = app.data.key_usage.get()?;
@@ -139,7 +140,7 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
         PaneId::StKeys,
         inner,
         focused,
-        &KEY_COLS,
+        &cols,
         rows,
         "no API keys",
         &chart_for,
@@ -186,7 +187,7 @@ pub fn sessions(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
                 it.alias
                     .clone()
                     .filter(|a| !a.is_empty())
-                    .map(|a| app.privacy(&a))
+                    .map(|a| app.account(&a))
                     .unwrap_or("admin".into())
             } else {
                 let label = it
@@ -198,17 +199,16 @@ pub fn sessions(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
                 app.key_name(&it.api_key_id, &label)
             };
             let via = match it.source.as_str() {
-                "standard" => "keeper",
-                "embed" => "cpamc",
-                other => other,
-            }
-            .to_string();
+                "standard" => "keeper".to_string(),
+                "embed" => "cpamc".to_string(),
+                other => app.privacy_text(other),
+            };
             let ip = app.ip(&it
                 .last_seen_ip
                 .clone()
                 .or(it.login_ip.clone())
                 .unwrap_or("-".into()));
-            let ua = app.privacy_text(&it.user_agent.clone().unwrap_or_default());
+            let ua = app.user_agent(&it.user_agent.clone().unwrap_or_default());
             TRow::new(format!("{n}"))
                 .styled(
                     if it.kind == "admin" {

@@ -473,3 +473,239 @@ fn no_color_keeps_outcomes_and_legends_distinct() {
         assert!(s.contains(g), "legend lacks {g:?}:\n{s}");
     }
 }
+
+/// Identifiers planted in every structured field a server can send:
+/// mixed-case e-mails, IPs behind capitalised path segments, keys, URLs
+/// with e-mails in the path, IPv6 and user agents carrying both.
+const PLANTED: [&str; 7] = [
+    "Zed.Quill@Mail.Example.ORG",
+    "Proxy/10.20.30.40",
+    "sk-live-AbCdEfGh0123456789XyZ",
+    "http://localhost:1/alice.w@example.org",
+    "2001:DB8:AB::77",
+    "Mozilla/5.0 (bob.k@x.io; 192.168.7.7) ua",
+    "POST /u/carol.p@x.io/v1/messages",
+];
+/// Fragments of [`PLANTED`] that must never be visible (lower case).
+const PLANTED_FRAGS: [&str; 14] = [
+    "zed.",
+    "quill",
+    "mail.example",
+    "10.20.30",
+    "abcdefgh",
+    "0123456789x",
+    "alice",
+    "example.org",
+    "2001:",
+    "db8:",
+    "bob.k",
+    "192.168",
+    "carol",
+    "x.io",
+];
+
+/// Replace every string field that can carry a name, key, address or free
+/// text with one of [`PLANTED`].
+fn plant(v: &mut serde_json::Value, n: &mut usize) {
+    const FIELDS: [&str; 26] = [
+        "name",
+        "displayName",
+        "display_name",
+        "alias",
+        "key_alias",
+        "file_name",
+        "note",
+        "source",
+        "label",
+        "display_key",
+        "endpoint",
+        "user_agent",
+        "client_ip",
+        "x_forwarded_for",
+        "login_ip",
+        "last_seen_ip",
+        "body_summary",
+        "message",
+        "error",
+        "request_id",
+        "api_key",
+        "cpa_public_url",
+        "last_error",
+        "last_warning",
+        "last_status",
+        "groupLabel",
+    ];
+    match v {
+        serde_json::Value::Object(m) => {
+            for (k, x) in m.iter_mut() {
+                if FIELDS.contains(&k.as_str()) && x.is_string() {
+                    *x = PLANTED[*n % PLANTED.len()].into();
+                    *n += 1;
+                } else {
+                    plant(x, n);
+                }
+            }
+        }
+        serde_json::Value::Array(a) => a.iter_mut().for_each(|x| plant(x, n)),
+        _ => {}
+    }
+}
+
+fn planted<T: DeserializeOwned>(name: &str, n: &mut usize) -> T {
+    let mut v: serde_json::Value = load(name);
+    plant(&mut v, n);
+    serde_json::from_value(v).unwrap()
+}
+
+fn assert_nothing_planted(s: &str, what: &str) {
+    let low = s.to_lowercase();
+    for f in PLANTED_FRAGS {
+        assert!(
+            !low.contains(f),
+            "{f:?} visible in privacy mode ({what}):\n{s}"
+        );
+    }
+    assert_private(s, what);
+}
+
+/// Every tab, both roles, three sizes, with identifiers planted in every
+/// field and the two base-URL repros: nothing survives, and the panes
+/// replace identifiers themselves (the render guard has nothing to do).
+#[test]
+fn privacy_survives_planted_identifiers() {
+    for role in [Role::Admin, Role::KeyViewer] {
+        let mut app = populated(role);
+        let mut n = 0;
+        let admin = role == Role::Admin;
+        let pick = |a: &'static str, k: &'static str| if admin { a } else { k };
+        data(
+            &mut app,
+            Group::Overview,
+            Payload::Comparisons(Ok(planted(
+                pick(
+                    "usage-overview-comparisons.json",
+                    "key-overview-comparisons.json",
+                ),
+                &mut n,
+            ))),
+        );
+        data(
+            &mut app,
+            Group::Realtime,
+            Payload::Realtime(Ok(planted(
+                pick("usage-overview-realtime.json", "key-overview-realtime.json"),
+                &mut n,
+            ))),
+        );
+        data(
+            &mut app,
+            Group::Analysis,
+            Payload::Analysis(Ok(planted(
+                pick("usage-analysis.json", "key-analysis.json"),
+                &mut n,
+            ))),
+        );
+        if admin {
+            data(
+                &mut app,
+                Group::Meta,
+                Payload::Status(Ok(planted("status.json", &mut n))),
+            );
+            data(
+                &mut app,
+                Group::Credentials,
+                Payload::Identities(Ok(planted("usage-identities-page.json", &mut n))),
+            );
+            data(
+                &mut app,
+                Group::Quota,
+                Payload::Inspection(Ok(planted("quota-inspection.json", &mut n))),
+            );
+            data(
+                &mut app,
+                Group::KeyOptions,
+                Payload::ApiKeys(Ok(planted("usage-api-keys.json", &mut n))),
+            );
+            data(
+                &mut app,
+                Group::KeyOptions,
+                Payload::KeyOptions(Ok(planted("usage-api-keys-options.json", &mut n))),
+            );
+            data(
+                &mut app,
+                Group::KeyUsage,
+                Payload::KeyUsage(Ok(planted("usage-overview-comparisons.json", &mut n))),
+            );
+            data(
+                &mut app,
+                Group::EventFilters,
+                Payload::EventSources(Ok(planted("usage-events-filters-sources.json", &mut n))),
+            );
+            data(
+                &mut app,
+                Group::Settings,
+                Payload::Sessions(Ok(planted("auth-sessions.json", &mut n))),
+            );
+            let page: EventsPage = planted("usage-events.json", &mut n);
+            app.on_msg(Msg::Live(LiveEvent::Snapshot(Box::new(LiveSnapshot {
+                events: page.events,
+                total_count: page.total_count,
+                has_more: false,
+                next_cursor: None,
+                range_start: "2026-11-13T00:00:00+05:30".into(),
+                range_end: "2026-11-13T23:59:59.999999999+05:30".into(),
+                end_exclusive: false,
+                snapshot_at: None,
+            }))));
+        }
+        app.settings.privacy = true;
+        for base in [
+            "http://localhost:1/alice.w@example.org",
+            "http://localhost:1/Proxy/10.20.30.40",
+            "http://127.0.0.1:8318",
+        ] {
+            app.settings.base_url = base.into();
+            app.host = cpatop::api::client::display_host(base);
+            app.flash(PLANTED[5]);
+            let tabs: Vec<Tab> = app.tabs().to_vec();
+            for tab in tabs {
+                for (w, h) in SIZES {
+                    let s = render_tab(&mut app, tab, w, h);
+                    let what = format!("{role:?} {} {w}x{h} {base}", tab.key());
+                    assert_nothing_planted(&s, &what);
+                    assert_eq!(
+                        app.privacy_guard_hits.get(),
+                        0,
+                        "guard fired ({what}):\n{s}"
+                    );
+                }
+            }
+        }
+        // Pickers list keys, sources and models.
+        if admin {
+            use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+            let key = |c: KeyCode| Event::Key(KeyEvent::new(c, KeyModifiers::NONE));
+            app.tab = Tab::Events;
+            for c in ['a', 'o', 'm'] {
+                render(&mut app, 160, 48);
+                app.on_event(key(KeyCode::Char(c)));
+                let s = render(&mut app, 160, 48);
+                assert_nothing_planted(&s, &format!("picker {c}"));
+                assert_eq!(
+                    app.privacy_guard_hits.get(),
+                    0,
+                    "guard fired (picker {c}):\n{s}"
+                );
+                app.on_event(key(KeyCode::Esc));
+            }
+        }
+        // The offline screen names the server.
+        app.on_msg(Msg::Auth(AuthEvent::Offline {
+            message: format!("cannot reach {}", PLANTED[3]),
+            retry_in: std::time::Duration::from_secs(5),
+        }));
+        let s = render(&mut app, 80, 24);
+        assert_nothing_planted(&s, "offline");
+        assert!(s.contains("http://‹ip›:8318"), "{s}");
+    }
+}
