@@ -464,6 +464,9 @@ pub struct Size {
     /// Widest the content can use (outer columns, e.g. a table with few
     /// columns): a wider share of the row goes to its neighbours.
     pub max_w: Option<u16>,
+    /// `max` is where a plot stops gaining from height, not where its
+    /// content ends (graph panes are always treated so).
+    pub plot: bool,
 }
 
 impl Size {
@@ -473,6 +476,7 @@ impl Size {
             max: None,
             soak: false,
             max_w: None,
+            plot: false,
         }
     }
     pub fn exact(h: u16) -> Size {
@@ -481,6 +485,7 @@ impl Size {
             max: Some(h),
             soak: false,
             max_w: None,
+            plot: false,
         }
     }
     pub fn range(min: u16, max: u16) -> Size {
@@ -489,11 +494,16 @@ impl Size {
             max: Some(max.max(min)),
             soak: false,
             max_w: None,
+            plot: false,
         }
     }
     /// See [`Size::soak`].
     pub fn soaking(self) -> Size {
         Size { soak: true, ..self }
+    }
+    /// See [`Size::plot`].
+    pub fn plot(self) -> Size {
+        Size { plot: true, ..self }
     }
     /// See [`Size::max_w`].
     pub fn max_width(self, w: u16) -> Size {
@@ -521,9 +531,10 @@ struct RowPlan {
     panes: Vec<(PaneDef, Rect)>,
     min: u16,
     max: Option<u16>,
-    /// Where the row's shortest pane is complete: rows past it are blank in
-    /// that pane, so other rows that can use them come first (never below
-    /// two thirds of the tallest pane's needs, so a graph stays readable).
+    /// Where the row's content panes (tables, maps) are complete: past it
+    /// the extra rows only make a graph taller next to blank rows, so other
+    /// rows that can use them come first. Graphs count with two thirds of
+    /// their maximum, enough to stay readable.
     fit: Option<u16>,
     weight: u16,
     soak: bool,
@@ -624,10 +635,15 @@ pub fn compute(
                 .map(|s| s.max)
                 .collect::<Option<Vec<u16>>>()
                 .map(|v| v.into_iter().max().unwrap_or(min).max(min));
-            let fit = max.map(|m| {
-                let shortest = sizes.iter().filter_map(|s| s.max).min().unwrap_or(m);
-                shortest.max(m * 2 / 3).clamp(min, m)
-            });
+            // Content panes (tables, maps) are complete at their maximum;
+            // a graph's maximum is only where it stops gaining from height.
+            let content = placed
+                .iter()
+                .zip(&sizes)
+                .filter(|((d, _), s)| !d.graph && !s.plot)
+                .filter_map(|(_, s)| s.max)
+                .max();
+            let fit = max.map(|m| content.unwrap_or(0).max(m * 2 / 3).clamp(min, m));
             let soak = sizes.iter().any(|s| s.soak);
             let weight = match r.height {
                 Height::Fill(w) => w.max(1),

@@ -91,7 +91,7 @@ pub fn size(app: &App, id: PaneId, w: u16) -> Size {
         RtSummary => Size::exact(realtime::summary_lines(app, inner_w).max(1) + 2),
         RtThroughput => Size::range(8, GRAPH2_MAX),
         RtOutcomes | RtCache => Size::range(7, GRAPH_MAX),
-        RtLatency | AnLatency => Size::range(7, GRAPH_MAX),
+        RtLatency | AnLatency => Size::range(7, GRAPH_MAX).plot(),
         RtShare => table(realtime::share_len(app)),
         RtSpeed => table(realtime::speed_len(app)),
         AnTokens => Size::range(9, GRAPH_MAX + 2),

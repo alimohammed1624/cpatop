@@ -15,7 +15,6 @@ expression: s
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│                                                                              │
 ╰─ ↑↓ select · ⏎ row · s/S sort · / filter ────────────────────────────────────╯
 ╭─² sessions ───────────────────── 4 sessions ─╮╭─³ server ───── cpatop 0.1.0 ─╮
 │kind    name       last seen   expires        ││ server      localhost:8318   │
@@ -25,4 +24,5 @@ expression: s
 │admin   admin      11-13 11:22 11-20 03:18    ││ request log no               │
 │                                              ││ last pull   no new usage     │
 │                                              ││ polling     10s / 60s        │
+│                                              ││                              │
 ╰──────────────────────────────────────────────╯╰──────────────────────────────╯

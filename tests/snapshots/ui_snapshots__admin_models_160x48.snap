@@ -5,12 +5,12 @@ expression: s
  cpatop ⌂ localhost:8318 │ admin │ ◷ all time │ ⟳ on R │ ↻ 0s ago │ ● ok                                                                                 ? help
 ─┤ Overview ├┤ Realtime ├┤ Analysis ├┤ Requests ├┤ Credentials ├┤ Quota ├┤ Models ├┤ Keys ├──────────────────────────────────────────────────── layout stacked ─
 ╭─¹ pricing ◆ ────────────────────────────────────────────────────────────────────────────────────────────────────────── 5 priced · USD per 1M tokens · rev 2 ─╮
-│model                        style        input     output    cache read    cache write    multiplier                       rules                             │
-│claude-3-7-sonnet-20250219   claude          $3        $15            $0             $0            ×1   0 branches · 0 conditions                             │
-│claude-fable-5               claude         $10        $50            $1          $12.5            ×1   0 branches · 0 conditions                             │
-│claude-fable-5-1             claude         $10        $50         $0.25          $12.5            ×1   0 branches · 0 conditions                             │
-│claude-fable-5-2             claude          $8        $40          $0.2            $10            ×1   0 branches · 0 conditions                             │
-│claude-haiku-4-5-20251001    claude          $1         $5          $0.1          $1.25            ×1   0 branches · 0 conditions                             │
+│model                             style            input         output        cache read        cache write        multiplier                           rules│
+│claude-3-7-sonnet-20250219        claude              $3            $15                $0                 $0                ×1       0 branches · 0 conditions│
+│claude-fable-5                    claude             $10            $50                $1              $12.5                ×1       0 branches · 0 conditions│
+│claude-fable-5-1                  claude             $10            $50             $0.25              $12.5                ×1       0 branches · 0 conditions│
+│claude-fable-5-2                  claude              $8            $40              $0.2                $10                ×1       0 branches · 0 conditions│
+│claude-haiku-4-5-20251001         claude              $1             $5              $0.1              $1.25                ×1       0 branches · 0 conditions│
 │                                                                                                                                                              │
 │                                                                                                                                                              │
 │                                                                                                                                                              │
@@ -31,12 +31,12 @@ expression: s
 │                                                                                                                                                              │
 ╰─ ↑↓ select · ⏎ row · s/S sort · / filter ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─² catalog ──────────────────────────────────────────────────────────────────────── 5 models ─╮╭─³ recalc ────────────────────────────────────────────────────╮
-│model                        provider    owner                                                ││ last task completed                                          │
-│claude-fable-5               Claude      anthropic                                            ││ events    226 recalculated                                   │
-│claude-sonnet-4-5-20250929   Claude      anthropic                                            ││ costs of  11-12 23:30 → 11-13 12:50                          │
-│codex-auto-review            OpenAI      openai                                               ││ finished  11-13 12:50                                        │
-│gpt-image-2                  OpenAI      openai                                               ││ revision  2                                                  │
-│gpt-image-2.6                OpenAI      openai                                               ││ can start 11-12 17:30 → 11-13 16:30                          │
+│model                                                              provider         owner     ││ last task completed                                          │
+│claude-fable-5                                                     Claude           anthropic ││ events    226 recalculated                                   │
+│claude-sonnet-4-5-20250929                                         Claude           anthropic ││ costs of  11-12 23:30 → 11-13 12:50                          │
+│codex-auto-review                                                  OpenAI           openai    ││ finished  11-13 12:50                                        │
+│gpt-image-2                                                        OpenAI           openai    ││ revision  2                                                  │
+│gpt-image-2.6                                                      OpenAI           openai    ││ can start 11-12 17:30 → 11-13 16:30                          │
 │                                                                                              ││ timezone  Asia/Kolkata                                       │
 │                                                                                              ││                                                              │
 │                                                                                              ││                                                              │
