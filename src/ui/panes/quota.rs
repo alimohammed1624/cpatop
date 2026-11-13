@@ -7,10 +7,11 @@ use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
 use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, text};
+use crate::theme::Theme;
 use crate::ui::widgets::{self, flow, meter, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 
@@ -128,6 +129,59 @@ fn status_cell(app: &App, status: Option<&str>) -> Vec<Vec<Span<'static>>> {
     ]
 }
 
+/// A window with less than this percentage left counts as exhausted.
+const EXHAUSTED_LEFT: f64 = 0.5;
+
+/// Bar colour by percentage left: plenty, low (< 25%), about none (< 5%).
+fn left_color(t: &Theme, left: f64) -> Color {
+    t.good_pct(left, 25.0, 5.0)
+}
+
+/// A credential's quota status, derived from the same windows as the bars.
+#[derive(Debug, Clone, PartialEq)]
+enum WindowStatus {
+    /// Windows (indices into the rows) with about nothing left.
+    Exhausted(Vec<usize>),
+    /// Every window has quota left.
+    Ok,
+    /// Every window has quota left but the server's cached result flags a
+    /// reached limit; seconds since that result, when known.
+    Flagged(Option<u64>),
+}
+
+fn window_status(rows: &[&QuotaRow], flagged: bool, age: Option<u64>) -> WindowStatus {
+    let out: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| 100.0 - r.used_pct().unwrap_or(0.0) < EXHAUSTED_LEFT)
+        .map(|(i, _)| i)
+        .collect();
+    if !out.is_empty() {
+        WindowStatus::Exhausted(out)
+    } else if flagged || rows.iter().any(|r| r.limit_reached == Some(true)) {
+        WindowStatus::Flagged(age)
+    } else {
+        WindowStatus::Ok
+    }
+}
+
+/// Status cell for a cached limit flag the windows do not confirm.
+fn flag_cell(app: &App, age: Option<u64>) -> Vec<Vec<Span<'static>>> {
+    let st = Style::default().fg(app.theme().graph_text);
+    let (long, short) = match age {
+        Some(a) => (
+            format!("◌ limit flag (cached {} ago)", fmt::age(a)),
+            format!("◌ flag {}", fmt::age(a)),
+        ),
+        None => ("◌ limit flag (cached)".into(), "◌ flag".into()),
+    };
+    vec![
+        vec![Span::styled(long, st)],
+        vec![Span::styled(short, st)],
+        vec![Span::styled("◌", st)],
+    ]
+}
+
 pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
     let l = &app.data.quota;
@@ -215,15 +269,36 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
             );
             continue;
         }
+        // The status follows the windows: a limit is reached only where a
+        // window has about nothing left, and the ⚠ sits on that window. A
+        // server flag the windows do not confirm is shown as cached.
+        let insp_flag = insp.is_some_and(|r| r.status == "limit_reached");
+        let age = insp
+            .and_then(|r| r.refreshed_at.as_deref())
+            .or(match task {
+                Some(Ok(task)) => task.refreshed_at.as_deref(),
+                _ => None,
+            })
+            .and_then(|s| fmt::since(s, now));
+        let wst = window_status(&quota_rows, insp_flag, age);
+        let insp_failed = insp.is_some_and(|r| r.status != "normal" && r.status != "limit_reached");
+        let (st_text, first_cell) = match &wst {
+            WindowStatus::Exhausted(_) => ("limit reached".to_string(), vec![vec![]]),
+            _ if insp_failed => (st_text.clone(), st_cell.clone()),
+            WindowStatus::Ok => ("normal".to_string(), status_cell(app, Some("normal"))),
+            WindowStatus::Flagged(a) => ("limit flag".to_string(), flag_cell(app, *a)),
+        };
         for (k, r) in quota_rows.iter().enumerate() {
             let used = r.used_pct().unwrap_or(0.0);
             let left = 100.0 - used;
-            let color = if r.limit_reached == Some(true) || left < 20.0 {
-                t.err
-            } else if left < 50.0 {
-                t.warn
-            } else {
-                t.ok
+            let color = left_color(t, left);
+            let cell = match &wst {
+                WindowStatus::Exhausted(ix) if ix.contains(&k) => {
+                    status_cell(app, Some("limit_reached"))
+                }
+                WindowStatus::Exhausted(_) => vec![vec![]],
+                _ if k == 0 => first_cell.clone(),
+                _ => vec![vec![]],
             };
             let reset = r
                 .reset_at
@@ -268,10 +343,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                     )
                     .text(tok, num(r.window_usage_tokens.unwrap_or(0.0)))
                     .text(cost, num(r.window_usage_cost.unwrap_or(0.0)))
-                    .choice(
-                        if first { st_cell.clone() } else { vec![vec![]] },
-                        text(&st_text),
-                    )
+                    .choice(cell, text(&st_text))
                     .filter(filter.clone()),
             );
         }
@@ -473,4 +545,45 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         "no quota cycles in the last 30 days",
         &chart_for,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(used: f64, flag: Option<bool>) -> QuotaRow {
+        QuotaRow {
+            used_percent: Some(used),
+            limit_reached: flag,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn status_follows_the_windows() {
+        // 5h 93% left, weekly 77% left, but the account-level flag is set
+        // (codex copies it onto every window): not "limit reached".
+        let (a, b) = (row(7.0, Some(true)), row(23.0, Some(true)));
+        assert_eq!(
+            window_status(&[&a, &b], true, Some(3 * 3600)),
+            WindowStatus::Flagged(Some(3 * 3600))
+        );
+        // The weekly window is used up: the ⚠ goes on that window.
+        let (a, b) = (row(7.0, None), row(100.0, None));
+        assert_eq!(
+            window_status(&[&a, &b], false, None),
+            WindowStatus::Exhausted(vec![1])
+        );
+        let (a, b) = (row(7.0, Some(false)), row(23.0, None));
+        assert_eq!(window_status(&[&a, &b], false, None), WindowStatus::Ok);
+    }
+
+    #[test]
+    fn bars_are_coloured_by_what_is_left() {
+        let t = &crate::theme::all_themes(None).0[0];
+        assert_eq!(left_color(t, 78.0), t.ok);
+        assert_eq!(left_color(t, 30.0), t.ok);
+        assert_eq!(left_color(t, 12.0), t.warn);
+        assert_eq!(left_color(t, 0.0), t.err);
+    }
 }

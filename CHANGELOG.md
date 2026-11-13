@@ -104,6 +104,11 @@ All notable changes to cpatop are documented here. The format follows
   0 conditions` instead of `0b · 0c`; the credentials priority column is
   titled `prio` when the table has room; the Keys server pane shows the
   poller's last pull in plain words (`last pull  no new usage`).
+- Quota status contradicted its bars (`⚠ limit reached` next to 5h 93% /
+  Weekly 77% left, a 78%-left bar in red): bars are coloured by what is
+  left (red only below 5%), a limit is reached only where a window has
+  about nothing left and the `⚠` sits on that window, and a server limit
+  flag the windows do not confirm reads `◌ limit flag (cached 3h ago)`.
 - `--privacy` now also hides IP addresses in the server address (header,
   Keys server pane, login and offline screens) and inside URLs, catches
   lowercase opaque keys (`sk-…`) and IP-valued aliases; `--help` and the
