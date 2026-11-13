@@ -2,6 +2,25 @@
 
 use chrono::{DateTime, FixedOffset, Utc};
 
+/// Format `x` (>= 0) with three significant digits, choosing the number of
+/// decimals from the *rounded* value so carries are handled: `9.996` → `10.0`,
+/// `99.96` → `100`. Returns the text and the rounded value.
+fn three_sig(x: f64) -> (String, f64) {
+    for decimals in [2usize, 1, 0] {
+        let s = format!("{x:.decimals$}");
+        let r: f64 = s.parse().unwrap_or(x);
+        let limit = match decimals {
+            2 => 10.0,
+            1 => 100.0,
+            _ => f64::INFINITY,
+        };
+        if r < limit {
+            return (s, r);
+        }
+    }
+    unreachable!("the last step has no limit")
+}
+
 /// Compact number with three significant digits: `999`, `1.23k`, `12.3k`, `123k`, `1.23M`.
 pub fn compact(v: f64) -> String {
     if !v.is_finite() {
@@ -9,28 +28,22 @@ pub fn compact(v: f64) -> String {
     }
     let a = v.abs();
     let sign = if v < 0.0 { "-" } else { "" };
-    if a < 1000.0 {
+    if a.round() < 1000.0 {
         return format!("{sign}{}", a.round() as i64);
     }
-    const UNITS: [(f64, &str); 4] = [(1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "k")];
-    for (i, (scale, unit)) in UNITS.iter().enumerate() {
-        if a >= *scale {
-            let x = a / scale;
-            // Avoid "1000k": promote to the next unit when rounding overflows.
-            let s = if x >= 999.5 && i > 0 {
-                let (s2, u2) = UNITS[i - 1];
-                return format!("{sign}{:.2}{u2}", a / s2);
-            } else if x >= 99.95 {
-                format!("{x:.0}")
-            } else if x >= 9.995 {
-                format!("{x:.1}")
-            } else {
-                format!("{x:.2}")
-            };
-            return format!("{sign}{s}{unit}");
+    const UNITS: [(f64, &str); 4] = [(1e3, "k"), (1e6, "M"), (1e9, "B"), (1e12, "T")];
+    // Pick the largest unit the value reaches, then promote while rounding
+    // would print 1000 of it ("999.96k" → "1.00M").
+    let mut i = UNITS.iter().rposition(|(s, _)| a >= *s).unwrap_or(0);
+    loop {
+        let (scale, unit) = UNITS[i];
+        let (s, r) = three_sig(a / scale);
+        if r >= 1000.0 && i + 1 < UNITS.len() {
+            i += 1;
+            continue;
         }
+        return format!("{sign}{s}{unit}");
     }
-    unreachable!()
 }
 
 /// Integer with thousands separators: `12,345`.
@@ -60,6 +73,9 @@ pub fn count(v: f64) -> String {
 }
 
 /// USD: `$0.0123` below one dollar, `$3.41`, `$1,234.56`, `$123k` for very large values.
+///
+/// The amount is rounded as a whole before it is split into dollars and cents,
+/// so `$1.999` prints `$2.00` and `$0.99996` prints `$1.00`.
 pub fn usd(v: f64) -> String {
     if !v.is_finite() {
         return "—".into();
@@ -67,16 +83,18 @@ pub fn usd(v: f64) -> String {
     let a = v.abs();
     let sign = if v < 0.0 { "-" } else { "" };
     if a == 0.0 {
-        "$0.00".into()
-    } else if a < 1.0 {
-        format!("{sign}${a:.4}")
-    } else if a < 100_000.0 {
-        let whole = int(a.trunc());
-        let cents = ((a.fract() * 100.0).round() as i64).min(99);
-        format!("{sign}${whole}.{cents:02}")
-    } else {
-        format!("{sign}${}", compact(a))
+        return "$0.00".into();
     }
+    let sub_dollar = format!("{a:.4}");
+    if sub_dollar.parse::<f64>().unwrap_or(a) < 1.0 {
+        return format!("{sign}${sub_dollar}");
+    }
+    let cents_total = (a * 100.0).round() as i64;
+    let (whole, cents) = (cents_total / 100, cents_total % 100);
+    if whole >= 100_000 {
+        return format!("{sign}${}", compact(a));
+    }
+    format!("{sign}${}.{cents:02}", int(whole as f64))
 }
 
 /// Optional USD; `—` when the cost is unknown.
@@ -103,15 +121,12 @@ pub fn per_minute(v: f64) -> String {
         return "—".into();
     }
     let a = v.abs();
-    if a >= 1000.0 {
-        compact(v)
-    } else if a >= 100.0 {
-        format!("{v:.0}")
-    } else if a >= 10.0 {
-        format!("{v:.1}")
-    } else {
-        format!("{v:.2}")
+    let sign = if v < 0.0 { "-" } else { "" };
+    let (s, r) = three_sig(a);
+    if r >= 1000.0 {
+        return compact(v);
     }
+    format!("{sign}{s}")
 }
 
 /// Latency/durations in milliseconds: `123ms`, `1.23s`, `12.3s`, `1m 05s`, `2h 03m`.
@@ -119,17 +134,14 @@ pub fn ms(v: f64) -> String {
     if !v.is_finite() || v < 0.0 {
         return "--".into();
     }
-    if v < 1000.0 {
+    if v.round() < 1000.0 {
         return format!("{}ms", v.round() as i64);
     }
-    let s = v / 1000.0;
-    if s < 10.0 {
-        return format!("{s:.2}s");
+    let (s, r) = three_sig(v / 1000.0);
+    if r < 60.0 {
+        return format!("{s}s");
     }
-    if s < 60.0 {
-        return format!("{s:.1}s");
-    }
-    secs(s)
+    secs(v / 1000.0)
 }
 
 /// Durations in seconds with at most two units.
@@ -309,6 +321,16 @@ mod tests {
         assert_eq!(compact(118_467_473.0), "118M");
         assert_eq!(compact(3.2e9), "3.20B");
         assert_eq!(compact(-1500.0), "-1.50k");
+        // Rounding carries promote the precision or the unit.
+        assert_eq!(compact(999.6), "1.00k");
+        assert_eq!(compact(9_996.0), "10.0k");
+        assert_eq!(compact(99_960.0), "100k");
+        assert_eq!(compact(999_950.0), "1.00M");
+        assert_eq!(compact(1_999_500.0), "2.00M");
+        assert_eq!(compact(1_994_900.0), "1.99M");
+        assert_eq!(compact(9_999_999.0), "10.0M");
+        assert_eq!(compact(999_999_999_999.0), "1.00T");
+        assert_eq!(compact(2.5e15), "2500T");
     }
 
     #[test]
@@ -328,6 +350,16 @@ mod tests {
         assert_eq!(usd(1234.567), "$1,234.57");
         assert_eq!(usd(250_000.0), "$250k");
         assert_eq!(usd_opt(None), "—");
+        // Carries across the cents boundary.
+        assert_eq!(usd(1.999), "$2.00");
+        assert_eq!(usd(1.995), "$2.00");
+        assert_eq!(usd(1.994), "$1.99");
+        assert_eq!(usd(9.999), "$10.00");
+        assert_eq!(usd(999.995), "$1,000.00");
+        assert_eq!(usd(0.99996), "$1.00");
+        assert_eq!(usd(0.99994), "$0.9999");
+        assert_eq!(usd(99_999.996), "$100k");
+        assert_eq!(usd(-1.999), "-$2.00");
     }
 
     #[test]
@@ -338,6 +370,10 @@ mod tests {
         assert_eq!(ms(65_000.0), "1m 05s");
         assert_eq!(ms(7_380_000.0), "2h 03m");
         assert_eq!(ms(-1.0), "--");
+        assert_eq!(ms(999.4), "999ms");
+        assert_eq!(ms(999.6), "1.00s");
+        assert_eq!(ms(9_996.0), "10.0s");
+        assert_eq!(ms(59_960.0), "1m 00s");
         assert_eq!(age(5), "5s");
         assert_eq!(age(180), "3m");
         assert_eq!(age(7200), "2h");
@@ -348,6 +384,9 @@ mod tests {
         assert_eq!(per_minute(152.4), "152");
         assert_eq!(per_minute(12.34), "12.3");
         assert_eq!(per_minute(1.254), "1.25");
+        assert_eq!(per_minute(9.996), "10.0");
+        assert_eq!(per_minute(99.96), "100");
+        assert_eq!(per_minute(999.6), "1.00k");
         assert_eq!(pct(97.531, 2), "97.53%");
         assert_eq!(ratio_pct(1.0, 0.0), None);
         assert_eq!(tps(83.38), "83.4 t/s");
