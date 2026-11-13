@@ -16,65 +16,65 @@ use std::path::PathBuf;
 #[command(name = "cpatop", version, about, long_about)]
 pub struct Cli {
     /// Keeper base URL, e.g. http://localhost:8318 or https://host/keeper
-    #[arg(long, env = "CPATOP_BASE_URL", value_name = "URL")]
+    #[arg(long, global = true, env = "CPATOP_BASE_URL", value_name = "URL")]
     pub base_url: Option<String>,
 
     /// Config file (default: $XDG_CONFIG_HOME/cpatop/config.toml)
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, global = true, value_name = "PATH")]
     pub config: Option<PathBuf>,
 
     /// File containing the admin password
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, global = true, value_name = "PATH")]
     pub password_file: Option<PathBuf>,
 
     /// File containing a CPA API key (per-key dashboard)
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, global = true, value_name = "PATH")]
     pub api_key_file: Option<PathBuf>,
 
     /// Preferred login when several credentials are available
-    #[arg(long, value_enum, value_name = "MODE")]
+    #[arg(long, global = true, value_enum, value_name = "MODE")]
     pub auth: Option<LoginMode>,
 
     /// Do not look up credentials in the OS keyring
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub no_keyring: bool,
 
     /// Log out the stored session for this server and start a new one
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub fresh_session: bool,
 
     /// Colour theme name
-    #[arg(long, value_name = "NAME")]
+    #[arg(long, global = true, value_name = "NAME")]
     pub theme: Option<String>,
 
     /// Time range: today, yesterday, 5h..24h, 1d..30d or custom:START..END (YYYY-MM-DD)
-    #[arg(long, value_name = "RANGE", value_parser = parse_range)]
+    #[arg(long, global = true, value_name = "RANGE", value_parser = parse_range)]
     pub range: Option<TimeRange>,
 
     /// Overview/realtime refresh interval in seconds
-    #[arg(long, value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..=3600))]
+    #[arg(long, global = true, value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..=3600))]
     pub refresh: Option<u64>,
 
     /// Graph symbols
-    #[arg(long, value_enum, value_name = "KIND")]
+    #[arg(long, global = true, value_enum, value_name = "KIND")]
     pub symbols: Option<GraphSymbols>,
 
     /// Hide e-mail addresses, API keys and IP addresses (screenshots, screen sharing)
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub privacy: bool,
 
     /// Log out on the server when quitting (by default `q` keeps the session
     /// for the next start; `cpatop logout` ends it later)
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub logout_on_exit: bool,
 
     /// Disable mouse support
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub no_mouse: bool,
 
     /// Do not check GitHub for a newer cpatop release on start
     /// (also CPATOP_NO_UPDATE_CHECK=1 or config `update_check = false`)
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub no_update_check: bool,
 
     #[command(subcommand)]
@@ -147,6 +147,11 @@ mod tests {
         assert_eq!(c.range, Some(TimeRange::Days(7)));
         assert_eq!(c.auth, Some(LoginMode::ApiKey));
         assert!(Cli::try_parse_from(["cpatop", "--range", "99d"]).is_err());
+        // Connection and auth flags also work after a subcommand.
+        let c = Cli::try_parse_from(["cpatop", "logout", "--base-url", "http://h:1", "--privacy"])
+            .unwrap();
+        assert_eq!(c.base_url.as_deref(), Some("http://h:1"));
+        assert!(c.privacy && matches!(c.command, Some(Command::Logout)));
         // There is no flag that takes a secret value.
         assert!(Cli::try_parse_from(["cpatop", "--password", "x"]).is_err());
     }
