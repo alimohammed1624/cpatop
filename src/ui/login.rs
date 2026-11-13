@@ -9,11 +9,71 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Widget, Wrap};
 
+/// Wrap `text` to `width` columns; continuation lines get `indent` spaces.
+pub fn wrap_indent(text: &str, width: usize, indent: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let width = width.max(indent + 8);
+    let limit_now = |out: &Vec<String>| if out.is_empty() { width } else { width - indent };
+    for word in text.split_whitespace() {
+        let limit = limit_now(&out);
+        if !cur.is_empty() && fmt::width(&cur) + 1 + fmt::width(word) > limit {
+            out.push(std::mem::take(&mut cur));
+        }
+        if !cur.is_empty() {
+            cur.push(' ');
+        }
+        // Hard-split words longer than a line (paths, URLs).
+        let mut w = word.to_string();
+        while fmt::width(&cur) + fmt::width(&w) > limit_now(&out)
+            && fmt::width(&w) > limit_now(&out) / 2
+        {
+            let room = limit_now(&out).saturating_sub(fmt::width(&cur)).max(1);
+            let head: String = w.chars().take(room).collect();
+            let tail: String = w.chars().skip(room).collect();
+            cur.push_str(&head);
+            out.push(std::mem::take(&mut cur));
+            w = tail;
+        }
+        cur.push_str(&w);
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out.into_iter()
+        .enumerate()
+        .map(|(i, l)| {
+            if i == 0 {
+                l
+            } else {
+                format!("{}{l}", " ".repeat(indent))
+            }
+        })
+        .collect()
+}
+
 pub fn draw(f: &mut Frame, app: &App) {
     let t = app.theme();
     let area = f.area();
-    let w = 60.min(area.width.saturating_sub(2)).max(20.min(area.width));
-    let h = 13.min(area.height);
+    let w = 64.min(area.width.saturating_sub(2)).max(24.min(area.width));
+    let text_w = w.saturating_sub(4) as usize;
+    // Warnings (e.g. a world-readable secret file) live inside the box.
+    let warn_lines: Vec<String> = app
+        .warnings
+        .iter()
+        .take(3)
+        .flat_map(|m| wrap_indent(&format!("⚠ {m}"), text_w, 2))
+        .collect();
+    let error_lines = match &app.screen {
+        Screen::Login(form) => form
+            .error
+            .as_deref()
+            .map(|e| wrap_indent(&format!("✗ {e}"), text_w, 2).len())
+            .unwrap_or(1),
+        _ => 1,
+    } as u16;
+    let extra = warn_lines.len() as u16 + if warn_lines.is_empty() { 0 } else { 1 };
+    let h = (12 + error_lines + extra).min(area.height);
     let r = Rect::new(
         area.x + area.width.saturating_sub(w) / 2,
         area.y + area.height.saturating_sub(h) / 2,
@@ -46,6 +106,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     let strong = Style::default().fg(t.title).add_modifier(Modifier::BOLD);
     let mut lines: Vec<Line> = Vec::new();
     let mut hint = "q quit · t theme";
+    let wrap = |s: &str| -> Vec<String> { wrap_indent(s, text_w, 2) };
     match &app.screen {
         Screen::Connecting => {
             lines.push(Line::from(""));
@@ -79,10 +140,9 @@ pub fn draw(f: &mut Frame, app: &App) {
                 "Cannot load data from the server",
                 Style::default().fg(t.err).add_modifier(Modifier::BOLD),
             )));
-            lines.push(Line::from(Span::styled(
-                message.clone(),
-                Style::default().fg(t.fg),
-            )));
+            for l in wrap(message) {
+                lines.push(Line::from(Span::styled(l, Style::default().fg(t.fg))));
+            }
             let secs = retry_at.saturating_duration_since(app.now()).as_secs();
             lines.push(Line::from(Span::styled(
                 format!("retrying in {secs}s · base URL {}", app.settings.base_url),
@@ -139,10 +199,12 @@ pub fn draw(f: &mut Frame, app: &App) {
             ]));
             lines.push(Line::from(""));
             if let Some(e) = &form.error {
-                lines.push(Line::from(Span::styled(
-                    format!(" ✗ {e}"),
-                    Style::default().fg(t.err).add_modifier(Modifier::BOLD),
-                )));
+                for l in wrap(&format!("✗ {e}")) {
+                    lines.push(Line::from(Span::styled(
+                        format!(" {l}"),
+                        Style::default().fg(t.err).add_modifier(Modifier::BOLD),
+                    )));
+                }
             } else {
                 let sub = match form.mode {
                     LoginMode::Admin => " Full dashboard (all tabs).",
@@ -150,9 +212,18 @@ pub fn draw(f: &mut Frame, app: &App) {
                 };
                 lines.push(Line::from(Span::styled(sub, dim)));
             }
-            hint = "Enter sign in · Tab switch mode · Esc quit";
+            hint = "Enter sign in · Tab switch mode · Esc clear · Ctrl-C quit";
         }
         Screen::Dashboard => {}
+    }
+    if !warn_lines.is_empty() {
+        lines.push(Line::from(""));
+        for l in &warn_lines {
+            lines.push(Line::from(Span::styled(
+                format!(" {l}"),
+                Style::default().fg(t.warn),
+            )));
+        }
     }
     let body = Rect::new(
         inner.x + 1,
@@ -172,16 +243,21 @@ pub fn draw(f: &mut Frame, app: &App) {
             dim,
         );
     }
-    if !app.warnings.is_empty() && area.height > h + 2 {
-        let y = r.bottom();
-        let room = area.bottom().saturating_sub(y) as usize;
-        for (i, wmsg) in app.warnings.iter().take(3.min(room)).enumerate() {
-            f.buffer_mut().set_string(
-                r.x,
-                y + i as u16,
-                fmt::trunc(&format!("⚠ {wmsg}"), r.width as usize),
-                Style::default().fg(t.warn),
-            );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wrap_indent;
+
+    #[test]
+    fn wraps_with_indent_and_splits_long_words() {
+        let v = wrap_indent("⚠ /a/very/long/path/that/goes/on/and/on is readable by others", 24, 2);
+        assert!(v.len() >= 3, "{v:?}");
+        for l in &v[1..] {
+            assert!(l.starts_with("  "), "{l:?}");
+        }
+        for l in &v {
+            assert!(crate::fmt::width(l) <= 24, "{l:?}");
         }
     }
 }

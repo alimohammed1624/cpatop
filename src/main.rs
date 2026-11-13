@@ -112,17 +112,20 @@ fn main() -> Result<()> {
                 .enable_all()
                 .build()?;
             let client = Client::new(&base_url).map_err(|e| eyre!(e))?;
-            match store.load(&base_url) {
-                Some(tok) => {
-                    client.set_token(Some(tok));
-                    let r = rt.block_on(client.logout());
-                    store.remove(&base_url).map_err(|e| eyre!(e))?;
-                    match r {
-                        Ok(()) => println!("logged out of {base_url}"),
-                        Err(e) => println!("forgot the local session ({e})"),
-                    }
+            let stored = store.load_all(&base_url);
+            if stored.is_empty() {
+                println!("no stored session for {base_url}");
+            }
+            for st in stored {
+                client.set_token(Some(st.token.clone()));
+                let r = rt.block_on(client.logout());
+                store
+                    .remove_token(&base_url, &st.token)
+                    .map_err(|e| eyre!(e))?;
+                match r {
+                    Ok(()) => println!("logged out of {base_url} ({})", st.role),
+                    Err(e) => println!("forgot the local {} session ({e})", st.role),
                 }
-                None => println!("no stored session for {base_url}"),
             }
             return Ok(());
         }
@@ -142,7 +145,7 @@ fn main() -> Result<()> {
 
     let store = SessionStore::new(paths.session_file());
     if cli.fresh_session {
-        let _ = store.remove(&base_url);
+        let _ = store.remove(&base_url, None);
     }
 
     // Effective settings: CLI > persisted UI state > config file > defaults.
@@ -187,6 +190,7 @@ fn main() -> Result<()> {
             .unwrap_or(d.graph_symbols),
         privacy: cli.privacy || ui_state.privacy.or(file_cfg.privacy).unwrap_or(false),
         mouse: !cli.no_mouse && file_cfg.mouse.unwrap_or(true),
+        no_color: std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()),
     };
 
     let mut app = App::new(settings, themes, &ui_state);

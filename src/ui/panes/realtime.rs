@@ -1,11 +1,14 @@
 //! Realtime tab.
 
-use super::{dim_tabs, frame, key_label, placeholder, stale_marker, table_in};
+use super::{
+    Series, chart, chart_head, cursor, cursor_time, dim_tabs, frame, nice_max, placeholder,
+    stale_marker, table_in, time_labels,
+};
 use crate::api::models::{LatencyPoint, Realtime, TopItem};
 use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
-use crate::ui::table::{Align, Col, TRow, col, flex, num, text};
+use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, text};
 use crate::ui::widgets::{self, Graph, Scatter, flow, meter, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -26,13 +29,6 @@ fn window_badge(app: &App) -> Vec<Span<'static>> {
         ));
     }
     r
-}
-
-fn time_bounds(r: &Realtime) -> Option<(String, String)> {
-    Some((
-        fmt::ts_fmt(r.window_start.as_deref()?, "%H:%M:%S"),
-        fmt::ts_fmt(r.window_end.as_deref()?, "%H:%M:%S"),
-    ))
 }
 
 /// Latest, average and second-half-vs-first-half trend of a series.
@@ -60,21 +56,9 @@ fn trend_span(app: &App, tr: Option<f64>) -> Span<'static> {
     }
 }
 
-pub fn summary(f: &mut Frame, app: &App, area: Rect, focused: bool) {
+fn summary_items(app: &App, width: u16) -> Vec<Vec<Span<'static>>> {
     let t = app.theme();
-    let inner = frame(
-        f,
-        app,
-        PaneId::RtSummary,
-        area,
-        focused,
-        window_badge(app),
-        None,
-    );
-    if placeholder(f, app, inner, &app.data.realtime) {
-        return;
-    }
-    let Some(r) = rt(app) else { return };
+    let Some(r) = rt(app) else { return vec![] };
     let s = r
         .insights
         .as_ref()
@@ -82,8 +66,8 @@ pub fn summary(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         .unwrap_or_default();
     let reach = fmt::ratio_pct(s.cached_requests, s.token_requests);
     let fail_rate = fmt::ratio_pct(s.failures, s.requests);
-    let mw = if inner.width >= 120 { 12 } else { 8 };
-    let items = vec![
+    let mw = if width >= 120 { 12 } else { 8 };
+    vec![
         stat(t, "requests", fmt::int(s.requests), None),
         vec![
             Span::styled("failures ", Style::default().fg(t.graph_text)),
@@ -121,22 +105,78 @@ pub fn summary(f: &mut Frame, app: &App, area: Rect, focused: bool) {
             fmt::ms(r.latency_scatter.p95_latency_ms),
             None,
         ),
-    ];
-    let lines = flow(items, inner.width.saturating_sub(1), 3);
+    ]
+}
+
+/// Lines the window summary needs at an inner width.
+pub fn summary_lines(app: &App, inner_w: u16) -> u16 {
+    flow(summary_items(app, inner_w), inner_w, 3).len() as u16
+}
+
+pub fn summary(f: &mut Frame, app: &App, area: Rect, focused: bool) {
+    let inner = frame(
+        f,
+        app,
+        PaneId::RtSummary,
+        area,
+        focused,
+        window_badge(app),
+        None,
+    );
+    if placeholder(f, app, inner, &app.data.realtime) {
+        return;
+    }
+    let w = inner.width.saturating_sub(1);
+    let lines = flow(summary_items(app, w), w, 3);
     f.render_widget(
         Paragraph::new(lines),
-        Rect::new(
-            inner.x + 1,
-            inner.y,
-            inner.width.saturating_sub(1),
-            inner.height,
-        ),
+        Rect::new(inner.x + 1, inner.y, w, inner.height),
     );
 }
 
-pub fn throughput(f: &mut Frame, app: &App, area: Rect, focused: bool) {
+/// Bucket timestamps of the realtime series.
+fn buckets(r: &Realtime) -> Vec<String> {
+    r.token_velocity.iter().map(|p| p.bucket.clone()).collect()
+}
+
+/// Header for a realtime chart: latest / average / trend, or the cursor value.
+fn rt_head(
+    app: &App,
+    name: &str,
+    v: &[f64],
+    b: &[String],
+    cur: Option<usize>,
+    fmtf: fn(f64) -> String,
+) -> Line<'static> {
     let t = app.theme();
-    let bottom = rt(app).and_then(time_bounds);
+    let label = Style::default().fg(t.graph_text);
+    match cur {
+        Some(i) if i < v.len() => chart_head(
+            app,
+            name,
+            fmtf(v[i]),
+            vec![Span::styled(
+                format!("  @ {}", b.get(i).map(|x| cursor_time(x, false)).unwrap_or_default()),
+                Style::default().fg(t.hi),
+            )],
+        ),
+        _ => {
+            let (latest, avg, tr) = trend_stats(v);
+            chart_head(
+                app,
+                name,
+                fmtf(latest),
+                vec![
+                    Span::styled(format!("  avg {}  ", fmtf(avg)), label),
+                    trend_span(app, tr),
+                ],
+            )
+        }
+    }
+}
+
+pub fn throughput(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
+    let t = app.theme();
     let inner = frame(
         f,
         app,
@@ -144,7 +184,7 @@ pub fn throughput(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         area,
         focused,
         window_badge(app),
-        bottom,
+        None,
     );
     if placeholder(f, app, inner, &app.data.realtime) {
         return;
@@ -160,66 +200,70 @@ pub fn throughput(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         .iter()
         .map(|p| p.requests_per_minute)
         .collect();
-    let label = Style::default().fg(t.graph_text);
-    let head = |name: &str, v: &[f64], fmtf: fn(f64) -> String| -> Line<'static> {
-        let (latest, avg, tr) = trend_stats(v);
-        Line::from(vec![
-            Span::styled(format!("{name} "), label),
-            Span::styled(
-                fmtf(latest),
-                Style::default().fg(t.title).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!("  avg {}  ", fmtf(avg)), label),
-            trend_span(app, tr),
-        ])
-    };
-    let half = inner.height / 2;
-    let split = inner.height >= 6;
+    let b = buckets(r);
+    let labels = time_labels(&b, false, false);
+    let cur = cursor(app, PaneId::RtThroughput, tpm.len());
+    let x = inner.x + 1;
+    let w = inner.width.saturating_sub(1);
+    let split = inner.height >= 10;
     let th = if split {
-        inner.height - half
+        inner.height - inner.height / 2
     } else {
         inner.height
     };
     f.buffer_mut().set_line(
-        inner.x + 1,
+        x,
         inner.y,
-        &head("tokens/min", &tpm, fmt::compact),
-        inner.width.saturating_sub(1),
+        &rt_head(app, "tokens/min", &tpm, &b, cur, fmt::compact),
+        w,
     );
-    f.render_widget(
-        Graph {
-            data: &tpm,
-            theme: t,
-            symbols: app.settings.graph_symbols,
-            max: None,
+    chart(
+        f,
+        app,
+        hit,
+        PaneId::RtThroughput,
+        Rect::new(x, inner.y + 1, w, th.saturating_sub(1)),
+        &labels,
+        &Series {
+            values: &tpm,
+            fmt: fmt::compact,
             color: None,
+            max: None,
+            floor: 0.0,
         },
-        Rect::new(inner.x, inner.y + 1, inner.width, th.saturating_sub(1)),
+        app.settings.graph_symbols,
+        true,
     );
     if split {
         let y = inner.y + th;
         f.buffer_mut().set_line(
-            inner.x + 1,
+            x,
             y,
-            &head("requests/min", &rpm, fmt::per_minute),
-            inner.width.saturating_sub(1),
+            &rt_head(app, "requests/min", &rpm, &b, cur, fmt::per_minute),
+            w,
         );
-        f.render_widget(
-            Graph {
-                data: &rpm,
-                theme: t,
-                symbols: app.settings.graph_symbols,
-                max: None,
+        chart(
+            f,
+            app,
+            hit,
+            PaneId::RtThroughput,
+            Rect::new(x, y + 1, w, (inner.height - th).saturating_sub(1)),
+            &labels,
+            &Series {
+                values: &rpm,
+                fmt: fmt::per_minute,
                 color: Some(t.accent),
+                max: None,
+                floor: 0.0,
             },
-            Rect::new(inner.x, y + 1, inner.width, half.saturating_sub(1)),
+            app.settings.graph_symbols,
+            false,
         );
     }
 }
 
-pub fn outcomes(f: &mut Frame, app: &App, area: Rect, focused: bool) {
+pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
-    let bottom = rt(app).and_then(time_bounds);
     let inner = frame(
         f,
         app,
@@ -227,7 +271,7 @@ pub fn outcomes(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         area,
         focused,
         window_badge(app),
-        bottom,
+        None,
     );
     if placeholder(f, app, inner, &app.data.realtime) {
         return;
@@ -238,14 +282,15 @@ pub fn outcomes(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         .as_ref()
         .map(|i| i.outcomes.clone())
         .unwrap_or_default();
-    let raw_req: Vec<f64> = out.iter().map(|o| o.requests).collect();
-    let raw_fail: Vec<f64> = out.iter().map(|o| o.failures).collect();
-    let w = inner.width as usize;
-    let req = widgets::step_resample(&raw_req, w);
-    let fail = widgets::step_resample(&raw_fail, w);
-    let tr: f64 = raw_req.iter().sum();
-    let tf: f64 = raw_fail.iter().sum();
-    let head = Line::from(vec![
+    let req: Vec<f64> = out.iter().map(|o| o.requests).collect();
+    let fail: Vec<f64> = out.iter().map(|o| o.failures).collect();
+    let b: Vec<String> = out.iter().map(|o| o.bucket.clone()).collect();
+    let cur = cursor(app, PaneId::RtOutcomes, req.len());
+    let (tr, tf) = match cur {
+        Some(i) => (req[i], fail[i]),
+        None => (req.iter().sum(), fail.iter().sum()),
+    };
+    let mut head = vec![
         Span::styled("ok ", Style::default().fg(t.graph_text)),
         Span::styled(fmt::int(tr - tf), Style::default().fg(t.ok)),
         Span::styled("  fail ", Style::default().fg(t.graph_text)),
@@ -262,17 +307,27 @@ pub fn outcomes(f: &mut Frame, app: &App, area: Rect, focused: bool) {
             ),
             Style::default().fg(t.graph_text),
         ),
-    ]);
-    f.buffer_mut()
-        .set_line(inner.x + 1, inner.y, &head, inner.width.saturating_sub(1));
+    ];
+    if let Some(i) = cur {
+        head.push(Span::styled(
+            format!("  @ {}", cursor_time(&b[i], false)),
+            Style::default().fg(t.hi),
+        ));
+    }
+    f.buffer_mut().set_line(
+        inner.x + 1,
+        inner.y,
+        &Line::from(head),
+        inner.width.saturating_sub(1),
+    );
     let g = Rect::new(
-        inner.x,
+        inner.x + 1,
         inner.y + 1,
-        inner.width,
+        inner.width.saturating_sub(1),
         inner.height.saturating_sub(1),
     );
-    let max = req.iter().copied().fold(0.0, f64::max);
-    if max <= 0.0 {
+    let peak = req.iter().copied().fold(0.0, f64::max);
+    if peak <= 0.0 {
         widgets::message(f.buffer_mut(), g, "no requests in window", t.graph_text);
         return;
     }
@@ -282,27 +337,39 @@ pub fn outcomes(f: &mut Frame, app: &App, area: Rect, focused: bool) {
     } else {
         crate::config::GraphSymbols::Block
     };
-    f.render_widget(
-        Graph {
-            data: &req,
-            theme: t,
-            symbols,
-            max: Some(max),
-            color: Some(t.ok),
-        },
+    let top = nice_max(peak);
+    let labels = time_labels(&b, false, false);
+    let plot = chart(
+        f,
+        app,
+        hit,
+        PaneId::RtOutcomes,
         g,
+        &labels,
+        &Series {
+            values: &req,
+            fmt: fmt::int,
+            color: Some(t.ok),
+            max: Some(top),
+            floor: 0.0,
+        },
+        symbols,
+        true,
     );
-    if tf > 0.0 {
+    if fail.iter().any(|v| *v > 0.0) {
         f.render_widget(
             Graph {
                 data: &fail,
                 theme: t,
                 symbols,
-                max: Some(max),
+                max: Some(top),
                 color: Some(t.err),
             },
-            g,
+            plot,
         );
+        if let Some(i) = cur {
+            widgets::draw_cursor(f.buffer_mut(), plot, i, req.len(), t);
+        }
     }
 }
 
@@ -406,11 +473,29 @@ pub fn latency(f: &mut Frame, app: &App, area: Rect, focused: bool) {
 
 const SHARE_COLS: [Col; 5] = [
     flex("name", 12),
-    col("share", 16, Align::Left, 1),
+    grow("share", 14, 1),
     col("tokens", 7, Align::Right, 0),
     col("req", 6, Align::Right, 0),
     col("cost", 9, Align::Right, 2),
 ];
+
+fn share_items(app: &App) -> Option<&[TopItem]> {
+    let r = rt(app)?;
+    Some(match app.dim(PaneId::RtShare) {
+        0 => &r.current_usage.models,
+        1 => &r.current_usage.api_keys,
+        2 => &r.current_usage.credentials,
+        _ => &r.current_usage.ai_providers,
+    })
+}
+
+pub fn share_len(app: &App) -> Option<usize> {
+    share_items(app).map(|i| i.len())
+}
+
+pub fn speed_len(app: &App) -> Option<usize> {
+    rt(app).map(|r| r.model_speed.series.len())
+}
 
 pub fn share(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
@@ -419,32 +504,21 @@ pub fn share(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
     if placeholder(f, app, inner, &app.data.realtime) {
         return;
     }
-    let Some(r) = rt(app) else { return };
+    let Some(items) = share_items(app) else { return };
     let dim = app.dim(PaneId::RtShare);
-    let items: &[TopItem] = match dim {
-        0 => &r.current_usage.models,
-        1 => &r.current_usage.api_keys,
-        2 => &r.current_usage.credentials,
-        _ => &r.current_usage.ai_providers,
-    };
     let rows = items
         .iter()
         .map(|i| {
             let name = if i.key == "__realtime_others__" {
                 "Others".to_string()
             } else if dim == 1 {
-                key_label(&i.label)
+                app.key_name(&i.key, &i.label)
             } else {
                 app.privacy(&i.label)
             };
-            let mut bar = meter(i.share / 100.0, 8, t, None);
-            bar.push(Span::styled(
-                format!(" {:>5.1}%", i.share),
-                Style::default().fg(t.fg),
-            ));
             TRow::new(i.key.clone())
                 .text(name.clone(), text(&name))
-                .spans(bar, num(i.share))
+                .meter(i.share / 100.0, None, format!(" {:>5.1}%", i.share), num(i.share))
                 .styled(
                     fmt::compact(i.tokens),
                     Style::default().fg(t.title),
@@ -542,9 +616,8 @@ pub fn speed(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
     );
 }
 
-pub fn cache(f: &mut Frame, app: &App, area: Rect, focused: bool) {
+pub fn cache(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
-    let bottom = rt(app).and_then(time_bounds);
     let inner = frame(
         f,
         app,
@@ -552,57 +625,81 @@ pub fn cache(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         area,
         focused,
         window_badge(app),
-        bottom,
+        None,
     );
     if placeholder(f, app, inner, &app.data.realtime) {
         return;
     }
     let Some(r) = rt(app) else { return };
+    // Buckets without input have no rate: a gap, not a drop to zero.
     let rates: Vec<f64> = r
         .cache_level
         .iter()
-        .map(|c| c.cache_read_rate.unwrap_or(0.0))
+        .map(|c| c.cache_read_rate.unwrap_or(f64::NAN))
         .collect();
-    let (latest, avg, tr) = trend_stats(&rates);
+    let b: Vec<String> = r.cache_level.iter().map(|c| c.bucket.clone()).collect();
+    let known: Vec<f64> = rates.iter().copied().filter(|v| v.is_finite()).collect();
+    let cur = cursor(app, PaneId::RtCache, rates.len());
     // Plot above a floor so small changes near 100% stay visible.
-    let lo = rates
-        .iter()
-        .copied()
-        .filter(|v| *v > 0.0)
-        .fold(100.0, f64::min);
-    let floor = ((lo - 5.0) / 10.0).floor().max(0.0) * 10.0;
-    let shifted: Vec<f64> = rates.iter().map(|v| (v - floor).max(0.0)).collect();
-    let head = Line::from(vec![
-        Span::styled("cache read ", Style::default().fg(t.graph_text)),
-        Span::styled(
-            fmt::pct(latest, 2),
-            Style::default().fg(t.title).add_modifier(Modifier::BOLD),
+    let lo = known.iter().copied().fold(100.0, f64::min);
+    let floor = ((lo - 5.0) / 10.0).floor().clamp(0.0, 9.0) * 10.0;
+    let head = match cur {
+        Some(i) => chart_head(
+            app,
+            "cache read",
+            if rates[i].is_finite() {
+                fmt::pct(rates[i], 2)
+            } else {
+                "no input".into()
+            },
+            vec![Span::styled(
+                format!("  @ {}", cursor_time(&b[i], false)),
+                Style::default().fg(t.hi),
+            )],
         ),
-        Span::styled(
-            format!("  avg {}  ", fmt::pct(avg, 1)),
-            Style::default().fg(t.graph_text),
-        ),
-        trend_span(app, tr),
-        Span::styled(
-            format!("  axis {floor:.0}–100%"),
-            Style::default().fg(t.graph_text),
-        ),
-    ]);
-    f.buffer_mut()
-        .set_line(inner.x + 1, inner.y, &head, inner.width.saturating_sub(1));
-    f.render_widget(
-        Graph {
-            data: &shifted,
-            theme: t,
-            symbols: app.settings.graph_symbols,
-            max: Some(100.0 - floor),
-            color: None,
-        },
+        None => {
+            let (latest, avg, tr) = trend_stats(&known);
+            chart_head(
+                app,
+                "cache read",
+                fmt::pct(latest, 2),
+                vec![
+                    Span::styled(
+                        format!("  avg {}  ", fmt::pct(avg, 1)),
+                        Style::default().fg(t.graph_text),
+                    ),
+                    trend_span(app, tr),
+                ],
+            )
+        }
+    };
+    f.buffer_mut().set_line(
+        inner.x + 1,
+        inner.y,
+        &head,
+        inner.width.saturating_sub(1),
+    );
+    let labels = time_labels(&b, false, false);
+    chart(
+        f,
+        app,
+        hit,
+        PaneId::RtCache,
         Rect::new(
-            inner.x,
+            inner.x + 1,
             inner.y + 1,
-            inner.width,
+            inner.width.saturating_sub(1),
             inner.height.saturating_sub(1),
         ),
+        &labels,
+        &Series {
+            values: &rates,
+            fmt: |v| format!("{v:.0}%"),
+            color: None,
+            max: Some(100.0),
+            floor,
+        },
+        app.settings.graph_symbols,
+        true,
     );
 }

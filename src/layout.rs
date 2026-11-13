@@ -1,9 +1,16 @@
 //! Tabs, panes and layout presets.
 //!
 //! A preset is a list of rows; each row holds panes with horizontal weights.
-//! Hidden panes are removed, panes that do not fit their minimum width are
-//! dropped (lowest priority first) and rows that do not fit vertically are
-//! dropped by priority, so every layout degrades gracefully on small terminals.
+//! Hidden panes are removed and panes that do not fit their minimum width are
+//! dropped from the right.
+//!
+//! Heights are content-aware: every pane reports a [`Size`] (minimum and,
+//! for panes whose content is finite such as summaries and short tables, a
+//! maximum). Rows first get their minimum; spare rows then go to rows that
+//! can use them (graphs, long tables) in proportion to their weights. When
+//! even the minimums do not fit, the lowest-priority rows collapse to a
+//! one-line title bar, and only then are dropped — panes are never squeezed
+//! below the height where their content is readable.
 
 use crate::api::Role;
 use ratatui::layout::Rect;
@@ -125,6 +132,8 @@ pub struct PaneDef {
     pub min_h: u16,
     /// Has a selectable list (receives arrows, filter and sort keys).
     pub table: bool,
+    /// Time-series graph with a cursor (←/→ when focused).
+    pub graph: bool,
 }
 
 const fn p(id: PaneId, name: &'static str, min_w: u16, min_h: u16, table: bool) -> PaneDef {
@@ -134,6 +143,18 @@ const fn p(id: PaneId, name: &'static str, min_w: u16, min_h: u16, table: bool) 
         min_w,
         min_h,
         table,
+        graph: false,
+    }
+}
+
+const fn g(id: PaneId, name: &'static str, min_w: u16, min_h: u16) -> PaneDef {
+    PaneDef {
+        id,
+        name,
+        min_w,
+        min_h,
+        table: false,
+        graph: true,
     }
 }
 
@@ -141,24 +162,24 @@ use PaneId::*;
 
 const OVERVIEW: [PaneDef; 4] = [
     p(OvTotals, "totals", 30, 4, false),
-    p(OvTrend, "trend", 24, 5, false),
+    g(OvTrend, "trend", 24, 7),
     p(OvActivity, "activity", 24, 6, false),
     p(OvDist, "distribution", 36, 5, true),
 ];
 const REALTIME: [PaneDef; 7] = [
     p(RtSummary, "window", 30, 4, false),
-    p(RtThroughput, "throughput", 24, 5, false),
-    p(RtOutcomes, "outcomes", 20, 5, false),
-    p(RtLatency, "latency", 24, 6, false),
+    g(RtThroughput, "throughput", 24, 7),
+    g(RtOutcomes, "outcomes", 20, 6),
+    p(RtLatency, "latency", 24, 8, false),
     p(RtShare, "share", 34, 5, true),
     p(RtSpeed, "speed", 34, 5, true),
-    p(RtCache, "cache", 20, 5, false),
+    g(RtCache, "cache", 20, 6),
 ];
 const ANALYSIS: [PaneDef; 7] = [
-    p(AnTokens, "tokens", 30, 6, false),
+    g(AnTokens, "tokens", 30, 7),
     p(AnComposition, "composition", 36, 5, true),
     p(AnModels, "models", 34, 5, true),
-    p(AnLatency, "latency", 24, 6, false),
+    p(AnLatency, "latency", 24, 8, false),
     p(AnSpeed, "speed", 30, 5, true),
     p(AnEfficiency, "efficiency", 40, 5, true),
     p(AnHeatmap, "heatmap", 30, 5, true),
@@ -408,103 +429,212 @@ pub fn presets(tab: Tab) -> &'static [Preset] {
     }
 }
 
-/// Compute pane rectangles for a tab.
-pub fn compute(tab: Tab, preset: usize, hidden: &[PaneId], area: Rect) -> Vec<(PaneId, Rect)> {
+/// Height needs of a pane (outer rows, including borders).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Size {
+    pub min: u16,
+    /// `None`: can use any number of rows (graphs, long tables).
+    pub max: Option<u16>,
+}
+
+impl Size {
+    pub fn at_least(min: u16) -> Size {
+        Size { min, max: None }
+    }
+    pub fn exact(h: u16) -> Size {
+        Size {
+            min: h,
+            max: Some(h),
+        }
+    }
+    pub fn range(min: u16, max: u16) -> Size {
+        Size {
+            min,
+            max: Some(max.max(min)),
+        }
+    }
+}
+
+/// A placed pane. `collapsed` panes get one row: a title bar only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Placed {
+    pub id: PaneId,
+    pub rect: Rect,
+    pub collapsed: bool,
+}
+
+struct RowPlan {
+    def: RowDef,
+    panes: Vec<(PaneDef, Rect)>,
+    min: u16,
+    max: Option<u16>,
+    weight: u16,
+    collapsed: bool,
+}
+
+/// Compute pane rectangles for a tab. `size` reports each pane's height
+/// needs at a given outer width.
+pub fn compute(
+    tab: Tab,
+    preset: usize,
+    hidden: &[PaneId],
+    area: Rect,
+    size: &dyn Fn(PaneId, u16) -> Size,
+) -> Vec<Placed> {
     let presets = presets(tab);
     let preset = &presets[preset % presets.len()];
     let def = |id: PaneId| panes(tab).iter().find(|d| d.id == id).copied();
 
-    // Visible panes per row.
-    let mut rows: Vec<(RowDef, Vec<(PaneDef, u16)>)> = preset
+    // Visible panes per row, with widths.
+    let mut rows: Vec<RowPlan> = preset
         .rows
         .iter()
-        .map(|r| {
-            let ps = r
+        .filter_map(|r| {
+            let mut ps = r
                 .panes
                 .iter()
                 .filter(|(id, _)| !hidden.contains(id))
                 .filter_map(|(id, w)| def(*id).map(|d| (d, *w)))
                 .collect::<Vec<_>>();
-            (*r, ps)
+            if ps.is_empty() {
+                return None;
+            }
+            // Drop panes from the right until minimum widths fit.
+            while ps.len() > 1 && ps.iter().map(|(d, _)| d.min_w).sum::<u16>() > area.width {
+                ps.pop();
+            }
+            let total_w: u32 = ps.iter().map(|(_, w)| *w as u32).sum::<u32>().max(1);
+            let mut x = area.x;
+            let n = ps.len();
+            let mut placed = Vec::with_capacity(n);
+            for (i, (d, w)) in ps.into_iter().enumerate() {
+                let width = if i + 1 == n {
+                    area.x + area.width - x
+                } else {
+                    (area.width as u32 * w as u32 / total_w) as u16
+                };
+                placed.push((d, Rect::new(x, 0, width, 0)));
+                x += width;
+            }
+            let sizes: Vec<Size> = placed.iter().map(|(d, r)| size(d.id, r.width)).collect();
+            let min = sizes.iter().map(|s| s.min).max().unwrap_or(3).max(3);
+            let max = sizes
+                .iter()
+                .map(|s| s.max)
+                .collect::<Option<Vec<u16>>>()
+                .map(|v| v.into_iter().max().unwrap_or(min).max(min));
+            let weight = match r.height {
+                Height::Fill(w) => w.max(1),
+                Height::Fixed(_) => 0,
+            };
+            Some(RowPlan {
+                def: *r,
+                panes: placed,
+                min,
+                max,
+                weight,
+                collapsed: false,
+            })
         })
-        .filter(|(_, ps)| !ps.is_empty())
         .collect();
 
-    // Drop rows (highest prio number first) until minimum heights fit.
-    let min_h = |r: &(RowDef, Vec<(PaneDef, u16)>)| -> u16 {
-        let pane_min = r.1.iter().map(|(d, _)| d.min_h).max().unwrap_or(3);
-        match r.0.height {
-            Fixed(h) => h,
-            Fill(_) => pane_min,
-        }
+    let need = |rows: &[RowPlan]| -> u16 {
+        rows.iter()
+            .map(|r| if r.collapsed { 1 } else { r.min })
+            .sum()
     };
-    while rows.len() > 1 && rows.iter().map(min_h).sum::<u16>() > area.height {
-        let (idx, _) = rows
+    // Collapse, then drop, rows by priority (highest number first) until the
+    // minimums fit.
+    while rows.len() > 1 && need(&rows) > area.height {
+        let victim = rows
             .iter()
             .enumerate()
-            .max_by_key(|(_, r)| r.0.prio)
-            .expect("non-empty");
-        rows.remove(idx);
+            .filter(|(_, r)| !r.collapsed && r.def.prio > 0)
+            .max_by_key(|(_, r)| r.def.prio)
+            .map(|(i, _)| i);
+        match victim {
+            Some(i) => rows[i].collapsed = true,
+            None => {
+                let (i, _) = rows
+                    .iter()
+                    .enumerate()
+                    .max_by_key(|(_, r)| (r.collapsed, r.def.prio))
+                    .expect("non-empty");
+                rows.remove(i);
+            }
+        }
     }
 
-    // Vertical split.
-    let fixed: u16 = rows
-        .iter()
-        .map(|r| match r.0.height {
-            Fixed(h) => h,
-            Fill(_) => 0,
-        })
-        .sum();
-    let fill_weights: u16 = rows
-        .iter()
-        .map(|r| match r.0.height {
-            Fill(w) => w,
-            Fixed(_) => 0,
-        })
-        .sum();
-    let flexible = area.height.saturating_sub(fixed);
+    // Heights: minimums first, then spare rows by weight to rows below max.
     let mut heights: Vec<u16> = rows
         .iter()
-        .map(|r| match r.0.height {
-            Fixed(h) => h.min(area.height),
-            Fill(w) => {
-                if fill_weights == 0 {
-                    0
-                } else {
-                    (flexible as u32 * w as u32 / fill_weights as u32) as u16
-                }
-            }
-        })
+        .map(|r| if r.collapsed { 1 } else { r.min })
         .collect();
-    // Hand rounding leftovers to the last fill row.
-    let used: u16 = heights.iter().sum();
-    if let Some(i) = rows.iter().rposition(|r| matches!(r.0.height, Fill(_))) {
-        heights[i] += area.height.saturating_sub(used);
-    } else if let Some(last) = heights.last_mut() {
-        *last += area.height.saturating_sub(used);
+    if rows.len() == 1 && !rows[0].collapsed {
+        heights[0] = area.height;
+    }
+    let mut spare = area.height.saturating_sub(heights.iter().sum());
+    let grow_pass = |heights: &mut Vec<u16>, spare: &mut u16, respect_max: bool| {
+        while *spare > 0 {
+            let pick = rows
+                .iter()
+                .enumerate()
+                .filter(|(i, r)| {
+                    !r.collapsed
+                        && (r.weight > 0 || !respect_max)
+                        && (!respect_max || r.max.is_none_or(|m| heights[*i] < m))
+                })
+                .min_by(|(i, a), (j, b)| {
+                    // Least served relative to weight first.
+                    let wa = a.weight.max(1) as u32;
+                    let wb = b.weight.max(1) as u32;
+                    let fa = heights[*i].saturating_sub(a.min) as u32 * wb;
+                    let fb = heights[*j].saturating_sub(b.min) as u32 * wa;
+                    fa.cmp(&fb)
+                })
+                .map(|(i, _)| i);
+            match pick {
+                Some(i) => {
+                    heights[i] += 1;
+                    *spare -= 1;
+                }
+                None => break,
+            }
+        }
+    };
+    // Content-sized (fixed) rows get up to their maximum first; then the
+    // weighted rows share the rest.
+    for (i, r) in rows.iter().enumerate() {
+        if r.collapsed || r.weight > 0 {
+            continue;
+        }
+        if let Some(m) = r.max {
+            let add = m.saturating_sub(heights[i]).min(spare);
+            heights[i] += add;
+            spare -= add;
+        }
+    }
+    grow_pass(&mut heights, &mut spare, true);
+    grow_pass(&mut heights, &mut spare, false);
+    if spare > 0
+        && let Some(last) = heights.last_mut()
+    {
+        *last += spare;
     }
 
     let mut out = Vec::new();
     let mut y = area.y;
-    for ((_, mut ps), h) in rows.into_iter().zip(heights) {
+    for (r, h) in rows.into_iter().zip(heights) {
+        let h = h.min(area.bottom().saturating_sub(y));
         if h == 0 {
             continue;
         }
-        // Drop panes from the right until minimum widths fit.
-        while ps.len() > 1 && ps.iter().map(|(d, _)| d.min_w).sum::<u16>() > area.width {
-            ps.pop();
-        }
-        let total_w: u32 = ps.iter().map(|(_, w)| *w as u32).sum::<u32>().max(1);
-        let mut x = area.x;
-        let n = ps.len();
-        for (i, (d, w)) in ps.into_iter().enumerate() {
-            let width = if i + 1 == n {
-                area.x + area.width - x
-            } else {
-                (area.width as u32 * w as u32 / total_w) as u16
-            };
-            out.push((d.id, Rect::new(x, y, width, h)));
-            x += width;
+        for (d, rect) in r.panes {
+            out.push(Placed {
+                id: d.id,
+                rect: Rect::new(rect.x, y, rect.width, h),
+                collapsed: r.collapsed,
+            });
         }
         y += h;
     }
@@ -529,17 +659,24 @@ mod tests {
         }
     }
 
+    fn defaults(id: PaneId, _w: u16) -> Size {
+        Size::at_least(pane_def(id).2.min_h)
+    }
+
     #[test]
     fn layout_fills_area_and_degrades() {
         for t in ALL_TABS {
             for i in 0..presets(t).len() {
                 for (w, h) in [(80, 21), (160, 45), (220, 57), (40, 10)] {
                     let area = Rect::new(0, 2, w, h);
-                    let rects = compute(t, i, &[], area);
+                    let rects = compute(t, i, &[], area, &defaults);
                     assert!(!rects.is_empty(), "{t:?} preset {i} at {w}x{h}");
-                    for (_, r) in &rects {
-                        assert!(r.right() <= area.right() && r.bottom() <= area.bottom());
+                    let mut bottom = area.y;
+                    for p in &rects {
+                        assert!(p.rect.right() <= area.right() && p.rect.bottom() <= area.bottom());
+                        bottom = bottom.max(p.rect.bottom());
                     }
+                    assert_eq!(bottom, area.bottom(), "{t:?} preset {i} at {w}x{h} fills");
                 }
             }
         }
@@ -548,12 +685,45 @@ mod tests {
     #[test]
     fn hidden_panes_are_skipped() {
         let area = Rect::new(0, 0, 160, 40);
-        let rects = compute(Tab::Overview, 0, &[PaneId::OvTrend], area);
-        assert!(rects.iter().all(|(id, _)| *id != PaneId::OvTrend));
-        let act = rects
-            .iter()
-            .find(|(id, _)| *id == PaneId::OvActivity)
-            .unwrap();
-        assert_eq!(act.1.width, 160);
+        let rects = compute(Tab::Overview, 0, &[PaneId::OvTrend], area, &defaults);
+        assert!(rects.iter().all(|p| p.id != PaneId::OvTrend));
+        let act = rects.iter().find(|p| p.id == PaneId::OvActivity).unwrap();
+        assert_eq!(act.rect.width, 160);
+    }
+
+    #[test]
+    fn content_sized_rows_give_spare_rows_to_graphs() {
+        // A 6-row table needs 9 rows; the graph row takes everything else.
+        let size = |id: PaneId, _w: u16| match id {
+            PaneId::OvTotals => Size::exact(4),
+            PaneId::OvDist => Size::range(5, 9),
+            PaneId::OvActivity => Size::range(6, 20),
+            _ => Size::at_least(7),
+        };
+        let area = Rect::new(0, 0, 160, 46);
+        let rects = compute(Tab::Overview, 0, &[], area, &size);
+        let h = |id| rects.iter().find(|p| p.id == id).unwrap().rect.height;
+        assert_eq!(h(PaneId::OvTotals), 4);
+        assert_eq!(h(PaneId::OvDist), 9);
+        assert_eq!(h(PaneId::OvTrend), 46 - 4 - 9);
+    }
+
+    #[test]
+    fn low_priority_rows_collapse_before_being_squeezed() {
+        let size = |id: PaneId, _w: u16| Size::at_least(pane_def(id).2.min_h.max(8));
+        // Analysis "balanced" has four rows of 8 minimum: 32 > 22.
+        let area = Rect::new(0, 2, 80, 22);
+        let rects = compute(Tab::Analysis, 0, &[], area, &size);
+        for p in &rects {
+            assert!(
+                p.collapsed || p.rect.height >= 8,
+                "{:?} squeezed to {}",
+                p.id,
+                p.rect.height
+            );
+        }
+        assert!(rects.iter().any(|p| p.collapsed));
+        let tokens = rects.iter().find(|p| p.id == PaneId::AnTokens).unwrap();
+        assert!(!tokens.collapsed);
     }
 }

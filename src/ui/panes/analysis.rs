@@ -1,13 +1,16 @@
 //! Analysis tab.
 
 use super::realtime::scatter_pane;
-use super::{dim_tabs, frame, key_label, placeholder, stale_marker, table_in};
+use super::{
+    Series, chart, cursor, cursor_time, dim_tabs, frame, placeholder, stale_marker, table_in,
+    time_labels,
+};
 use crate::api::models::{Analysis, CompositionItem};
 use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
-use crate::ui::table::{Align, Col, TRow, col, flex, num, text};
-use crate::ui::widgets::{self, Graph, flow, meter, spark, stat};
+use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, text};
+use crate::ui::widgets::{self, flow, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -31,77 +34,112 @@ fn window_minutes(a: &Analysis) -> Option<f64> {
     (m > 0.0).then_some(m)
 }
 
-pub fn tokens(f: &mut Frame, app: &App, area: Rect, focused: bool) {
+pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
     let l = &app.data.analysis;
     let mut right = stale_marker(app, l);
-    let mut bottom = None;
-    if let Some(a) = an(app) {
-        if right.is_empty() {
-            right.push(Span::styled(
-                format!("{} · {}", app.range, a.granularity),
-                Style::default().fg(t.graph_text),
-            ));
-        }
-        if let (Some(first), Some(last)) = (a.token_usage.first(), a.token_usage.last()) {
-            let pat = if daily(a) { "%m-%d" } else { "%m-%d %H:%M" };
-            bottom = Some((
-                fmt::ts_fmt(&first.bucket, pat),
-                fmt::ts_fmt(&last.bucket, pat),
-            ));
-        }
+    if let Some(a) = an(app)
+        && right.is_empty()
+    {
+        right.push(Span::styled(
+            format!("{} · {}", app.range.label(), a.granularity),
+            Style::default().fg(t.graph_text),
+        ));
     }
-    let inner = frame(f, app, PaneId::AnTokens, area, focused, right, bottom);
+    let inner = frame(f, app, PaneId::AnTokens, area, focused, right, None);
     if placeholder(f, app, inner, l) {
         return;
     }
     let Some(a) = an(app) else { return };
-    let total: f64 = a.token_usage.iter().map(|b| b.total_tokens).sum();
-    let reqs: f64 = a.token_usage.iter().map(|b| b.requests).sum();
-    let cost = a.cost_summary.total_cost_usd;
-    let blended = if total > 0.0 { cost / total * 1e6 } else { 0.0 };
-    let avg = if a.token_usage.is_empty() {
-        0.0
-    } else {
-        total / a.token_usage.len() as f64
+    let series: Vec<f64> = a.token_usage.iter().map(|b| b.total_tokens).collect();
+    let buckets: Vec<String> = a.token_usage.iter().map(|b| b.bucket.clone()).collect();
+    let cur = cursor(app, PaneId::AnTokens, series.len());
+    let items = match cur {
+        Some(i) => {
+            let b = &a.token_usage[i];
+            vec![
+                vec![Span::styled(
+                    format!("@ {}", cursor_time(&b.bucket, daily(a))),
+                    Style::default().fg(t.hi),
+                )],
+                stat(t, "tokens", fmt::compact(b.total_tokens), None),
+                stat(t, "requests", fmt::int(b.requests), None),
+                stat(
+                    t,
+                    "cost",
+                    if b.cost_available {
+                        fmt::usd(b.cost_usd)
+                    } else {
+                        "—".into()
+                    },
+                    Some(t.accent),
+                ),
+                stat(t, "in", fmt::compact(b.input_tokens), Some(t.fg)),
+                stat(t, "out", fmt::compact(b.output_tokens), Some(t.fg)),
+                stat(t, "cache r", fmt::compact(b.cache_read_tokens), Some(t.fg)),
+            ]
+        }
+        None => {
+            let total: f64 = series.iter().sum();
+            let reqs: f64 = a.token_usage.iter().map(|b| b.requests).sum();
+            let cost = a.cost_summary.total_cost_usd;
+            let blended = if total > 0.0 { cost / total * 1e6 } else { 0.0 };
+            let avg = if series.is_empty() {
+                0.0
+            } else {
+                total / series.len() as f64
+            };
+            let mut cost_item = stat(t, "cost", fmt::usd(cost), Some(t.accent));
+            if !a.cost_summary.cost_available {
+                cost_item.push(Span::styled(" (partial)", Style::default().fg(t.warn)));
+            }
+            vec![
+                stat(t, "tokens", fmt::compact(total), None),
+                stat(t, "requests", fmt::int(reqs), None),
+                cost_item,
+                stat(t, "$/1M", fmt::usd(blended), None),
+                stat(
+                    t,
+                    if daily(a) { "avg/day" } else { "avg/hour" },
+                    fmt::compact(avg),
+                    None,
+                ),
+            ]
+        }
     };
-    let mut cost_item = stat(t, "cost", fmt::usd(cost), Some(t.accent));
-    if !a.cost_summary.cost_available {
-        cost_item.push(Span::styled(" (partial)", Style::default().fg(t.warn)));
-    }
-    let items = vec![
-        stat(t, "tokens", fmt::compact(total), None),
-        stat(t, "requests", fmt::int(reqs), None),
-        cost_item,
-        stat(t, "$/1M", fmt::usd(blended), None),
-        stat(t, "avg/bucket", fmt::compact(avg), None),
-    ];
     let lines = flow(items, inner.width.saturating_sub(1), 3);
     let lh = (lines.len() as u16).min(inner.height);
     f.render_widget(
         Paragraph::new(lines),
         Rect::new(inner.x + 1, inner.y, inner.width.saturating_sub(1), lh),
     );
-    let series: Vec<f64> = a.token_usage.iter().map(|b| b.total_tokens).collect();
     let g = Rect::new(
-        inner.x,
+        inner.x + 1,
         inner.y + lh,
-        inner.width,
+        inner.width.saturating_sub(1),
         inner.height.saturating_sub(lh),
     );
     if series.iter().all(|v| *v == 0.0) {
         widgets::message(f.buffer_mut(), g, "no usage in this range", t.graph_text);
         return;
     }
-    f.render_widget(
-        Graph {
-            data: &series,
-            theme: t,
-            symbols: app.settings.graph_symbols,
-            max: None,
-            color: None,
-        },
+    let labels = time_labels(&buckets, daily(a), false);
+    chart(
+        f,
+        app,
+        hit,
+        PaneId::AnTokens,
         g,
+        &labels,
+        &Series {
+            values: &series,
+            fmt: fmt::compact,
+            color: None,
+            max: None,
+            floor: 0.0,
+        },
+        app.settings.graph_symbols,
+        true,
     );
 }
 
@@ -118,11 +156,31 @@ fn comp_items(app: &App) -> &[CompositionItem] {
     }
 }
 
+pub fn composition_len(app: &App) -> Option<usize> {
+    an(app).map(|_| comp_items(app).len())
+}
+
+pub fn models_len(app: &App) -> Option<usize> {
+    an(app).map(|a| a.model_usage.series.len())
+}
+
+pub fn speed_len(app: &App) -> Option<usize> {
+    an(app).map(|a| a.model_speed.series.len())
+}
+
+pub fn efficiency_len(app: &App) -> Option<usize> {
+    an(app).map(|a| a.model_efficiency.len())
+}
+
+pub fn heatmap_len(app: &App) -> Option<usize> {
+    an(app).map(|a| a.heatmap.api_keys.len())
+}
+
 const COMP_COLS: [Col; 9] = [
     col("#", 3, Align::Right, 6),
     flex("name", 12),
     col("tokens", 7, Align::Right, 0),
-    col("share", 16, Align::Left, 1),
+    grow("share", 14, 1),
     col("req", 6, Align::Right, 0),
     col("cost", 9, Align::Right, 2),
     col("cache", 6, Align::Right, 4),
@@ -146,16 +204,11 @@ pub fn composition(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused:
         .enumerate()
         .map(|(i, c)| {
             let name = if is_key {
-                key_label(&c.label)
+                app.key_name(&c.key, &c.label)
             } else {
                 app.privacy(&c.label)
             };
             let cache = fmt::ratio_pct(c.cache_read_tokens, c.input_tokens);
-            let mut bar = meter(c.percent / 100.0, 8, t, None);
-            bar.push(Span::styled(
-                format!(" {:>5.1}%", c.percent),
-                Style::default().fg(t.fg),
-            ));
             TRow::new(c.key.clone())
                 .styled(
                     format!("{}", i + 1),
@@ -168,7 +221,7 @@ pub fn composition(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused:
                     Style::default().fg(t.title),
                     num(c.total_tokens),
                 )
-                .spans(bar, num(c.percent))
+                .meter(c.percent / 100.0, None, format!(" {:>5.1}%", c.percent), num(c.percent))
                 .text(fmt::count(c.requests), num(c.requests))
                 .styled(
                     if c.cost_available {
@@ -212,10 +265,10 @@ pub fn composition(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused:
 const MODEL_COLS: [Col; 6] = [
     flex("model", 12),
     col("tokens", 7, Align::Right, 0),
-    col("share", 6, Align::Right, 1),
+    grow("share", 12, 1),
     col("req", 6, Align::Right, 2),
     col("cost", 9, Align::Right, 3),
-    col("trend", 12, Align::Left, 1),
+    col("trend", 8, Align::Left, 1),
 ];
 
 pub fn models(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
@@ -245,13 +298,13 @@ pub fn models(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             TRow::new(s.model.clone())
                 .text(s.model.clone(), text(&s.model))
                 .styled(fmt::compact(tok), Style::default().fg(t.title), num(tok))
-                .text(fmt::pct(share, 1), num(share))
+                .meter(share / 100.0, None, format!(" {:>5.1}%", share), num(share))
                 .text(fmt::count(req), num(req))
                 .text(
                     comp.map(|c| fmt::usd(c.cost_usd)).unwrap_or("—".into()),
                     num(comp.map(|c| c.cost_usd).unwrap_or(-1.0)),
                 )
-                .spans(spark(&s.total_tokens, 12, t), num(tok))
+                .spark(s.total_tokens.clone(), t.accent, num(tok))
                 .filter(s.model.clone())
         })
         .collect();
@@ -301,11 +354,12 @@ pub fn latency(f: &mut Frame, app: &App, area: Rect, focused: bool) {
     }
 }
 
-const SPEED_COLS: [Col; 4] = [
+const SPEED_COLS: [Col; 5] = [
     flex("model", 12),
     col("mean", 10, Align::Right, 0),
     col("samples", 7, Align::Right, 2),
-    col("per bucket", 16, Align::Left, 1),
+    col("per bucket", 10, Align::Left, 1),
+    col("range", 15, Align::Right, 3),
 ];
 
 pub fn speed(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
@@ -323,11 +377,24 @@ pub fn speed(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
             let sum: f64 = s.samples.iter().map(|x| x.speed_tps_sum).sum();
             let cnt: f64 = s.samples.iter().map(|x| x.speed_sample_count).sum();
             let mean = (cnt > 0.0).then(|| sum / cnt);
+            // Buckets without samples have no speed: show a gap, not zero.
             let per: Vec<f64> = s
                 .samples
                 .iter()
-                .map(|x| x.mean_tps.unwrap_or(0.0))
+                .map(|x| x.mean_tps.filter(|v| v.is_finite()).unwrap_or(f64::NAN))
                 .collect();
+            let known: Vec<f64> = per.iter().copied().filter(|v| v.is_finite()).collect();
+            let range = if known.is_empty() {
+                "-".to_string()
+            } else {
+                let lo = known.iter().copied().fold(f64::MAX, f64::min);
+                let hi = known.iter().copied().fold(0.0, f64::max);
+                if (hi - lo).abs() < 0.5 {
+                    format!("{hi:.0} t/s")
+                } else {
+                    format!("{lo:.0}–{hi:.0} t/s")
+                }
+            };
             TRow::new(s.model.clone())
                 .text(s.model.clone(), text(&s.model))
                 .styled(
@@ -336,7 +403,8 @@ pub fn speed(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
                     num(mean.unwrap_or(-1.0)),
                 )
                 .text(fmt::int(s.speed_sample_count), num(s.speed_sample_count))
-                .spans(spark(&per, 16, t), num(mean.unwrap_or(-1.0)))
+                .spark(per, t.accent, num(mean.unwrap_or(-1.0)))
+                .text(range, num(known.len() as f64))
                 .filter(s.model.clone())
         })
         .collect();
@@ -438,13 +506,29 @@ pub fn heatmap(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
     let Some(a) = an(app) else { return };
     let h = &a.heatmap;
     let max = h.cells.iter().map(|c| c.total_tokens).fold(0.0, f64::max);
+    // Model columns ranked by total tokens: the busiest models are shown
+    // first and the quietest are dropped first when the pane is narrow.
+    let mut models: Vec<(&String, f64)> = h
+        .models
+        .iter()
+        .map(|m| {
+            let tot = h
+                .cells
+                .iter()
+                .filter(|c| &c.model == m)
+                .map(|c| c.total_tokens)
+                .sum::<f64>();
+            (m, tot)
+        })
+        .collect();
+    models.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     // Columns: key, one per model (as many as fit), then totals.
     let mut cols: Vec<Col> = vec![flex("api key", 10)];
-    for m in &h.models {
-        let mut c = col("", 8, Align::Right, 1);
+    for (rank, (m, _)) in models.iter().enumerate() {
+        let mut c = col("", 8, Align::Right, (rank + 1).min(250) as u8);
         // Drop the vendor prefix ("claude-", "gpt-") so columns stay distinguishable.
         let short = m.split_once('-').map(|(_, rest)| rest).unwrap_or(m);
-        c.title = Cow::Owned(fmt::trunc(short, 8));
+        c.title = Cow::Owned(fmt::trunc(short, 10));
         cols.push(c);
     }
     cols.push(col("total", 8, Align::Right, 0));
@@ -453,11 +537,12 @@ pub fn heatmap(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         .api_keys
         .iter()
         .map(|k| {
-            let label = key_label(h.api_key_labels.get(k).map(String::as_str).unwrap_or(k));
+            let raw = h.api_key_labels.get(k).map(String::as_str).unwrap_or(k);
+            let label = app.key_name(k, raw);
             let mut row = TRow::new(k.clone()).text(label.clone(), text(&label));
             let (mut tot, mut cost) = (0.0, 0.0);
-            for m in &h.models {
-                let cell = h.cells.iter().find(|c| &c.api_key == k && &c.model == m);
+            for (m, _) in &models {
+                let cell = h.cells.iter().find(|c| &c.api_key == k && &c.model == *m);
                 match cell {
                     Some(c) if c.total_tokens > 0.0 => {
                         tot += c.total_tokens;

@@ -7,7 +7,7 @@
 
 use crate::api::client::Query as Params;
 use crate::api::models::*;
-use crate::api::sse::LiveEvent;
+use crate::api::sse::{EventFilters, LiveEvent, events_query};
 use crate::api::{ApiError, Client, Role};
 use crate::auth::AuthEvent;
 use crate::layout::Tab;
@@ -29,11 +29,15 @@ pub enum Group {
     Quota,
     Models,
     Settings,
+    /// Per-key usage for the Keys tab (range-scoped comparisons).
+    KeyUsage,
+    /// Model / source options of the request-log filters.
+    EventFilters,
     Meta,
     Detail,
 }
 
-pub const POLLED: [Group; 9] = [
+pub const POLLED: [Group; 11] = [
     Group::Overview,
     Group::Realtime,
     Group::Analysis,
@@ -42,6 +46,8 @@ pub const POLLED: [Group; 9] = [
     Group::Quota,
     Group::Models,
     Group::Settings,
+    Group::KeyUsage,
+    Group::EventFilters,
     Group::Meta,
 ];
 
@@ -93,9 +99,10 @@ impl Query {
         };
         match g {
             Group::Overview | Group::Analysis => {
-                format!("{role}|{}|{key}|{}", self.range, self.nonce)
+                format!("{role}|{}|{key}|{}", self.range.key(), self.nonce)
             }
             Group::Realtime => format!("{role}|{}|{key}|{}", self.window.param(), self.nonce),
+            Group::KeyUsage => format!("{role}|{}|{}", self.range.key(), self.nonce),
             _ => role.to_string(),
         }
     }
@@ -113,7 +120,8 @@ impl Query {
             Group::Credentials => admin && matches!(self.tab, Tab::Credentials | Tab::Quota),
             Group::Quota => admin && self.tab == Tab::Quota,
             Group::Models => admin && self.tab == Tab::Models,
-            Group::Settings => admin && self.tab == Tab::Settings,
+            Group::Settings | Group::KeyUsage => admin && self.tab == Tab::Settings,
+            Group::EventFilters => admin && self.tab == Tab::Events,
             Group::Meta => true,
             Group::Detail => false,
         }
@@ -122,16 +130,18 @@ impl Query {
     pub fn interval(&self, g: Group) -> Option<Duration> {
         match g {
             Group::Overview | Group::Realtime => Some(self.refresh),
-            Group::Analysis | Group::Models | Group::Detail => None,
-            Group::KeyOptions | Group::Credentials | Group::Quota | Group::Settings => {
-                Some(self.slow)
-            }
+            Group::Analysis | Group::Models | Group::Detail | Group::EventFilters => None,
+            Group::KeyOptions
+            | Group::Credentials
+            | Group::Quota
+            | Group::Settings
+            | Group::KeyUsage => Some(self.slow),
             Group::Meta => Some(self.slow.max(Duration::from_secs(60))),
         }
     }
 
     fn range_params(&self) -> Params {
-        let mut q: Params = vec![("range", self.range.param())];
+        let mut q: Params = self.range.params();
         if self.admin()
             && let Some(k) = &self.api_key_id
         {
@@ -144,7 +154,7 @@ impl Query {
         let mut q: Params = match self.range {
             TimeRange::Today | TimeRange::Days(1) => vec![("window", "today".into())],
             TimeRange::Yesterday => vec![("window", "yesterday".into())],
-            r => vec![("range", r.param())],
+            r => r.params(),
         };
         if self.admin()
             && let Some(k) = &self.api_key_id
@@ -166,6 +176,9 @@ pub enum Payload {
     Analysis(R<Analysis>),
     Latency(R<LatencyDiagnostics>),
     KeyOptions(R<ApiKeyOptions>),
+    KeyUsage(R<Comparisons>),
+    EventModels(R<EventModelFilters>),
+    EventSources(R<EventSourceFilters>),
     Identities(R<IdentitiesPage>),
     Inspection(R<QuotaInspection>),
     QuotaTasks(Vec<(String, R<QuotaRefreshTask>)>),
@@ -209,6 +222,7 @@ pub enum Command {
         scope: String,
         range: TimeRange,
         api_key_id: Option<String>,
+        filters: EventFilters,
         cursor: String,
     },
     IdentityErrors {
@@ -291,9 +305,28 @@ async fn fetch_group(g: Group, c: &Client, q: &Query, tx: &mpsc::UnboundedSender
             send(Payload::Latency(l));
         }
         Group::KeyOptions => {
-            send(Payload::KeyOptions(
-                c.get("/usage/api-keys/options", &none).await,
+            // The options carry only `{id,label}`; the key list adds alias and
+            // the masked key so keys can be told apart everywhere.
+            let (opts, keys) = tokio::join!(
+                c.get::<ApiKeyOptions>("/usage/api-keys/options", &none),
+                c.get::<ApiKeys>("/usage/api-keys", &none),
+            );
+            send(Payload::ApiKeys(keys));
+            send(Payload::KeyOptions(opts));
+        }
+        Group::KeyUsage => {
+            send(Payload::KeyUsage(
+                c.get("/usage/overview/comparisons", &q.range.params())
+                    .await,
             ));
+        }
+        Group::EventFilters => {
+            let (m, s) = tokio::join!(
+                c.get::<EventModelFilters>("/usage/events/filters/models", &none),
+                c.get::<EventSourceFilters>("/usage/events/filters/sources", &none),
+            );
+            send(Payload::EventModels(m));
+            send(Payload::EventSources(s));
         }
         Group::Credentials => {
             let pq: Params = vec![
@@ -344,12 +377,7 @@ async fn fetch_group(g: Group, c: &Client, q: &Query, tx: &mpsc::UnboundedSender
             send(Payload::RecalcOptions(opt));
         }
         Group::Settings => {
-            let (keys, sess) = tokio::join!(
-                c.get::<ApiKeys>("/usage/api-keys", &none),
-                c.get::<AuthSessions>("/auth/sessions", &none),
-            );
-            send(Payload::ApiKeys(keys));
-            send(Payload::Sessions(sess));
+            send(Payload::Sessions(c.get("/auth/sessions", &none).await));
         }
         Group::Meta => {
             send(Payload::Version(c.get("/version", &none).await));
@@ -429,17 +457,10 @@ pub async fn run_commands(
                     scope,
                     range,
                     api_key_id,
+                    filters,
                     cursor,
                 } => {
-                    let mut q: Params = vec![
-                        ("range", range.param()),
-                        ("page_size", "50".into()),
-                        ("cursor_mode", "true".into()),
-                        ("cursor", cursor),
-                    ];
-                    if let Some(k) = api_key_id {
-                        q.push(("api_key_id", k));
-                    }
+                    let q = events_query(range, api_key_id.as_deref(), &filters, Some(&cursor));
                     (scope, Payload::MoreEvents(c.get("/usage/events", &q).await))
                 }
                 Command::IdentityErrors { id } => {

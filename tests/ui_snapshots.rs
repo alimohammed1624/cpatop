@@ -1,5 +1,5 @@
 //! Snapshot tests of the main screens, rendered from recorded fixtures with
-//! ratatui's `TestBackend` at 80x24 and 160x48 in both roles.
+//! ratatui's `TestBackend` at 80x24, 160x48 and 220x60 in both roles.
 
 use chrono::{DateTime, Utc};
 use cpatop::api::Role;
@@ -165,8 +165,23 @@ fn populated(role: Role) -> App {
         );
         data(
             &mut app,
-            Group::Settings,
+            Group::KeyOptions,
             Payload::ApiKeys(Ok(load("usage-api-keys.json"))),
+        );
+        data(
+            &mut app,
+            Group::KeyUsage,
+            Payload::KeyUsage(Ok(load("usage-overview-comparisons.json"))),
+        );
+        data(
+            &mut app,
+            Group::EventFilters,
+            Payload::EventModels(Ok(load("usage-events-filters-models.json"))),
+        );
+        data(
+            &mut app,
+            Group::EventFilters,
+            Payload::EventSources(Ok(load("usage-events-filters-sources.json"))),
         );
         data(
             &mut app,
@@ -225,7 +240,7 @@ fn render_tab(app: &mut App, tab: Tab, w: u16, h: u16) -> String {
     render(app, w, h)
 }
 
-const SIZES: [(u16, u16); 2] = [(80, 24), (160, 48)];
+const SIZES: [(u16, u16); 3] = [(80, 24), (160, 48), (220, 60)];
 
 #[test]
 fn admin_screens() {

@@ -7,16 +7,16 @@ expression: s
 
 
 
-          ╭─ cpatop ──────────────────────────────── localhost:8318 ─╮
-          │   Admin    API key                                       │
-          │                                                          │
-          │  Admin password                                          │
-          │  •••••••█                                                │
-          │                                                          │
-          │  ✗ invalid password (from login screen)                  │
-          │                                                          │
-          │                                                          │
-          │                                                          │
-          │                                                          │
-          │ Enter sign in · Tab switch mode · Esc quit               │
-          ╰──────────────────────────────────────────────────────────╯
+        ╭─ cpatop ──────────────────────────────────── localhost:8318 ─╮
+        │   Admin    API key                                           │
+        │                                                              │
+        │  Admin password                                              │
+        │  •••••••█                                                    │
+        │                                                              │
+        │  ✗ invalid password (from login screen)                      │
+        │                                                              │
+        │                                                              │
+        │                                                              │
+        │                                                              │
+        │ Enter sign in · Tab switch mode · Esc clear · Ctrl-C quit    │
+        ╰──────────────────────────────────────────────────────────────╯

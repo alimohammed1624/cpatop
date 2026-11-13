@@ -1,7 +1,6 @@
 //! Live request log (admin).
 
-use super::{frame, key_label, table_in};
-use crate::api::models::UsageEvent;
+use super::{frame, table_in};
 use crate::app::{App, Hit, LiveStatus, ResultFilter};
 use crate::fmt;
 use crate::layout::PaneId;
@@ -15,8 +14,8 @@ use ratatui::widgets::{Paragraph, Wrap};
 
 const COLS: [Col; 12] = [
     col("time", 8, Align::Left, 0),
-    col("key", 8, Align::Left, 6),
-    col("source", 14, Align::Left, 4),
+    col("key", 6, Align::Left, 6),
+    col("source", 12, Align::Left, 4),
     flex("model", 12),
     col("effort", 6, Align::Left, 8),
     col("result", 6, Align::Left, 0),
@@ -54,36 +53,54 @@ fn status_spans(app: &App) -> Vec<Span<'static>> {
             Style::default().fg(t.err),
         )],
     };
+    let total = if l.total >= 0 {
+        fmt::int(l.total as f64)
+    } else {
+        "?".into()
+    };
     v.push(Span::styled(
-        format!(" · {} in {}", fmt::int(l.total as f64), app.range),
+        format!(
+            " · {}/{total} in {}",
+            fmt::int(l.events.len() as f64),
+            app.range.label()
+        ),
         Style::default().fg(t.graph_text),
     ));
-    match l.result_filter {
+    if l.loading_more {
+        v.push(Span::styled(" · loading older…", Style::default().fg(t.warn)));
+    }
+    // Active server-side filters.
+    let f = &l.filters;
+    let hi = Style::default().fg(t.hi).add_modifier(Modifier::BOLD);
+    match f.result {
         ResultFilter::All => {}
-        ResultFilter::Success => v.push(Span::styled(" · success only", Style::default().fg(t.hi))),
-        ResultFilter::Failed => v.push(Span::styled(" · failures only", Style::default().fg(t.hi))),
+        ResultFilter::Success => v.push(Span::styled(" · ✓ success", hi)),
+        ResultFilter::Failed => v.push(Span::styled(" · ✗ failed", hi)),
+    }
+    if let Some(m) = &f.model {
+        v.push(Span::styled(format!(" · {m}"), hi));
+    }
+    if let Some((_, label)) = &f.source {
+        v.push(Span::styled(format!(" · {}", app.privacy(label)), hi));
     }
     v
 }
 
-fn visible_events(app: &App) -> impl Iterator<Item = &UsageEvent> {
-    let rf = app.live.result_filter;
-    app.live.events.iter().filter(move |e| match rf {
-        ResultFilter::All => true,
-        ResultFilter::Success => !e.failed,
-        ResultFilter::Failed => e.failed,
-    })
+/// Lines of the detail pane at an inner width (fields wrap when narrow).
+pub fn detail_lines(width: u16) -> u16 {
+    if width >= 110 {
+        8
+    } else if width >= 70 {
+        10
+    } else {
+        12
+    }
 }
 
 pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
-    let bottom = if app.live.loading_more {
-        Some(("loading older…".to_string(), String::new()))
-    } else if app.live.has_more {
-        Some(("↓ scroll for older".to_string(), String::new()))
-    } else {
-        None
-    };
+    let bottom = (app.live.has_more && !app.live.loading_more)
+        .then(|| ("↓ scroll for older".to_string(), String::new()));
     let inner = frame(
         f,
         app,
@@ -93,9 +110,16 @@ pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
         status_spans(app),
         bottom,
     );
-    let rows: Vec<TRow> = visible_events(app)
+    let rows: Vec<TRow> = app
+        .live
+        .events
+        .iter()
         .map(|e| {
-            let key = e.api_key.as_deref().map(key_label).unwrap_or("-".into());
+            let key = e
+                .api_key
+                .as_deref()
+                .map(|k| app.key_name_by_label(k))
+                .unwrap_or("-".into());
             let source = app.privacy(&e.source);
             let result = if e.failed {
                 Span::styled(
@@ -171,6 +195,7 @@ pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
         .collect();
     let empty = match &app.live.status {
         LiveStatus::Connecting | LiveStatus::Idle => "waiting for the live stream…",
+        _ if !app.live.filters.is_empty() => "no requests match these filters (c clears)",
         _ => "no requests in this range",
     };
     table_in(
@@ -312,7 +337,11 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             v(opt(&e.source_type)),
             sep(),
             k("key"),
-            v(e.api_key.as_deref().map(key_label).unwrap_or("-".into())),
+            v(e
+                .api_key
+                .as_deref()
+                .map(|k| app.key_name_by_label(k))
+                .unwrap_or("-".into())),
             if e.is_delete {
                 Span::styled("  (identity deleted)", Style::default().fg(t.warn))
             } else {

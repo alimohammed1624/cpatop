@@ -42,6 +42,9 @@ pub enum AuthCmd {
     Expired(u64),
     Logout,
     RetryNow,
+    /// The server answered `503 migration_in_progress`: wait for the
+    /// startup gate again, then resume the session.
+    Gate,
 }
 
 pub struct AuthManager {
@@ -58,6 +61,16 @@ pub struct AuthManager {
     quick_expiries: u32,
     /// Set once a configured credential was rejected, to avoid retry loops.
     auto_disabled: bool,
+    /// Server role of the current session (`admin`, `api_key_viewer`).
+    role: Option<String>,
+}
+
+/// Server role string for a login mode.
+pub fn role_of(mode: LoginMode) -> &'static str {
+    match mode {
+        LoginMode::Admin => "admin",
+        LoginMode::ApiKey => "api_key_viewer",
+    }
 }
 
 /// User-facing description of an error during connection.
@@ -98,6 +111,7 @@ impl AuthManager {
             last_auto_login: None,
             quick_expiries: 0,
             auto_disabled: false,
+            role: None,
         }
     }
 
@@ -123,7 +137,7 @@ impl AuthManager {
     }
 
     pub async fn run(mut self) {
-        self.establish(true).await;
+        self.establish(true, None).await;
         while let Some(cmd) = self.rx.recv().await {
             match cmd {
                 AuthCmd::Login(mode, secret) => self.interactive_login(mode, secret).await,
@@ -131,8 +145,10 @@ impl AuthManager {
                     if epoch != self.epoch {
                         continue;
                     }
+                    if let Some(tok) = self.client.token() {
+                        let _ = self.store.remove_token(self.client.base_url(), &tok);
+                    }
                     self.client.set_token(None);
-                    let _ = self.store.remove(self.client.base_url());
                     // Re-login automatically, but stop if sessions keep dying
                     // right after login (e.g. a revoked key or clock issue).
                     let quick = self
@@ -146,12 +162,16 @@ impl AuthManager {
                             mode: self.creds.preferred_mode(),
                         });
                     } else {
-                        self.establish(true).await;
+                        let want = self.role.clone();
+                        self.establish(true, want).await;
                     }
                 }
                 AuthCmd::Logout => {
                     let _ = self.client.logout().await;
-                    let _ = self.store.remove(self.client.base_url());
+                    let _ = self
+                        .store
+                        .remove(self.client.base_url(), self.role.as_deref());
+                    self.role = None;
                     self.interactive = None;
                     self.auto_disabled = true;
                     self.epoch += 1;
@@ -161,7 +181,11 @@ impl AuthManager {
                         mode: self.creds.preferred_mode(),
                     });
                 }
-                AuthCmd::RetryNow => self.establish(true).await,
+                AuthCmd::RetryNow => self.establish(true, None).await,
+                AuthCmd::Gate => {
+                    let want = self.role.clone();
+                    self.establish(true, want).await
+                }
             }
         }
     }
@@ -220,6 +244,7 @@ impl AuthManager {
     fn announce(&mut self, s: SessionResponse) {
         match Role::from_session(s.role.as_deref()) {
             Some(role) => {
+                self.role = s.role.clone();
                 self.epoch += 1;
                 self.send(AuthEvent::LoggedIn {
                     role,
@@ -234,8 +259,34 @@ impl AuthManager {
         }
     }
 
+    /// The credential to log in with automatically, if any.
+    fn auto_credential(&self) -> Option<Credential> {
+        self.interactive.clone().or_else(|| {
+            (!self.auto_disabled)
+                .then(|| self.creds.pick().cloned())
+                .flatten()
+        })
+    }
+
+    /// The server role the session must have. An explicitly supplied
+    /// credential (file, environment or login screen) decides it, so
+    /// `--api-key-file` is never shadowed by a stored admin session. After an
+    /// expiry the previous role is kept.
+    fn wanted_role(&self, want: Option<String>) -> Option<String> {
+        let explicit = self.interactive.as_ref().or_else(|| {
+            self.creds
+                .pick_explicit()
+                .filter(|_| !self.auto_disabled)
+        });
+        match explicit {
+            Some(c) => Some(role_of(c.mode).to_string()),
+            None => want.or_else(|| self.creds.prefer.map(|m| role_of(m).to_string())),
+        }
+    }
+
     /// Bring the client to an authenticated state, or ask for a login.
-    async fn establish(&mut self, allow_auto: bool) {
+    /// `want` is the role to restore (after an expiry or a startup gate).
+    async fn establish(&mut self, allow_auto: bool, want: Option<String>) {
         let mut attempt = 0u32;
         self.send(AuthEvent::Connecting);
         loop {
@@ -270,45 +321,67 @@ impl AuthManager {
                 }
             }
 
-            // 2. Reuse a stored session cookie.
-            if let Some(tok) = self.store.load(self.client.base_url()) {
-                self.client.set_token(Some(tok));
+            // 2. Reuse a session: the one the client holds, then stored ones
+            //    for this server — only those with the wanted role.
+            let wanted = self.wanted_role(want.clone());
+            let base = self.client.base_url().to_string();
+            let mut candidates: Vec<Option<String>> = Vec::new();
+            if self.client.has_token() {
+                candidates.push(self.client.token());
             }
-            match self.client.session().await {
-                Ok(s) if s.authenticated => {
-                    self.announce(s);
-                    return;
-                }
-                Ok(_) => {
-                    if self.client.has_token() {
-                        let _ = self.store.remove(self.client.base_url());
-                    }
-                    self.client.set_token(None);
-                }
-                Err(e) => {
-                    let d = crate::api::sse::backoff(attempt.min(4));
-                    attempt += 1;
-                    self.send(AuthEvent::Offline {
-                        message: describe(&e),
-                        retry_in: d,
-                    });
-                    match self.wait(d).await {
-                        Wait::Closed => return,
-                        Wait::Login(m, s) => {
-                            self.interactive_login(m, s).await;
+            let mut stored = self.store.load_all(&base);
+            if let Some(w) = &wanted {
+                stored.retain(|s| &s.role == w);
+            }
+            candidates.extend(stored.into_iter().map(|s| Some(s.token)));
+            if candidates.is_empty() {
+                // Still ask the server, to detect connectivity problems.
+                candidates.push(None);
+            }
+            let mut offline = None;
+            for tok in candidates {
+                self.client.set_token(tok.clone());
+                match self.client.session().await {
+                    Ok(s) if s.authenticated => {
+                        let role_ok = wanted.is_none() || s.role.as_deref() == wanted.as_deref();
+                        if role_ok {
+                            self.announce(s);
                             return;
                         }
-                        _ => continue,
+                        // A valid session of another role: keep it stored
+                        // for later, but do not use it now.
                     }
+                    Ok(_) => {
+                        if let Some(t) = &tok {
+                            let _ = self.store.remove_token(&base, t);
+                        }
+                    }
+                    Err(e) => {
+                        offline = Some(e);
+                        break;
+                    }
+                }
+            }
+            self.client.set_token(None);
+            if let Some(e) = offline {
+                let d = crate::api::sse::backoff(attempt.min(4));
+                attempt += 1;
+                self.send(AuthEvent::Offline {
+                    message: describe(&e),
+                    retry_in: d,
+                });
+                match self.wait(d).await {
+                    Wait::Closed => return,
+                    Wait::Login(m, s) => {
+                        self.interactive_login(m, s).await;
+                        return;
+                    }
+                    _ => continue,
                 }
             }
 
             // 3. Log in with a configured or previously entered credential.
-            let cred = self.interactive.clone().or_else(|| {
-                (!self.auto_disabled)
-                    .then(|| self.creds.pick().cloned())
-                    .flatten()
-            });
+            let cred = self.auto_credential();
             if allow_auto && let Some(cred) = cred {
                 self.last_auto_login = Some(Instant::now());
                 match self.login_with(&cred).await {

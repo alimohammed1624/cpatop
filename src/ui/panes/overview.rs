@@ -1,42 +1,32 @@
 //! Overview tab (admin and API-key viewer).
 
-use super::{dim_tabs, frame, key_label, placeholder, stale_marker, table_in};
-use crate::api::models::ComparisonItem;
+use super::{
+    Series, chart, chart_head, cursor, cursor_time, dim_tabs, frame, placeholder, stale_marker,
+    table_in, time_labels,
+};
+use crate::api::models::{Activity, ComparisonItem};
 use crate::app::{App, Hit};
 use crate::fmt;
-use crate::layout::PaneId;
-use crate::ui::table::{Align, Col, TRow, col, flex, num, text};
-use crate::ui::widgets::{self, Graph, flow, meter, spark, stat};
+use crate::layout::{PaneId, Size};
+use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, text};
+use crate::ui::widgets::{self, flow, heat_cell, meter, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use std::collections::HashMap;
 
-pub fn totals(f: &mut Frame, app: &App, area: Rect, focused: bool) {
+fn totals_items(app: &App, width: u16) -> Vec<Vec<Span<'static>>> {
     let t = app.theme();
-    let l = &app.data.overview;
-    let right = {
-        let mut r = stale_marker(app, l);
-        if r.is_empty() {
-            r.push(Span::styled(
-                app.range.to_string(),
-                Style::default().fg(t.graph_text),
-            ));
-        }
-        r
+    let Some(o) = app.data.overview.get() else {
+        return vec![];
     };
-    let inner = frame(f, app, PaneId::OvTotals, area, focused, right, None);
-    if placeholder(f, app, inner, l) {
-        return;
-    }
-    let Some(o) = l.get() else { return };
     let u = &o.usage;
     let s = &o.summary;
     let success = fmt::ratio_pct(u.success_count, u.total_requests);
     let cache = fmt::ratio_pct(s.cache_read_tokens, s.input_tokens);
-    let mw = if inner.width >= 120 { 12 } else { 8 };
+    let mw = if width >= 120 { 12 } else { 8 };
     let mut items = vec![
         stat(t, "requests", fmt::int(u.total_requests), None),
         vec![
@@ -110,19 +100,40 @@ pub fn totals(f: &mut Frame, app: &App, area: Rect, focused: bool) {
             None,
         ));
     }
-    let lines = flow(items, inner.width.saturating_sub(1), 3);
+    items
+}
+
+/// Lines the totals need at an inner width.
+pub fn totals_lines(app: &App, inner_w: u16) -> u16 {
+    flow(totals_items(app, inner_w), inner_w, 3).len() as u16
+}
+
+pub fn totals(f: &mut Frame, app: &App, area: Rect, focused: bool) {
+    let t = app.theme();
+    let l = &app.data.overview;
+    let right = {
+        let mut r = stale_marker(app, l);
+        if r.is_empty() {
+            r.push(Span::styled(
+                app.range.label(),
+                Style::default().fg(t.graph_text),
+            ));
+        }
+        r
+    };
+    let inner = frame(f, app, PaneId::OvTotals, area, focused, right, None);
+    if placeholder(f, app, inner, l) {
+        return;
+    }
+    let w = inner.width.saturating_sub(1);
+    let lines = flow(totals_items(app, w), w, 3);
     f.render_widget(
         Paragraph::new(lines),
-        Rect::new(
-            inner.x + 1,
-            inner.y,
-            inner.width.saturating_sub(1),
-            inner.height,
-        ),
+        Rect::new(inner.x + 1, inner.y, w, inner.height),
     );
 }
 
-/// Bucket labels, tokens, requests and whether buckets are daily.
+/// Bucket timestamps, tokens, requests and whether buckets are daily.
 type Trend = (Vec<String>, Vec<f64>, Vec<f64>, bool);
 
 /// Dense token series (from comparisons) and requests aligned to it.
@@ -168,39 +179,27 @@ fn trend_series(app: &App) -> Option<Trend> {
     })
 }
 
-pub fn trend(f: &mut Frame, app: &App, area: Rect, focused: bool) {
+pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
     let series = trend_series(app);
-    let (right, bottom) = match &series {
+    let right = match &series {
         Some((b, tok, _, daily)) if !b.is_empty() => {
             let peak = tok.iter().copied().fold(0.0, f64::max);
             let unit = if *daily { "/day" } else { "/h" };
-            (
-                vec![Span::styled(
-                    format!(
-                        "peak {}{unit} · Σ {}",
-                        fmt::compact(peak),
-                        fmt::compact(tok.iter().sum())
-                    ),
-                    Style::default().fg(t.graph_text),
-                )],
-                Some(if *daily {
-                    (
-                        fmt::bucket_label(&b[0], true),
-                        fmt::bucket_label(&b[b.len() - 1], true),
-                    )
-                } else {
-                    (
-                        fmt::ts_fmt(&b[0], "%m-%d %H:%M"),
-                        fmt::ts_fmt(&b[b.len() - 1], "%m-%d %H:%M"),
-                    )
-                }),
-            )
+            vec![Span::styled(
+                format!(
+                    "{} · peak {}{unit} · Σ {}",
+                    app.range.label(),
+                    fmt::compact(peak),
+                    fmt::compact(tok.iter().sum())
+                ),
+                Style::default().fg(t.graph_text),
+            )]
         }
-        _ => (vec![], None),
+        _ => vec![],
     };
-    let inner = frame(f, app, PaneId::OvTrend, area, focused, right, bottom);
-    let Some((_, tokens, reqs, _)) = series else {
+    let inner = frame(f, app, PaneId::OvTrend, area, focused, right, None);
+    let Some((buckets, tokens, reqs, daily)) = series else {
         if !placeholder(f, app, inner, &app.data.comparisons) {
             widgets::message(f.buffer_mut(), inner, "no data", t.graph_text);
         }
@@ -215,149 +214,284 @@ pub fn trend(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         );
         return;
     }
+    let labels = time_labels(&buckets, daily, false);
+    let n = buckets.len();
+    let cur = cursor(app, PaneId::OvTrend, n);
     let label = Style::default().fg(t.graph_text);
-    if inner.height >= 9 {
+    let at = |i: usize| {
+        vec![Span::styled(
+            format!("  @ {}", cursor_time(&buckets[i], daily)),
+            Style::default().fg(t.hi),
+        )]
+    };
+    let head = |name: &str, v: &[f64], f2: fn(f64) -> String| match cur {
+        Some(i) => chart_head(app, name, f2(v[i]), at(i)),
+        None => chart_head(
+            app,
+            name,
+            f2(v.iter().sum()),
+            vec![Span::styled(
+                format!("  peak {}", f2(v.iter().copied().fold(0.0, f64::max))),
+                label,
+            )],
+        ),
+    };
+    let x = inner.x + 1;
+    let w = inner.width.saturating_sub(1);
+    if inner.height >= 12 {
         let th = inner.height * 3 / 5;
         f.buffer_mut()
-            .set_string(inner.x + 1, inner.y, "tokens", label);
-        f.render_widget(
-            Graph {
-                data: &tokens,
-                theme: t,
-                symbols: app.settings.graph_symbols,
-                max: None,
+            .set_line(x, inner.y, &head("tokens", &tokens, fmt::compact), w);
+        chart(
+            f,
+            app,
+            hit,
+            PaneId::OvTrend,
+            Rect::new(x, inner.y + 1, w, th - 1),
+            &labels,
+            &Series {
+                values: &tokens,
+                fmt: fmt::compact,
                 color: None,
+                max: None,
+                floor: 0.0,
             },
-            Rect::new(inner.x, inner.y + 1, inner.width, th - 1),
+            app.settings.graph_symbols,
+            true,
         );
         let ry = inner.y + th;
         let rh = inner.height - th;
-        let peak = reqs.iter().copied().fold(0.0, f64::max);
-        f.buffer_mut().set_line(
-            inner.x + 1,
-            ry,
-            &Line::from(vec![
-                Span::styled("requests ", label),
-                Span::styled(
-                    format!(
-                        "peak {} · Σ {}",
-                        fmt::count(peak),
-                        fmt::int(reqs.iter().sum())
-                    ),
-                    label,
-                ),
-            ]),
-            inner.width.saturating_sub(1),
-        );
-        f.render_widget(
-            Graph {
-                data: &reqs,
-                theme: t,
-                symbols: app.settings.graph_symbols,
-                max: None,
+        f.buffer_mut()
+            .set_line(x, ry, &head("requests", &reqs, fmt::int), w);
+        chart(
+            f,
+            app,
+            hit,
+            PaneId::OvTrend,
+            Rect::new(x, ry + 1, w, rh.saturating_sub(1)),
+            &labels,
+            &Series {
+                values: &reqs,
+                fmt: fmt::count,
                 color: Some(t.accent),
+                max: None,
+                floor: 0.0,
             },
-            Rect::new(inner.x, ry + 1, inner.width, rh.saturating_sub(1)),
+            app.settings.graph_symbols,
+            false,
         );
     } else {
-        f.render_widget(
-            Graph {
-                data: &tokens,
-                theme: t,
-                symbols: app.settings.graph_symbols,
-                max: None,
-                color: None,
-            },
-            inner,
-        );
         f.buffer_mut()
-            .set_string(inner.x + 1, inner.y, "tokens", label);
+            .set_line(x, inner.y, &head("tokens", &tokens, fmt::compact), w);
+        chart(
+            f,
+            app,
+            hit,
+            PaneId::OvTrend,
+            Rect::new(x, inner.y + 1, w, inner.height.saturating_sub(1)),
+            &labels,
+            &Series {
+                values: &tokens,
+                fmt: fmt::compact,
+                color: None,
+                max: None,
+                floor: 0.0,
+            },
+            app.settings.graph_symbols,
+            true,
+        );
     }
+}
+
+// ------------------------------------------------------------ activity
+
+fn activity_head(app: &App, a: &Activity) -> Vec<Vec<Span<'static>>> {
+    let t = app.theme();
+    let rate = if a.total_success + a.total_failure > 0.0 {
+        fmt::pct(a.success_rate, 1)
+    } else {
+        "--".into()
+    };
+    vec![
+        vec![
+            Span::styled("health ", Style::default().fg(t.graph_text)),
+            Span::styled(
+                rate,
+                Style::default()
+                    .fg(t.good_pct(a.success_rate, 95.0, 80.0))
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ],
+        vec![
+            Span::styled(
+                format!("✓{}", fmt::int(a.total_success)),
+                Style::default().fg(t.ok),
+            ),
+            Span::styled(
+                format!(" ✗{}", fmt::int(a.total_failure)),
+                Style::default().fg(if a.total_failure > 0.0 {
+                    t.err
+                } else {
+                    t.graph_text
+                }),
+            ),
+        ],
+        stat(t, "tokens", fmt::compact(a.total_tokens), None),
+    ]
+}
+
+/// Width of the row-label column of the activity grids.
+const ROW_LABEL: u16 = 8;
+
+pub fn activity_size(app: &App, w: u16) -> Size {
+    let Some(a) = app.data.activity.get() else {
+        return Size::at_least(6);
+    };
+    let head = flow(activity_head(app, a), w.saturating_sub(3), 2).len() as u16;
+    let rows = a.rows.max(1) as u16;
+    // Head, health grid and legend at least; both grids at most.
+    Size::range(head + rows + 1 + 2, head + 2 * rows + 2 + 2)
 }
 
 pub fn activity(f: &mut Frame, app: &App, area: Rect, focused: bool) {
     let t = app.theme();
     let l = &app.data.activity;
     let mut right = stale_marker(app, l);
-    let mut bottom = None;
-    if let Some(a) = l.get() {
-        if right.is_empty() {
-            right.push(Span::styled(
-                format!("{} · {}", a.window, a.grain),
-                Style::default().fg(t.graph_text),
-            ));
-        }
-        let pat = if a.grain == "daily" {
-            "%m-%d"
-        } else {
-            "%m-%d %H:%M"
+    if let Some(a) = l.get()
+        && right.is_empty()
+    {
+        let pat = match a.grain.as_str() {
+            "daily" => "%Y-%m-%d",
+            "long" => "%m-%d",
+            _ => "%m-%d %H:%M",
         };
-        bottom = Some((
-            fmt::ts_fmt(&a.window_start, pat),
-            fmt::ts_fmt(&a.window_end, pat),
+        right.push(Span::styled(
+            format!(
+                "{} → {}",
+                fmt::ts_fmt(&a.window_start, pat),
+                fmt::ts_fmt(&a.window_end, pat)
+            ),
+            Style::default().fg(t.graph_text),
         ));
     }
-    let inner = frame(f, app, PaneId::OvActivity, area, focused, right, bottom);
+    let inner = frame(f, app, PaneId::OvActivity, area, focused, right, None);
     if placeholder(f, app, inner, l) {
         return;
     }
     let Some(a) = l.get() else { return };
-    let rate = if a.total_success + a.total_failure > 0.0 {
-        fmt::pct(a.success_rate, 1)
-    } else {
-        "--".into()
-    };
-    let head = Line::from(vec![
-        Span::styled(" health ", Style::default().fg(t.graph_text)),
-        Span::styled(
-            rate,
-            Style::default()
-                .fg(t.good_pct(a.success_rate, 95.0, 80.0))
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!("  ✓{}", fmt::int(a.total_success)),
-            Style::default().fg(t.ok),
-        ),
-        Span::styled(
-            format!(" ✗{}", fmt::int(a.total_failure)),
-            Style::default().fg(if a.total_failure > 0.0 {
-                t.err
-            } else {
-                t.graph_text
-            }),
-        ),
-        Span::styled("  tokens ", Style::default().fg(t.graph_text)),
-        Span::styled(fmt::compact(a.total_tokens), Style::default().fg(t.title)),
-    ]);
-    f.buffer_mut()
-        .set_line(inner.x, inner.y, &head, inner.width);
-    if inner.height < 3 {
-        return;
-    }
+    let head = flow(activity_head(app, a), inner.width.saturating_sub(1), 2);
+    let hh = (head.len() as u16).min(inner.height);
+    f.render_widget(
+        Paragraph::new(head),
+        Rect::new(inner.x + 1, inner.y, inner.width.saturating_sub(1), hh),
+    );
     let rows = a.rows.max(1) as usize;
     let cols = a.columns.max(1) as usize;
+    let body = Rect::new(
+        inner.x,
+        inner.y + hh,
+        inner.width,
+        inner.height.saturating_sub(hh),
+    );
+    if body.height < 2 {
+        return;
+    }
     let now = app.clock.utc();
     let future: Vec<bool> = a
         .blocks
         .iter()
         .map(|b| fmt::parse_ts(&b.start_time).is_some_and(|s| s.with_timezone(&chrono::Utc) > now))
         .collect();
-    let avail_h = inner.height - 1;
-    let show_tokens = avail_h as usize > rows * 2;
-    let health_area = Rect::new(
-        inner.x,
-        inner.y + 1,
-        inner.width,
-        (rows as u16).min(avail_h),
+    // Legend takes the last row; grids get the rest. Prefer both grids,
+    // then a title line per grid, then double-height cells.
+    let legend_y = body.bottom() - 1;
+    let grid_h = body.height - 1;
+    let r16 = rows as u16;
+    let (both, titled, rh) = if grid_h >= 2 * (2 * r16 + 1) {
+        (true, true, 2)
+    } else if grid_h >= 4 * r16 {
+        (true, false, 2)
+    } else if grid_h >= 2 * (r16 + 1) {
+        (true, true, 1)
+    } else if grid_h >= 2 * r16 {
+        (true, false, 1)
+    } else if grid_h > 2 * r16 {
+        (false, true, 2)
+    } else {
+        (false, grid_h > r16, 1)
+    };
+    let block_h = (r16 * rh + titled as u16).min(grid_h);
+    heat(
+        f,
+        app,
+        Rect::new(body.x, body.y, body.width, block_h),
+        a,
+        rows,
+        cols,
+        rh,
+        titled,
+        &future,
+        false,
     );
-    heat(f, app, health_area, a, rows, cols, &future, false);
-    if show_tokens {
-        let ty = health_area.bottom();
-        f.buffer_mut()
-            .set_string(inner.x, ty, " tokens", Style::default().fg(t.graph_text));
-        let tok_area = Rect::new(inner.x, ty + 1, inner.width, rows as u16);
-        heat(f, app, tok_area, a, rows, cols, &future, true);
+    if both {
+        let ty = body.y + block_h;
+        heat(
+            f,
+            app,
+            Rect::new(body.x, ty, body.width, block_h.min(grid_h - block_h)),
+            a,
+            rows,
+            cols,
+            rh,
+            titled,
+            &future,
+            true,
+        );
+    }
+    legend(f, app, a, Rect::new(body.x + 1, legend_y, body.width.saturating_sub(1), 1), both);
+}
+
+fn legend(f: &mut Frame, app: &App, a: &Activity, area: Rect, tokens: bool) {
+    let t = app.theme();
+    let dim = Style::default().fg(t.graph_text);
+    let key = |c: Color, level: Option<f64>, label: &str| -> Vec<Span<'static>> {
+        let (ch, col) = heat_cell(level, c, t);
+        vec![
+            Span::styled(ch.to_string(), Style::default().fg(col)),
+            Span::styled(format!("{label} "), dim),
+        ]
+    };
+    let mut v = Vec::new();
+    v.extend(key(t.ok, Some(1.0), "ok"));
+    v.extend(key(t.warn, Some(0.66), "65%+"));
+    v.extend(key(t.err, Some(0.33), "<50%"));
+    v.extend(key(t.meter_bg, None, "idle"));
+    if tokens {
+        v.push(Span::styled("tokens ", dim));
+        for k in 0..5 {
+            let lv = k as f64 / 4.0;
+            let (ch, col) = heat_cell(Some(lv), t.gradient(0.15 + lv as f32 * 0.85), t);
+            v.push(Span::styled(ch.to_string(), Style::default().fg(col)));
+        }
+        v.push(Span::styled(" low→high ", dim));
+    }
+    let cell = fmt::secs(a.bucket_seconds);
+    let row = fmt::secs(a.bucket_seconds * a.columns.max(1) as f64);
+    v.push(Span::styled(format!("cell {cell} · row {row}"), dim));
+    let v = super::fit_spans(v, area.width as usize);
+    f.buffer_mut()
+        .set_line(area.x, area.y, &Line::from(v), area.width);
+}
+
+/// Row label: the start time of the first block of each grid row.
+fn row_label(a: &Activity, r: usize, cols: usize) -> String {
+    let Some(b) = a.blocks.get(r * cols) else {
+        return String::new();
+    };
+    match a.grain.as_str() {
+        "short" => fmt::ts_fmt(&b.start_time, "%H:%M"),
+        "medium" => fmt::ts_fmt(&b.start_time, "%a %H"),
+        _ => fmt::ts_fmt(&b.start_time, "%m-%d"),
     }
 }
 
@@ -366,17 +500,40 @@ fn heat(
     f: &mut Frame,
     app: &App,
     area: Rect,
-    a: &crate::api::models::Activity,
+    a: &Activity,
     rows: usize,
     cols: usize,
+    rh: u16,
+    titled: bool,
     future: &[bool],
     tokens: bool,
 ) {
     let t = app.theme();
-    if area.width < 2 {
+    if area.width < ROW_LABEL + 4 || area.height == 0 {
         return;
     }
-    let avail = area.width as usize - 1;
+    let dim = Style::default().fg(t.graph_text);
+    let title = if tokens { "tokens" } else { "health" };
+    let area = if titled {
+        let what = if tokens {
+            "tokens per cell"
+        } else {
+            "success rate per cell"
+        };
+        f.buffer_mut().set_line(
+            area.x + 1,
+            area.y,
+            &Line::from(vec![
+                Span::styled(title, Style::default().fg(t.title).add_modifier(Modifier::BOLD)),
+                Span::styled(format!(" · {what} · rows start at"), dim),
+            ]),
+            area.width.saturating_sub(1),
+        );
+        Rect::new(area.x, area.y + 1, area.width, area.height.saturating_sub(1))
+    } else {
+        area
+    };
+    let avail = (area.width - ROW_LABEL - 1) as usize;
     let (cell_w, group) = if avail >= cols * 2 {
         (2usize, 1usize)
     } else if avail >= cols {
@@ -401,8 +558,38 @@ fn heat(
     };
     let (lo, hi) = (pick(0.05).max(1.0).ln(), pick(0.95).max(1.0).ln());
     let buf = f.buffer_mut();
-    for r in 0..rows.min(area.height as usize) {
-        let mut x = area.x + 1;
+    for r in 0..rows {
+        let y0 = area.y + r as u16 * rh;
+        if y0 >= area.bottom() {
+            break;
+        }
+        // Row label: the row's start time (the grid name on the first row
+        // when there is no title line).
+        let name_row = !titled && r == 0 && rh == 1;
+        if !titled && r == 0 && rh == 2 {
+            buf.set_string(
+                area.x + 1,
+                y0 + 1,
+                title,
+                Style::default().fg(t.title).add_modifier(Modifier::BOLD),
+            );
+        }
+        let lbl = if name_row {
+            title.to_string()
+        } else {
+            row_label(a, r, cols)
+        };
+        buf.set_string(
+            area.x + 1,
+            y0,
+            fmt::trunc(&lbl, (ROW_LABEL - 1) as usize),
+            if name_row {
+                Style::default().fg(t.title)
+            } else {
+                dim
+            },
+        );
+        let mut x = area.x + ROW_LABEL;
         let mut c = 0;
         while c < cols {
             let (mut s, mut fl, mut tk, mut all_future) = (0.0, 0.0, 0.0, true);
@@ -423,26 +610,47 @@ fn heat(
                 (' ', t.bg)
             } else if tokens {
                 if tk <= 0.0 {
-                    ('■', t.meter_bg)
+                    heat_cell(None, t.meter_bg, t)
                 } else {
                     let lv = if hi > lo {
                         ((tk.ln() - lo) / (hi - lo)).clamp(0.0, 1.0)
                     } else {
                         1.0
                     };
-                    ('■', t.gradient(0.15 + lv as f32 * 0.85))
+                    heat_cell(Some(lv), t.gradient(0.15 + lv as f32 * 0.85), t)
                 }
             } else {
                 match widgets::health_color(t, s, fl) {
-                    Some(c) => ('■', c),
-                    None => ('■', t.meter_bg),
+                    Some(col) => {
+                        let rate = s / (s + fl);
+                        if t.no_color {
+                            let ch = if rate >= 0.95 {
+                                '■'
+                            } else if rate >= 0.5 {
+                                '▲'
+                            } else {
+                                '✗'
+                            };
+                            (ch, col)
+                        } else {
+                            ('■', col)
+                        }
+                    }
+                    None => heat_cell(None, t.meter_bg, t),
                 }
             };
-            buf[(x, area.y + r as u16)].set_char(ch).set_fg(color);
+            for dy in 0..rh {
+                let yy = y0 + dy;
+                if yy < area.bottom() {
+                    buf[(x, yy)].set_char(ch).set_fg(color);
+                }
+            }
             x += cell_w as u16;
         }
     }
 }
+
+// ------------------------------------------------------------ distribution
 
 fn dist_items(app: &App) -> &[ComparisonItem] {
     let Some(c) = app.data.comparisons.get() else {
@@ -456,15 +664,19 @@ fn dist_items(app: &App) -> &[ComparisonItem] {
     }
 }
 
+pub fn dist_len(app: &App) -> Option<usize> {
+    app.data.comparisons.get().map(|_| dist_items(app).len())
+}
+
 const DIST_COLS: [Col; 8] = [
     flex("name", 12),
     col("tokens", 7, Align::Right, 0),
-    col("share", 6, Align::Right, 1),
+    grow("share", 12, 1),
     col("req", 7, Align::Right, 0),
     col("fail", 5, Align::Right, 4),
     col("cost", 9, Align::Right, 2),
     col("cache", 6, Align::Right, 5),
-    col("trend", 14, Align::Left, 3),
+    col("trend", 12, Align::Left, 3),
 ];
 
 pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
@@ -482,7 +694,7 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
         .iter()
         .map(|i| {
             let name = if is_key {
-                key_label(&i.label)
+                app.key_name(&i.key, &i.label)
             } else {
                 app.privacy(&i.label)
             };
@@ -495,7 +707,12 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
                     Style::default().fg(t.title),
                     num(i.total_tokens),
                 )
-                .text(fmt::pct(share, 1), num(share))
+                .meter(
+                    share / 100.0,
+                    None,
+                    format!(" {:>5}", fmt::pct(share, 1)),
+                    num(share),
+                )
                 .text(fmt::count(i.requests), num(i.requests))
                 .styled(
                     fmt::int(i.failures),
@@ -511,7 +728,7 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
                     cache.map(|c| fmt::pct(c, 1)).unwrap_or("-".into()),
                     num(cache.unwrap_or(-1.0)),
                 )
-                .spans(spark(&i.token_series, 14, t), num(i.total_tokens))
+                .spark(i.token_series.clone(), t.accent, num(i.total_tokens))
                 .filter(format!("{name} {}", i.key))
         })
         .collect();

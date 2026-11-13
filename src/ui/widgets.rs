@@ -68,48 +68,49 @@ pub fn pane_block<'a>(
     b
 }
 
-/// Resample a series to `n` points: max-pool when shrinking, linear
-/// interpolation when stretching.
+/// Resample a series to `n` points without inventing data: max-pool when
+/// shrinking, repeat each bucket over its columns when stretching (so bars
+/// stay crisp and a cursor maps to exactly one bucket). `NaN` marks a
+/// missing value and stays `NaN` unless a pooled group has real values.
 pub fn resample(data: &[f64], n: usize) -> Vec<f64> {
     if n == 0 {
         return vec![];
     }
-    match data.len() {
-        0 => vec![0.0; n],
-        1 => vec![data[0]; n],
-        len if len >= n => (0..n)
+    let len = data.len();
+    if len == 0 {
+        return vec![f64::NAN; n];
+    }
+    if len >= n {
+        (0..n)
             .map(|j| {
                 let a = j * len / n;
                 let b = ((j + 1) * len / n).max(a + 1).min(len);
-                data[a..b].iter().copied().fold(f64::MIN, f64::max)
+                data[a..b]
+                    .iter()
+                    .copied()
+                    .filter(|v| v.is_finite())
+                    .fold(f64::NAN, f64::max)
             })
-            .collect(),
-        len => (0..n)
-            .map(|j| {
-                if n == 1 {
-                    return data[len - 1];
-                }
-                let pos = j as f64 * (len - 1) as f64 / (n - 1) as f64;
-                let i = pos.floor() as usize;
-                let f = pos - i as f64;
-                if i + 1 >= len {
-                    data[len - 1]
-                } else {
-                    data[i] * (1.0 - f) + data[i + 1] * f
-                }
-            })
-            .collect(),
+            .collect()
+    } else {
+        (0..n).map(|j| data[(j * len / n).min(len - 1)]).collect()
     }
 }
 
-/// Nearest-bucket resampling (keeps bars crisp instead of interpolating).
-pub fn step_resample(data: &[f64], n: usize) -> Vec<f64> {
-    if data.is_empty() || n == 0 {
-        return vec![0.0; n];
+/// Column range `[start, end)` that bucket `i` of `n` occupies in `width` columns.
+pub fn bucket_cols(i: usize, n: usize, width: usize) -> (usize, usize) {
+    if n == 0 || width == 0 {
+        return (0, 0);
     }
-    (0..n)
-        .map(|j| data[(j * data.len() / n).min(data.len() - 1)])
-        .collect()
+    if n <= width {
+        // Inverse of `resample`'s stretch: column j shows bucket j*n/width.
+        let start = (i * width).div_ceil(n);
+        let end = ((i + 1) * width).div_ceil(n).max(start + 1).min(width);
+        (start.min(width - 1), end)
+    } else {
+        let c = (i * width / n).min(width - 1);
+        (c, c + 1)
+    }
 }
 
 /// Filled area graph with a vertical low→high colour gradient.
@@ -129,15 +130,14 @@ impl Widget for Graph<'_> {
         }
         let w = area.width as usize;
         let h = area.height as usize;
-        let per_cell = if self.symbols == GraphSymbols::Braille {
-            2
-        } else {
-            1
-        };
+        // Braille has two dot columns per cell, but only when there are at
+        // least that many buckets; fewer buckets are drawn as solid bars.
+        let per_cell =
+            if self.symbols == GraphSymbols::Braille && self.data.len() >= w * 2 { 2 } else { 1 };
         let vals = resample(self.data, w * per_cell);
         let max = self
             .max
-            .unwrap_or_else(|| vals.iter().copied().fold(0.0, f64::max))
+            .unwrap_or_else(|| vals.iter().copied().filter(|v| v.is_finite()).fold(0.0, f64::max))
             .max(f64::MIN_POSITIVE);
         let color_at = |cy: usize| {
             self.color.unwrap_or_else(|| {
@@ -166,9 +166,13 @@ impl Widget for Graph<'_> {
                     GraphSymbols::Braille => {
                         const LEFT: [u32; 4] = [0x01, 0x02, 0x04, 0x40];
                         const RIGHT: [u32; 4] = [0x08, 0x10, 0x20, 0x80];
+                        let (l, r) = if per_cell == 2 {
+                            (hs[cx * 2], hs[cx * 2 + 1])
+                        } else {
+                            (hs[cx], hs[cx])
+                        };
                         let mut bits = 0u32;
-                        for (k, table) in [(0, LEFT), (1, RIGHT)] {
-                            let hh = hs[cx * 2 + k];
+                        for (hh, table) in [(l, LEFT), (r, RIGHT)] {
                             let fill = hh.saturating_sub(base).min(4);
                             for i in 0..fill {
                                 bits |= table[3 - i];
@@ -199,6 +203,122 @@ impl Widget for Graph<'_> {
                 let cell = &mut buf[(area.x + cx as u16, area.y + cy as u16)];
                 cell.set_symbol(&symbol).set_fg(fg);
             }
+        }
+    }
+}
+
+/// Axis decorations for a time-series chart.
+pub struct Axes<'a> {
+    pub theme: &'a Theme,
+    /// Bottom and top of the y scale.
+    pub y_min: f64,
+    pub y_max: f64,
+    pub y_fmt: fn(f64) -> String,
+    /// Bucket count and a label for each bucket (time).
+    pub labels: &'a [String],
+}
+
+impl Axes<'_> {
+    /// Width of the y-label gutter.
+    fn label(&self, v: f64) -> String {
+        if v == 0.0 { "0".into() } else { (self.y_fmt)(v) }
+    }
+
+    pub fn gutter(&self) -> u16 {
+        let mid = (self.y_min + self.y_max) / 2.0;
+        let w = [self.y_max, mid, self.y_min]
+            .iter()
+            .map(|v| fmt::width(&self.label(*v)))
+            .max()
+            .unwrap_or(1);
+        w as u16 + 1
+    }
+
+    /// Draw y labels (max/mid/0) on the left and 3–5 time ticks on the bottom
+    /// row; returns the plot area.
+    pub fn draw(&self, buf: &mut Buffer, area: Rect) -> Rect {
+        let t = self.theme;
+        let dim = Style::default().fg(t.graph_text);
+        let gw = self.gutter();
+        if area.height < 3 || area.width <= gw + 8 {
+            return area;
+        }
+        let plot = Rect::new(area.x + gw, area.y, area.width - gw, area.height - 1);
+        // Y axis line, labels and ticks.
+        for y in plot.y..plot.bottom() {
+            buf.set_string(area.x + gw - 1, y, "│", Style::default().fg(t.border));
+        }
+        // The middle label names the half-way value, on the nearest row.
+        let mid_row = (plot.height - 1).div_ceil(2);
+        let mid = (self.y_min + self.y_max) / 2.0;
+        let ys = [
+            (plot.y, self.y_max),
+            (plot.y + mid_row, mid),
+            (plot.bottom() - 1, self.y_min),
+        ];
+        for (i, (y, v)) in ys.iter().enumerate() {
+            if i == 1 && plot.height < 5 {
+                continue;
+            }
+            let s = self.label(*v);
+            let x = area.x + gw - 1 - fmt::width(&s) as u16;
+            buf.set_string(x, *y, &s, dim);
+            buf.set_string(area.x + gw - 1, *y, "┤", Style::default().fg(t.border));
+        }
+        // X axis line and ticks.
+        let ay = plot.bottom();
+        buf.set_string(area.x + gw - 1, ay, "└", Style::default().fg(t.border));
+        buf.set_string(
+            plot.x,
+            ay,
+            "─".repeat(plot.width as usize),
+            Style::default().fg(t.border),
+        );
+        let n = self.labels.len();
+        if n == 0 {
+            return plot;
+        }
+        let w = plot.width as usize;
+        let label_w = self.labels.iter().map(|l| fmt::width(l)).max().unwrap_or(5);
+        let max_ticks = (w / (label_w + 3)).clamp(1, 5);
+        let ticks = max_ticks.min(n);
+        let mut last_end = 0usize;
+        for k in 0..ticks {
+            let i = if ticks == 1 { 0 } else { k * (n - 1) / (ticks - 1) };
+            let (c0, _) = bucket_cols(i, n, w);
+            let lw = fmt::width(&self.labels[i]);
+            // Labels sit on the axis line, starting at their bucket.
+            let start = c0.min(w.saturating_sub(lw));
+            if k > 0 && start <= last_end {
+                continue;
+            }
+            if lw <= w {
+                buf.set_string(plot.x + start as u16, ay, &self.labels[i], dim);
+            }
+            last_end = start + lw;
+        }
+        plot
+    }
+}
+
+/// Highlight bucket `i` of `n` in a plot area (vertical cursor line).
+pub fn draw_cursor(buf: &mut Buffer, plot: Rect, i: usize, n: usize, t: &Theme) {
+    if plot.width == 0 || n == 0 {
+        return;
+    }
+    let (c0, c1) = bucket_cols(i, n, plot.width as usize);
+    let c = (c0 + c1.saturating_sub(1)) / 2;
+    let x = plot.x + c as u16;
+    for y in plot.y..plot.bottom() {
+        let cell = &mut buf[(x, y)];
+        if cell.symbol() == " " {
+            cell.set_char('│').set_fg(t.hi);
+        } else {
+            cell.set_style(
+                Style::default()
+                    .fg(t.hi)
+                    .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+            );
         }
     }
 }
@@ -292,7 +412,8 @@ impl Widget for Scatter<'_> {
     }
 }
 
-/// btop-style meter made of `■` cells.
+/// btop-style meter made of `■` cells. Without colour the empty part uses
+/// `·` so the fill level stays readable.
 pub fn meter(frac: f64, width: usize, t: &Theme, color: Option<Color>) -> Vec<Span<'static>> {
     if width == 0 {
         return vec![];
@@ -309,33 +430,60 @@ pub fn meter(frac: f64, width: usize, t: &Theme, color: Option<Color>) -> Vec<Sp
             let c = color.unwrap_or_else(|| t.gradient(i as f32 / (width.max(2) - 1) as f32));
             out.push(Span::styled("■", Style::default().fg(c)));
         } else {
-            out.push(Span::styled("■", Style::default().fg(t.meter_bg)));
+            let empty = if t.no_color { "·" } else { "■" };
+            out.push(Span::styled(empty, Style::default().fg(t.meter_bg)));
         }
     }
     merge_spans(out)
 }
 
-/// Mini sparkline using block eighths, coloured by level.
-pub fn spark(values: &[f64], width: usize, t: &Theme) -> Vec<Span<'static>> {
+/// Mini sparkline using block eighths, one colour, scaled to the series' own
+/// peak. Buckets map to characters 1:1 when they fit (never interpolated);
+/// longer series are max-pooled. `NaN` (no data) renders as a blank, zero as
+/// a dim baseline.
+pub fn spark(values: &[f64], width: usize, t: &Theme, color: Color) -> Vec<Span<'static>> {
     const B: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
     if width == 0 {
         return vec![];
     }
-    let vals = resample(values, width);
-    let max = vals.iter().copied().fold(0.0, f64::max);
-    let out = vals
+    let n = values.len().min(width);
+    let vals = resample(values, n);
+    let max = vals
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .fold(0.0, f64::max);
+    let mut out: Vec<Span<'static>> = vals
         .iter()
         .map(|v| {
-            if *v <= 0.0 || max <= 0.0 {
+            if !v.is_finite() {
+                Span::raw(" ")
+            } else if *v <= 0.0 || max <= 0.0 {
                 Span::styled("▁", Style::default().fg(t.meter_bg))
             } else {
                 let f = (v / max).clamp(0.0, 1.0);
                 let i = ((f * 7.0).round() as usize).min(7);
-                Span::styled(B[i].to_string(), Style::default().fg(t.gradient(f as f32)))
+                Span::styled(B[i].to_string(), Style::default().fg(color))
             }
         })
         .collect();
+    if n < width {
+        out.push(Span::raw(" ".repeat(width - n)));
+    }
     merge_spans(out)
+}
+
+/// Heat cell for a level in 0..=1 (`None` = no data). Coloured `■` cells, or
+/// shade glyphs when colour is off.
+pub fn heat_cell(level: Option<f64>, color: Color, t: &Theme) -> (char, Color) {
+    match level {
+        None => (if t.no_color { ' ' } else { '■' }, t.meter_bg),
+        Some(l) if t.no_color => {
+            let shades = ['░', '▒', '▓', '█'];
+            (shades[((l.clamp(0.0, 1.0) * 3.0).round() as usize).min(3)], color)
+        }
+        Some(_) => ('■', color),
+    }
 }
 
 /// Merge adjacent spans with identical style.
@@ -441,10 +589,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resampling() {
-        assert_eq!(resample(&[], 3), vec![0.0; 3]);
-        assert_eq!(resample(&[1.0, 3.0], 3), vec![1.0, 2.0, 3.0]);
+    fn resampling_never_interpolates() {
+        assert!(resample(&[], 3).iter().all(|v| v.is_nan()));
+        // Stretching repeats buckets instead of inventing values in between.
+        assert_eq!(resample(&[1.0, 3.0], 4), vec![1.0, 1.0, 3.0, 3.0]);
         assert_eq!(resample(&[1.0, 5.0, 2.0, 0.0], 2), vec![5.0, 2.0]);
+        // Missing values stay missing, pooled groups keep real values.
+        let r = resample(&[f64::NAN, 2.0, f64::NAN, f64::NAN], 2);
+        assert_eq!(r[0], 2.0);
+        assert!(r[1].is_nan());
+    }
+
+    #[test]
+    fn bucket_columns_match_resampling() {
+        for (n, w) in [(3usize, 10usize), (24, 90), (7, 7), (100, 40)] {
+            let data: Vec<f64> = (0..n).map(|i| i as f64).collect();
+            let cols = resample(&data, w);
+            for i in 0..n {
+                let (a, b) = bucket_cols(i, n, w);
+                assert!(a < b && b <= w, "n={n} w={w} i={i}");
+                if n <= w {
+                    assert!(cols[a..b].iter().all(|v| *v == i as f64), "n={n} w={w} i={i}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sparklines_show_gaps_and_do_not_stretch() {
+        let t = Theme::default();
+        let s = spark(&[f64::NAN, 1.0, f64::NAN, 2.0], 8, &t, Color::Blue);
+        let text: String = s.iter().map(|s| s.content.to_string()).collect();
+        assert_eq!(text, " ▅ █    ");
+    }
+
+    #[test]
+    fn meters_are_readable_without_colour() {
+        let mut t = Theme::default();
+        t.no_color = true;
+        let text: String = meter(0.5, 10, &t, None)
+            .iter()
+            .map(|s| s.content.to_string())
+            .collect();
+        assert_eq!(text, "■■■■■·····");
     }
 
     #[test]
@@ -470,8 +657,9 @@ mod tests {
         .render(buf.area, &mut buf);
         // The right-most column reaches the top row.
         assert_ne!(buf[(3, 0)].symbol(), " ");
-        // Low values on the left never reach the top row.
-        assert_eq!(buf[(0, 0)].symbol(), " ");
-        assert_ne!(buf[(0, 1)].symbol(), " ");
+        // Low values never reach the top row; zero draws nothing.
+        assert_eq!(buf[(1, 0)].symbol(), " ");
+        assert_ne!(buf[(1, 1)].symbol(), " ");
+        assert_eq!(buf[(0, 1)].symbol(), " ");
     }
 }

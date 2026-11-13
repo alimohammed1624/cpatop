@@ -15,8 +15,7 @@ expression: s
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
+╰─ ↑↓ select · s/S sort · / filter ────────────────────────────────────────────╯
 ╭─² catalog ──────────────────────── 5 models ─╮╭─³ recalc ────────────────────╮
 │model                     provider  owner     ││ last task completed · finaliz│
 │claude-fable-5            Claude    anthropic ││ progress  ■■■■■■■■■■ 226/226 │
@@ -25,4 +24,5 @@ expression: s
 │gpt-image-2               OpenAI    openai    ││ revision  2                  │
 │gpt-image-2.6             OpenAI    openai    ││ window    11-12 17:30 → 11-13│
 │                                              ││ timezone  Asia/Kolkata       │
+│                                              ││                              │
 ╰──────────────────────────────────────────────╯╰──────────────────────────────╯

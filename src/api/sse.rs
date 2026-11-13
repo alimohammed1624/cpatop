@@ -83,12 +83,94 @@ impl SseParser {
     }
 }
 
+/// Result filter of the request log (`result=` on the server).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ResultFilter {
+    #[default]
+    All,
+    Success,
+    Failed,
+}
+
+impl ResultFilter {
+    pub fn next(self) -> ResultFilter {
+        match self {
+            ResultFilter::All => ResultFilter::Success,
+            ResultFilter::Success => ResultFilter::Failed,
+            ResultFilter::Failed => ResultFilter::All,
+        }
+    }
+    pub fn param(self) -> Option<&'static str> {
+        match self {
+            ResultFilter::All => None,
+            ResultFilter::Success => Some("success"),
+            ResultFilter::Failed => Some("failed"),
+        }
+    }
+}
+
+/// Server-side filters of the request log, sent on the live stream and on
+/// history pages alike so both always describe the same result set.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct EventFilters {
+    pub result: ResultFilter,
+    /// Exact model name.
+    pub model: Option<String>,
+    /// Source identity value (`auth_index`) and its display label.
+    pub source: Option<(String, String)>,
+}
+
+impl EventFilters {
+    pub fn is_empty(&self) -> bool {
+        self.result == ResultFilter::All && self.model.is_none() && self.source.is_none()
+    }
+
+    /// Stable key for scopes.
+    pub fn key(&self) -> String {
+        format!(
+            "{}|{}|{}",
+            self.result.param().unwrap_or("all"),
+            self.model.as_deref().unwrap_or(""),
+            self.source.as_ref().map(|s| s.0.as_str()).unwrap_or("")
+        )
+    }
+}
+
+/// Query for `/usage/events` and `/usage/events/live` (cursor mode, 50 rows).
+pub fn events_query(
+    range: TimeRange,
+    api_key_id: Option<&str>,
+    filters: &EventFilters,
+    cursor: Option<&str>,
+) -> Query {
+    let mut q: Query = range.params();
+    q.push(("page_size", "50".into()));
+    q.push(("cursor_mode", "true".into()));
+    if let Some(c) = cursor {
+        q.push(("cursor", c.to_string()));
+    }
+    if let Some(k) = api_key_id {
+        q.push(("api_key_id", k.to_string()));
+    }
+    if let Some(r) = filters.result.param() {
+        q.push(("result", r.into()));
+    }
+    if let Some(m) = &filters.model {
+        q.push(("model", m.clone()));
+    }
+    if let Some((v, _)) = &filters.source {
+        q.push(("source", v.clone()));
+    }
+    q
+}
+
 /// Parameters of the live stream; a change triggers a reconnect.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LiveParams {
     pub enabled: bool,
     pub range: Option<TimeRange>,
     pub api_key_id: Option<String>,
+    pub filters: EventFilters,
     pub epoch: u64,
     /// Bumped on manual refresh to force a reconnect.
     pub nonce: u64,
@@ -112,6 +194,8 @@ pub enum LiveEvent {
     },
     /// Non-recoverable for these parameters.
     Failed(String),
+    /// `409`: a custom range drifted out of the server's bounds.
+    RangeConflict(String),
     Unauthorized,
 }
 
@@ -119,6 +203,7 @@ enum Outcome {
     Reset,
     Retry(String, Duration),
     Terminal(String),
+    Conflict(String),
     Unauthorized,
 }
 
@@ -137,14 +222,7 @@ async fn stream_once<F: FnMut(LiveEvent)>(
     emit: &mut F,
 ) -> Outcome {
     let range = p.range.unwrap_or(TimeRange::Today);
-    let mut q: Query = vec![
-        ("range", range.param()),
-        ("page_size", "50".into()),
-        ("cursor_mode", "true".into()),
-    ];
-    if let Some(k) = &p.api_key_id {
-        q.push(("api_key_id", k.clone()));
-    }
+    let q = events_query(range, p.api_key_id.as_deref(), &p.filters, None);
     let resp = match client
         .get_builder("/usage/events/live", &q)
         .header(reqwest::header::ACCEPT, "text/event-stream")
@@ -177,7 +255,12 @@ async fn stream_once<F: FnMut(LiveEvent)>(
                 Duration::from_secs(retry_after.unwrap_or(5).max(1)),
             ),
             ApiError::Http {
-                status: s @ (400 | 404 | 405 | 409 | 501),
+                status: 409,
+                message,
+                ..
+            } => Outcome::Conflict(message),
+            ApiError::Http {
+                status: s @ (400 | 404 | 405 | 501),
                 message,
                 ..
             } => Outcome::Terminal(format!("{s} {message}")),
@@ -311,6 +394,12 @@ pub async fn run_live<T: From<LiveEvent> + Send + 'static>(
                 }
                 attempt = 0;
             }
+            Outcome::Conflict(m) => {
+                if !send(LiveEvent::RangeConflict(m)) || params.changed().await.is_err() {
+                    return;
+                }
+                attempt = 0;
+            }
             Outcome::Unauthorized => {
                 if !send(LiveEvent::Unauthorized) || params.changed().await.is_err() {
                     return;
@@ -348,6 +437,27 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].event, "message");
         assert_eq!(out[0].data, "x\ny");
+    }
+
+    #[test]
+    fn events_query_carries_every_filter() {
+        let f = EventFilters {
+            result: ResultFilter::Failed,
+            model: Some("gpt-6-luna".into()),
+            source: Some(("6d78555c26de98aa".into(), "a@b".into())),
+        };
+        let q = events_query(TimeRange::Hours(8), Some("3"), &f, Some("abc"));
+        let has = |k: &str, v: &str| q.iter().any(|(a, b)| *a == k && b == v);
+        assert!(has("range", "8h"));
+        assert!(has("page_size", "50"));
+        assert!(has("cursor_mode", "true"));
+        assert!(has("cursor", "abc"));
+        assert!(has("api_key_id", "3"));
+        assert!(has("result", "failed"));
+        assert!(has("model", "gpt-6-luna"));
+        assert!(has("source", "6d78555c26de98aa"));
+        let q = events_query(TimeRange::Today, None, &EventFilters::default(), None);
+        assert_eq!(q.len(), 3);
     }
 
     #[test]

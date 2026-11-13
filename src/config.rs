@@ -166,6 +166,8 @@ pub struct Settings {
     pub graph_symbols: GraphSymbols,
     pub privacy: bool,
     pub mouse: bool,
+    /// `NO_COLOR` is set: render without relying on colour.
+    pub no_color: bool,
 }
 
 impl Default for Settings {
@@ -180,6 +182,7 @@ impl Default for Settings {
             graph_symbols: GraphSymbols::Braille,
             privacy: false,
             mouse: true,
+            no_color: false,
         }
     }
 }

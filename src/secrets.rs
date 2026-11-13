@@ -84,11 +84,28 @@ pub struct Credentials {
 }
 
 impl Credentials {
-    /// The credential to use for automatic login.
+    /// The credential to use for automatic login. Explicit credentials win
+    /// over keyring ones.
     pub fn pick(&self) -> Option<&Credential> {
+        if let Some(c) = self.pick_explicit() {
+            return Some(c);
+        }
         match self.prefer {
             Some(LoginMode::ApiKey) => self.api_key.as_ref().or(self.admin.as_ref()),
             _ => self.admin.as_ref().or(self.api_key.as_ref()),
+        }
+    }
+
+    /// The credential to use when it was supplied explicitly for this run
+    /// (a file flag or an environment variable), as opposed to one found in
+    /// the OS keyring. An explicit credential decides the session role.
+    pub fn pick_explicit(&self) -> Option<&Credential> {
+        let explicit = |c: &&Credential| matches!(c.source, Source::File(_) | Source::Env(_));
+        let admin = self.admin.as_ref().filter(explicit);
+        let key = self.api_key.as_ref().filter(explicit);
+        match self.prefer {
+            Some(LoginMode::ApiKey) => key.or(admin),
+            _ => admin.or(key),
         }
     }
 

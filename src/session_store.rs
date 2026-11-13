@@ -1,6 +1,8 @@
-//! Persisted session cookies (never passwords), one per base URL.
+//! Persisted session cookies (never passwords), one per base URL and role.
 //!
-//! Stored as JSON in the XDG state directory with mode 0600.
+//! Stored as JSON in the XDG state directory with mode 0600. Entries are keyed
+//! by `"<base URL> <role>"` so an admin session and an API-key session for the
+//! same server, or sessions for two servers, never shadow each other.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -16,15 +18,37 @@ struct StoreFile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Entry {
     token: String,
+    /// Server role string (`admin`, `api_key_viewer`).
     #[serde(default)]
     role: String,
     #[serde(default)]
     saved_at: String,
 }
 
+/// A stored session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stored {
+    pub token: String,
+    /// Server role string (`admin`, `api_key_viewer`).
+    pub role: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct SessionStore {
     path: Option<PathBuf>,
+}
+
+fn key(base_url: &str, role: &str) -> String {
+    format!("{base_url} {role}")
+}
+
+/// Split a store key into base URL and role. Entries written by cpatop 0.1
+/// were keyed by the base URL alone; their role comes from the entry.
+fn split_key<'a>(k: &'a str, e: &'a Entry) -> (&'a str, &'a str) {
+    match k.rsplit_once(' ') {
+        Some((base, role)) => (base, role),
+        None => (k, e.role.as_str()),
+    }
 }
 
 impl SessionStore {
@@ -52,18 +76,43 @@ impl SessionStore {
         write_private(path, json.as_bytes())
     }
 
-    pub fn load(&self, base_url: &str) -> Option<String> {
-        self.read()
+    /// Every stored session for `base_url`, most recently saved first.
+    pub fn load_all(&self, base_url: &str) -> Vec<Stored> {
+        let f = self.read();
+        let mut v: Vec<(String, Stored)> = f
             .sessions
-            .get(base_url)
-            .map(|e| e.token.clone())
-            .filter(|t| !t.is_empty())
+            .iter()
+            .filter_map(|(k, e)| {
+                let (base, role) = split_key(k, e);
+                (base == base_url && !e.token.is_empty()).then(|| {
+                    (
+                        e.saved_at.clone(),
+                        Stored {
+                            token: e.token.clone(),
+                            role: role.to_string(),
+                        },
+                    )
+                })
+            })
+            .collect();
+        v.sort_by(|a, b| b.0.cmp(&a.0));
+        v.into_iter().map(|(_, s)| s).collect()
+    }
+
+    /// The stored session for `base_url` with server role `role`.
+    pub fn load(&self, base_url: &str, role: &str) -> Option<String> {
+        self.load_all(base_url)
+            .into_iter()
+            .find(|s| s.role == role)
+            .map(|s| s.token)
     }
 
     pub fn save(&self, base_url: &str, token: &str, role: &str) -> Result<(), String> {
         let mut f = self.read();
+        // Drop a legacy un-keyed entry for this server; it is superseded.
+        f.sessions.remove(base_url);
         f.sessions.insert(
-            base_url.to_string(),
+            key(base_url, role),
             Entry {
                 token: token.to_string(),
                 role: role.to_string(),
@@ -73,9 +122,29 @@ impl SessionStore {
         self.write(&f)
     }
 
-    pub fn remove(&self, base_url: &str) -> Result<(), String> {
+    /// Forget the session for one role (`Some`) or every role (`None`).
+    pub fn remove(&self, base_url: &str, role: Option<&str>) -> Result<(), String> {
         let mut f = self.read();
-        if f.sessions.remove(base_url).is_some() {
+        let before = f.sessions.len();
+        f.sessions.retain(|k, e| {
+            let (base, r) = split_key(k, e);
+            !(base == base_url && role.is_none_or(|want| want == r))
+        });
+        if f.sessions.len() != before {
+            self.write(&f)?;
+        }
+        Ok(())
+    }
+
+    /// Forget the session whose token is `token` (used after a 401).
+    pub fn remove_token(&self, base_url: &str, token: &str) -> Result<(), String> {
+        let mut f = self.read();
+        let before = f.sessions.len();
+        f.sessions.retain(|k, e| {
+            let (base, _) = split_key(k, e);
+            !(base == base_url && e.token == token)
+        });
+        if f.sessions.len() != before {
             self.write(&f)?;
         }
         Ok(())
@@ -134,19 +203,55 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cpatop-store-{}", std::process::id()));
         let path = dir.join("nested").join("session.json");
         let store = SessionStore::new(Some(path.clone()));
-        assert_eq!(store.load("http://a"), None);
+        assert_eq!(store.load("http://a", "admin"), None);
         store.save("http://a", "tok", "admin").unwrap();
+        store.save("http://a", "ktok", "api_key_viewer").unwrap();
         store.save("http://b", "tok2", "api_key_viewer").unwrap();
-        assert_eq!(store.load("http://a").as_deref(), Some("tok"));
+        assert_eq!(store.load("http://a", "admin").as_deref(), Some("tok"));
+        assert_eq!(
+            store.load("http://a", "api_key_viewer").as_deref(),
+            Some("ktok")
+        );
+        assert_eq!(store.load("http://b", "admin"), None);
+        assert_eq!(store.load_all("http://a").len(), 2);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let mode = std::fs::metadata(&path).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o600);
         }
-        store.remove("http://a").unwrap();
-        assert_eq!(store.load("http://a"), None);
-        assert_eq!(store.load("http://b").as_deref(), Some("tok2"));
+        store.remove("http://a", Some("admin")).unwrap();
+        assert_eq!(store.load("http://a", "admin"), None);
+        assert_eq!(
+            store.load("http://a", "api_key_viewer").as_deref(),
+            Some("ktok")
+        );
+        store.remove_token("http://a", "ktok").unwrap();
+        assert!(store.load_all("http://a").is_empty());
+        assert_eq!(
+            store.load("http://b", "api_key_viewer").as_deref(),
+            Some("tok2")
+        );
+        store.remove("http://b", None).unwrap();
+        assert!(store.load_all("http://b").is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn reads_legacy_entries_keyed_by_base_url() {
+        let dir = std::env::temp_dir().join(format!("cpatop-legacy-{}", std::process::id()));
+        let path = dir.join("session.json");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"sessions":{"http://a":{"token":"old","role":"admin","saved_at":"x"}}}"#,
+        )
+        .unwrap();
+        let store = SessionStore::new(Some(path));
+        assert_eq!(store.load("http://a", "admin").as_deref(), Some("old"));
+        store.save("http://a", "new", "admin").unwrap();
+        assert_eq!(store.load_all("http://a").len(), 1);
+        assert_eq!(store.load("http://a", "admin").as_deref(), Some("new"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

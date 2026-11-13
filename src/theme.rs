@@ -29,6 +29,9 @@ pub struct Theme {
     pub warn: Color,
     pub err: Color,
     pub accent: Color,
+    /// Colours are suppressed (`NO_COLOR`): widgets switch to distinct glyphs
+    /// and reverse video so nothing relies on colour alone.
+    pub no_color: bool,
 }
 
 /// On-disk theme representation; all keys optional.
@@ -96,6 +99,7 @@ fn mk(
         warn: rgb(status[1]),
         err: rgb(status[2]),
         accent: rgb(accent),
+        no_color: false,
     }
 }
 
@@ -387,6 +391,17 @@ fn lerp(a: Color, b: Color, t: f32) -> Color {
 }
 
 impl Theme {
+    /// Style of the selected row / active tab: colours, or reverse video
+    /// when colours are off.
+    pub fn selected(&self) -> ratatui::style::Style {
+        use ratatui::style::{Modifier, Style};
+        if self.no_color {
+            Style::default().add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default().bg(self.selected_bg).fg(self.selected_fg)
+        }
+    }
+
     /// Low → mid → high gradient at position `t` in `[0, 1]`.
     pub fn gradient(&self, t: f32) -> Color {
         let t = t.clamp(0.0, 1.0);
