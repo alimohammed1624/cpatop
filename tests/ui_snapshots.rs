@@ -439,3 +439,37 @@ fn privacy_mode_hides_every_identifier() {
         }
     }
 }
+
+/// Without colour, failures in the realtime outcome bars use their own
+/// pattern, and the activity legend shows the glyphs the maps draw.
+#[test]
+fn no_color_keeps_outcomes_and_legends_distinct() {
+    let mut app = populated(Role::Admin);
+    for t in &mut app.themes {
+        t.no_color = true;
+    }
+    let mut rt: serde_json::Value = load("usage-overview-realtime.json");
+    for (i, o) in rt["insights"]["outcomes"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .enumerate()
+    {
+        if i % 3 == 0 {
+            o["requests"] = 10.into();
+            o["failures"] = 6.into();
+        }
+    }
+    data(
+        &mut app,
+        Group::Realtime,
+        Payload::Realtime(Ok(serde_json::from_value(rt).unwrap())),
+    );
+    let s = render_tab(&mut app, Tab::Realtime, 160, 48);
+    assert!(s.contains('░') && s.contains("░ fail"), "{s}");
+    let s = render_tab(&mut app, Tab::Overview, 160, 48);
+    // Legend glyphs: ■ ▲ ✗ for health, · for idle, shades for tokens.
+    for g in ["■≥95%", "▲≥50%", "✗<50%", "·idle", "░▒▓█"] {
+        assert!(s.contains(g), "legend lacks {g:?}:\n{s}");
+    }
+}

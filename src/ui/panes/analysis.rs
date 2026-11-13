@@ -555,7 +555,7 @@ pub fn heatmap(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
                         let v = 0.05 + 0.95 * (c.total_tokens / max.max(1.0)).powf(0.65);
                         row = row.styled(
                             fmt::compact(c.total_tokens),
-                            Style::default().fg(t.gradient(v as f32)),
+                            Style::default().fg(t.ramp(v as f32)),
                             num(c.total_tokens),
                         );
                     }

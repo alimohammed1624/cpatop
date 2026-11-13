@@ -132,7 +132,8 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                 .spans(vec![state], text(if i.disabled { "b" } else { "a" }))
                 .styled(fmt::count(req), Style::default().fg(t.title), num(req))
                 .meter(
-                    succ.unwrap_or(0.0) / 100.0,
+                    // No requests: a neutral track, not an empty "0%" bar.
+                    succ.map(|s| s / 100.0).unwrap_or(f64::NAN),
                     succ.map(|s| t.good_pct(s, 95.0, 80.0)),
                     format!(" {:>6}", succ.map(|s| fmt::pct(s, 1)).unwrap_or("—".into())),
                     num(succ.unwrap_or(-1.0)),

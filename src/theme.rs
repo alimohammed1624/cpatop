@@ -126,7 +126,7 @@ pub fn builtin(name: &str) -> Option<Theme> {
             0x3d7b46,
             0x50f095,
             0x6a2f2f,
-            0x606060,
+            0x8a8a8a,
             0x303030,
             [0x50f095, 0xf2e266, 0xfa1e1e],
             [0x50f095, 0xf2e266, 0xfa4040],
@@ -142,7 +142,7 @@ pub fn builtin(name: &str) -> Option<Theme> {
                 0x8a9a8a,
                 0x2e7d4f,
                 0xd6e4f0,
-                0x8c8c8c,
+                0x666666,
                 0xdedede,
                 [0x2e8b57, 0xc99a00, 0xd03030],
                 [0x2e8b57, 0xb07800, 0xc62828],
@@ -160,7 +160,7 @@ pub fn builtin(name: &str) -> Option<Theme> {
             0x665c54,
             0xd79921,
             0x504945,
-            0x7c6f64,
+            0xa89984,
             0x3c3836,
             [0xb8bb26, 0xfabd2f, 0xfb4934],
             [0xb8bb26, 0xfabd2f, 0xfb4934],
@@ -175,7 +175,7 @@ pub fn builtin(name: &str) -> Option<Theme> {
             0x4c566a,
             0x88c0d0,
             0x434c5e,
-            0x616e88,
+            0x929db3,
             0x3b4252,
             [0xa3be8c, 0xebcb8b, 0xbf616a],
             [0xa3be8c, 0xebcb8b, 0xbf616a],
@@ -190,7 +190,7 @@ pub fn builtin(name: &str) -> Option<Theme> {
             0x3b4261,
             0x7aa2f7,
             0x283457,
-            0x565f89,
+            0x7f88b8,
             0x24283b,
             [0x9ece6a, 0xe0af68, 0xf7768e],
             [0x9ece6a, 0xe0af68, 0xf7768e],
@@ -205,7 +205,7 @@ pub fn builtin(name: &str) -> Option<Theme> {
             0x6272a4,
             0xbd93f9,
             0x44475a,
-            0x6272a4,
+            0x8a96c4,
             0x343746,
             [0x50fa7b, 0xf1fa8c, 0xff5555],
             [0x50fa7b, 0xf1fa8c, 0xff5555],
@@ -220,7 +220,7 @@ pub fn builtin(name: &str) -> Option<Theme> {
             0x5a5a5a,
             0xbbbbbb,
             0x3a3a3a,
-            0x6e6e6e,
+            0x8f8f8f,
             0x2a2a2a,
             [0x707070, 0xa8a8a8, 0xffffff],
             [0xd0d0d0, 0xa0a0a0, 0xffffff],
@@ -409,6 +409,20 @@ impl Theme {
             lerp(self.grad_low, self.grad_mid, t * 2.0)
         } else {
             lerp(self.grad_mid, self.grad_high, (t - 0.5) * 2.0)
+        }
+    }
+
+    /// Single-hue ramp for volumes (token heat cells, share meters): dim to
+    /// bright accent. Volume is not good or bad, so it never uses the
+    /// green→red status colours.
+    pub fn ramp(&self, t: f32) -> Color {
+        let t = t.clamp(0.0, 1.0);
+        let low = lerp(self.meter_bg, self.accent, 0.35);
+        let high = lerp(self.accent, self.title, 0.4);
+        if t < 0.75 {
+            lerp(low, self.accent, t / 0.75)
+        } else {
+            lerp(self.accent, high, (t - 0.75) / 0.25)
         }
     }
 

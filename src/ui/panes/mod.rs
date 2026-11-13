@@ -1,5 +1,6 @@
 //! Per-pane renderers, pane sizing and shared pane helpers.
 
+mod activity;
 mod analysis;
 mod credentials;
 mod events;
@@ -26,7 +27,7 @@ pub fn draw(f: &mut Frame, app: &App, hit: &mut Hit, id: PaneId, area: Rect, foc
     match id {
         OvTotals => overview::totals(f, app, area, focused),
         OvTrend => overview::trend(f, app, hit, area, focused),
-        OvActivity => overview::activity(f, app, area, focused),
+        OvActivity => activity::activity(f, app, area, focused),
         OvDist => overview::distribution(f, app, hit, area, focused),
         RtSummary => realtime::summary(f, app, area, focused),
         RtThroughput => realtime::throughput(f, app, hit, area, focused),
@@ -70,7 +71,7 @@ pub fn size(app: &App, id: PaneId, w: u16) -> Size {
     match id {
         OvTotals => Size::exact(overview::totals_lines(app, inner_w).max(1) + 2),
         OvTrend => Size::at_least(9),
-        OvActivity => overview::activity_size(app, w),
+        OvActivity => activity::activity_size(app, w),
         OvDist => table(overview::dist_len(app)),
         RtSummary => Size::exact(realtime::summary_lines(app, inner_w).max(1) + 2),
         RtThroughput => Size::at_least(8),

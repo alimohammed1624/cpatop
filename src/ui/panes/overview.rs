@@ -4,16 +4,16 @@ use super::{
     Series, chart, chart_head, cursor, cursor_time, dim_tabs, frame, placeholder, stale_marker,
     table_in, time_labels,
 };
-use crate::api::models::{Activity, ComparisonItem};
+use crate::api::models::ComparisonItem;
 use crate::app::{App, Hit};
 use crate::fmt;
-use crate::layout::{PaneId, Size};
+use crate::layout::PaneId;
 use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, text};
-use crate::ui::widgets::{self, flow, heat_cell, meter, stat};
+use crate::ui::widgets::{self, flow, meter, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::style::{Modifier, Style};
+use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 use std::collections::HashMap;
 
@@ -41,7 +41,12 @@ fn totals_items(app: &App, width: u16) -> Vec<Vec<Span<'static>>> {
         {
             let mut v = vec![Span::styled("success ", Style::default().fg(t.graph_text))];
             let pct = success.unwrap_or(0.0);
-            v.extend(meter(pct / 100.0, mw, t, Some(t.good_pct(pct, 95.0, 80.0))));
+            v.extend(meter(
+                success.map(|_| pct / 100.0).unwrap_or(f64::NAN),
+                mw,
+                t,
+                Some(t.good_pct(pct, 95.0, 80.0)),
+            ));
             v.push(Span::styled(
                 format!(" {}", success.map(|p| fmt::pct(p, 2)).unwrap_or("-".into())),
                 Style::default().fg(t.title).add_modifier(Modifier::BOLD),
@@ -75,7 +80,13 @@ fn totals_items(app: &App, width: u16) -> Vec<Vec<Span<'static>>> {
         stat(t, "tpm", fmt::compact(s.tpm), None),
         {
             let mut v = vec![Span::styled("cache ", Style::default().fg(t.graph_text))];
-            v.extend(meter(cache.unwrap_or(0.0) / 100.0, mw, t, None));
+            // Cache hits are good: colour the rate like one.
+            v.extend(meter(
+                cache.map(|c| c / 100.0).unwrap_or(f64::NAN),
+                mw,
+                t,
+                cache.map(|c| t.good_pct(c, 80.0, 50.0)),
+            ));
             v.push(Span::styled(
                 format!(" {}", cache.map(|p| fmt::pct(p, 1)).unwrap_or("-".into())),
                 Style::default().fg(t.title).add_modifier(Modifier::BOLD),
@@ -305,367 +316,6 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
             app.settings.graph_symbols,
             true,
         );
-    }
-}
-
-// ------------------------------------------------------------ activity
-
-fn activity_head(app: &App, a: &Activity) -> Vec<Vec<Span<'static>>> {
-    let t = app.theme();
-    let rate = if a.total_success + a.total_failure > 0.0 {
-        fmt::pct(a.success_rate, 1)
-    } else {
-        "--".into()
-    };
-    vec![
-        vec![
-            Span::styled("health ", Style::default().fg(t.graph_text)),
-            Span::styled(
-                rate,
-                Style::default()
-                    .fg(t.good_pct(a.success_rate, 95.0, 80.0))
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ],
-        vec![
-            Span::styled(
-                format!("✓{}", fmt::int(a.total_success)),
-                Style::default().fg(t.ok),
-            ),
-            Span::styled(
-                format!(" ✗{}", fmt::int(a.total_failure)),
-                Style::default().fg(if a.total_failure > 0.0 {
-                    t.err
-                } else {
-                    t.graph_text
-                }),
-            ),
-        ],
-        stat(t, "tokens", fmt::compact(a.total_tokens), None),
-    ]
-}
-
-/// Width of the row-label column of the activity grids.
-const ROW_LABEL: u16 = 8;
-
-pub fn activity_size(app: &App, w: u16) -> Size {
-    let Some(a) = app.data.activity.get() else {
-        return Size::at_least(6);
-    };
-    let head = flow(activity_head(app, a), w.saturating_sub(3), 2).len() as u16;
-    let rows = a.rows.max(1) as u16;
-    // Head, health grid and legend at least; both grids at most.
-    Size::range(head + rows + 1 + 2, head + 2 * rows + 2 + 2)
-}
-
-pub fn activity(f: &mut Frame, app: &App, area: Rect, focused: bool) {
-    let t = app.theme();
-    let l = &app.data.activity;
-    let mut right = stale_marker(app, l);
-    if let Some(a) = l.get()
-        && right.is_empty()
-    {
-        let pat = match a.grain.as_str() {
-            "daily" => "%Y-%m-%d",
-            "long" => "%m-%d",
-            _ => "%m-%d %H:%M",
-        };
-        right.push(Span::styled(
-            format!(
-                "{} → {}",
-                fmt::ts_fmt(&a.window_start, pat),
-                fmt::ts_fmt(&a.window_end, pat)
-            ),
-            Style::default().fg(t.graph_text),
-        ));
-    }
-    let inner = frame(f, app, PaneId::OvActivity, area, focused, right, None);
-    if placeholder(f, app, inner, l) {
-        return;
-    }
-    let Some(a) = l.get() else { return };
-    let head = flow(activity_head(app, a), inner.width.saturating_sub(1), 2);
-    let hh = (head.len() as u16).min(inner.height);
-    f.render_widget(
-        Paragraph::new(head),
-        Rect::new(inner.x + 1, inner.y, inner.width.saturating_sub(1), hh),
-    );
-    let rows = a.rows.max(1) as usize;
-    let cols = a.columns.max(1) as usize;
-    let body = Rect::new(
-        inner.x,
-        inner.y + hh,
-        inner.width,
-        inner.height.saturating_sub(hh),
-    );
-    if body.height < 2 {
-        return;
-    }
-    let now = app.clock.utc();
-    let future: Vec<bool> = a
-        .blocks
-        .iter()
-        .map(|b| fmt::parse_ts(&b.start_time).is_some_and(|s| s.with_timezone(&chrono::Utc) > now))
-        .collect();
-    // Legend takes the last row; grids get the rest. Prefer both grids,
-    // then a title line per grid, then double-height cells.
-    let legend_y = body.bottom() - 1;
-    let grid_h = body.height - 1;
-    let r16 = rows as u16;
-    let (both, titled, rh) = if grid_h >= 2 * (2 * r16 + 1) {
-        (true, true, 2)
-    } else if grid_h >= 4 * r16 {
-        (true, false, 2)
-    } else if grid_h >= 2 * (r16 + 1) {
-        (true, true, 1)
-    } else if grid_h >= 2 * r16 {
-        (true, false, 1)
-    } else if grid_h > 2 * r16 {
-        (false, true, 2)
-    } else {
-        (false, grid_h > r16, 1)
-    };
-    let block_h = (r16 * rh + titled as u16).min(grid_h);
-    heat(
-        f,
-        app,
-        Rect::new(body.x, body.y, body.width, block_h),
-        a,
-        rows,
-        cols,
-        rh,
-        titled,
-        &future,
-        false,
-    );
-    if both {
-        let ty = body.y + block_h;
-        heat(
-            f,
-            app,
-            Rect::new(body.x, ty, body.width, block_h.min(grid_h - block_h)),
-            a,
-            rows,
-            cols,
-            rh,
-            titled,
-            &future,
-            true,
-        );
-    }
-    legend(
-        f,
-        app,
-        a,
-        Rect::new(body.x + 1, legend_y, body.width.saturating_sub(1), 1),
-        both,
-    );
-}
-
-fn legend(f: &mut Frame, app: &App, a: &Activity, area: Rect, tokens: bool) {
-    let t = app.theme();
-    let dim = Style::default().fg(t.graph_text);
-    let key = |c: Color, level: Option<f64>, label: &str| -> Vec<Span<'static>> {
-        let (ch, col) = heat_cell(level, c, t);
-        vec![
-            Span::styled(ch.to_string(), Style::default().fg(col)),
-            Span::styled(format!("{label} "), dim),
-        ]
-    };
-    let mut v = Vec::new();
-    v.extend(key(t.ok, Some(1.0), "ok"));
-    v.extend(key(t.warn, Some(0.66), "65%+"));
-    v.extend(key(t.err, Some(0.33), "<50%"));
-    v.extend(key(t.meter_bg, None, "idle"));
-    if tokens {
-        v.push(Span::styled("tokens ", dim));
-        for k in 0..5 {
-            let lv = k as f64 / 4.0;
-            let (ch, col) = heat_cell(Some(lv), t.gradient(0.15 + lv as f32 * 0.85), t);
-            v.push(Span::styled(ch.to_string(), Style::default().fg(col)));
-        }
-        v.push(Span::styled(" low→high ", dim));
-    }
-    let cell = fmt::secs(a.bucket_seconds);
-    let row = fmt::secs(a.bucket_seconds * a.columns.max(1) as f64);
-    v.push(Span::styled(format!("cell {cell} · row {row}"), dim));
-    let v = super::fit_spans(v, area.width as usize);
-    f.buffer_mut()
-        .set_line(area.x, area.y, &Line::from(v), area.width);
-}
-
-/// Row label: the start time of the first block of each grid row.
-fn row_label(a: &Activity, r: usize, cols: usize) -> String {
-    let Some(b) = a.blocks.get(r * cols) else {
-        return String::new();
-    };
-    match a.grain.as_str() {
-        "short" => fmt::ts_fmt(&b.start_time, "%H:%M"),
-        "medium" => fmt::ts_fmt(&b.start_time, "%a %H"),
-        _ => fmt::ts_fmt(&b.start_time, "%m-%d"),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn heat(
-    f: &mut Frame,
-    app: &App,
-    area: Rect,
-    a: &Activity,
-    rows: usize,
-    cols: usize,
-    rh: u16,
-    titled: bool,
-    future: &[bool],
-    tokens: bool,
-) {
-    let t = app.theme();
-    if area.width < ROW_LABEL + 4 || area.height == 0 {
-        return;
-    }
-    let dim = Style::default().fg(t.graph_text);
-    let title = if tokens { "tokens" } else { "health" };
-    let area = if titled {
-        let what = if tokens {
-            "tokens per cell"
-        } else {
-            "success rate per cell"
-        };
-        f.buffer_mut().set_line(
-            area.x + 1,
-            area.y,
-            &Line::from(vec![
-                Span::styled(
-                    title,
-                    Style::default().fg(t.title).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(format!(" · {what} · rows start at"), dim),
-            ]),
-            area.width.saturating_sub(1),
-        );
-        Rect::new(
-            area.x,
-            area.y + 1,
-            area.width,
-            area.height.saturating_sub(1),
-        )
-    } else {
-        area
-    };
-    let avail = (area.width - ROW_LABEL - 1) as usize;
-    let (cell_w, group) = if avail >= cols * 2 {
-        (2usize, 1usize)
-    } else if avail >= cols {
-        (1, 1)
-    } else {
-        (1, cols.div_ceil(avail.max(1)))
-    };
-    // Log-scaled token levels between P5 and P95 of non-zero blocks.
-    let mut nz: Vec<f64> = a
-        .blocks
-        .iter()
-        .map(|b| b.total_tokens)
-        .filter(|v| *v > 0.0)
-        .collect();
-    nz.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
-    let pick = |q: f64| -> f64 {
-        if nz.is_empty() {
-            1.0
-        } else {
-            nz[((nz.len() - 1) as f64 * q).round() as usize]
-        }
-    };
-    let (lo, hi) = (pick(0.05).max(1.0).ln(), pick(0.95).max(1.0).ln());
-    let buf = f.buffer_mut();
-    for r in 0..rows {
-        let y0 = area.y + r as u16 * rh;
-        if y0 >= area.bottom() {
-            break;
-        }
-        // Row label: the row's start time (the grid name on the first row
-        // when there is no title line).
-        let name_row = !titled && r == 0 && rh == 1;
-        if !titled && r == 0 && rh == 2 {
-            buf.set_string(
-                area.x + 1,
-                y0 + 1,
-                title,
-                Style::default().fg(t.title).add_modifier(Modifier::BOLD),
-            );
-        }
-        let lbl = if name_row {
-            title.to_string()
-        } else {
-            row_label(a, r, cols)
-        };
-        buf.set_string(
-            area.x + 1,
-            y0,
-            fmt::trunc(&lbl, (ROW_LABEL - 1) as usize),
-            if name_row {
-                Style::default().fg(t.title)
-            } else {
-                dim
-            },
-        );
-        let mut x = area.x + ROW_LABEL;
-        let mut c = 0;
-        while c < cols {
-            let (mut s, mut fl, mut tk, mut all_future) = (0.0, 0.0, 0.0, true);
-            for k in c..(c + group).min(cols) {
-                let i = r * cols + k;
-                if let Some(b) = a.blocks.get(i) {
-                    s += b.success;
-                    fl += b.failure;
-                    tk += b.total_tokens;
-                    all_future &= future.get(i).copied().unwrap_or(false);
-                }
-            }
-            c += group;
-            if x >= area.right() {
-                break;
-            }
-            let (ch, color) = if all_future {
-                (' ', t.bg)
-            } else if tokens {
-                if tk <= 0.0 {
-                    heat_cell(None, t.meter_bg, t)
-                } else {
-                    let lv = if hi > lo {
-                        ((tk.ln() - lo) / (hi - lo)).clamp(0.0, 1.0)
-                    } else {
-                        1.0
-                    };
-                    heat_cell(Some(lv), t.gradient(0.15 + lv as f32 * 0.85), t)
-                }
-            } else {
-                match widgets::health_color(t, s, fl) {
-                    Some(col) => {
-                        let rate = s / (s + fl);
-                        if t.no_color {
-                            let ch = if rate >= 0.95 {
-                                '■'
-                            } else if rate >= 0.5 {
-                                '▲'
-                            } else {
-                                '✗'
-                            };
-                            (ch, col)
-                        } else {
-                            ('■', col)
-                        }
-                    }
-                    None => heat_cell(None, t.meter_bg, t),
-                }
-            };
-            for dy in 0..rh {
-                let yy = y0 + dy;
-                if yy < area.bottom() {
-                    buf[(x, yy)].set_char(ch).set_fg(color);
-                }
-            }
-            x += cell_w as u16;
-        }
     }
 }
 

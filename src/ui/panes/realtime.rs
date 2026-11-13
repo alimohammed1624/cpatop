@@ -14,7 +14,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Paragraph, Widget};
 
 fn rt(app: &App) -> Option<&Realtime> {
     app.data.realtime.get()
@@ -90,7 +90,12 @@ fn summary_items(app: &App, width: u16) -> Vec<Vec<Span<'static>>> {
                 "cache reach ",
                 Style::default().fg(t.graph_text),
             )];
-            v.extend(meter(reach.unwrap_or(0.0) / 100.0, mw, t, None));
+            v.extend(meter(
+                reach.map(|r| r / 100.0).unwrap_or(f64::NAN),
+                mw,
+                t,
+                reach.map(|r| t.good_pct(r, 80.0, 50.0)),
+            ));
             v.push(Span::styled(
                 format!(" {}", reach.map(|p| fmt::pct(p, 2)).unwrap_or("-".into())),
                 Style::default().fg(t.title).add_modifier(Modifier::BOLD),
@@ -311,6 +316,12 @@ pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
             Style::default().fg(t.graph_text),
         ),
     ];
+    if t.no_color {
+        head.push(Span::styled(
+            "  █ ok ░ fail",
+            Style::default().fg(t.graph_text),
+        ));
+    }
     if let Some(i) = cur {
         head.push(Span::styled(
             format!("  ▸ {}", cursor_time(&b[i], false)),
@@ -360,16 +371,29 @@ pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
         true,
     );
     if fail.iter().any(|v| *v > 0.0) {
-        f.render_widget(
-            Graph {
-                data: &fail,
-                theme: t,
-                symbols,
-                max: Some(top),
-                color: Some(t.err),
-            },
-            plot,
-        );
+        let g = Graph {
+            data: &fail,
+            theme: t,
+            symbols,
+            max: Some(top),
+            color: Some(t.err),
+        };
+        if t.no_color {
+            // Without colour, failures get their own pattern (░) so they
+            // stay distinguishable from the successful part of each bar.
+            let mut scratch = ratatui::buffer::Buffer::empty(plot);
+            g.render(plot, &mut scratch);
+            let buf = f.buffer_mut();
+            for y in plot.y..plot.bottom() {
+                for x in plot.x..plot.right() {
+                    if scratch[(x, y)].symbol() != " " {
+                        buf[(x, y)].set_char('░');
+                    }
+                }
+            }
+        } else {
+            f.render_widget(g, plot);
+        }
         if let Some(i) = cur {
             widgets::draw_cursor(f.buffer_mut(), plot, i, req.len(), t);
         }

@@ -429,21 +429,26 @@ impl Widget for Scatter<'_> {
 }
 
 /// btop-style meter made of `■` cells. Without colour the empty part uses
-/// `·` so the fill level stays readable.
+/// `·` so the fill level stays readable. `color: None` fills with the
+/// single-hue volume ramp (shares); rates pass their good/bad colour. A
+/// non-finite `frac` means "no data" and draws a neutral dashed track.
 pub fn meter(frac: f64, width: usize, t: &Theme, color: Option<Color>) -> Vec<Span<'static>> {
     if width == 0 {
         return vec![];
     }
-    let frac = if frac.is_finite() {
-        frac.clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
+    if !frac.is_finite() {
+        return vec![Span::styled(
+            "╌".repeat(width),
+            Style::default().fg(t.meter_bg),
+        )];
+    }
+    let frac = frac.clamp(0.0, 1.0);
     let filled = (frac * width as f64).round() as usize;
     let mut out = Vec::with_capacity(width);
     for i in 0..width {
         if i < filled {
-            let c = color.unwrap_or_else(|| t.gradient(i as f32 / (width.max(2) - 1) as f32));
+            let c =
+                color.unwrap_or_else(|| t.ramp(0.25 + 0.75 * i as f32 / (width.max(2) - 1) as f32));
             out.push(Span::styled("■", Style::default().fg(c)));
         } else {
             let empty = if t.no_color { "·" } else { "■" };
@@ -569,6 +574,22 @@ pub fn message(buf: &mut Buffer, area: Rect, text: &str, color: Color) {
     let x = area.x + area.width.saturating_sub(w) / 2;
     let y = area.y + area.height.saturating_sub(1) / 2;
     buf.set_string(x, y, s, Style::default().fg(color));
+}
+
+/// Health cell glyph and colour for a success/failure count (`None` when
+/// there were no requests). Without colour the glyph carries the level:
+/// `■` ≥ 95 %, `▲` ≥ 50 %, `✗` below. Maps and legends both use this.
+pub fn health_glyph(t: &Theme, success: f64, failure: f64) -> Option<(char, Color)> {
+    let c = health_color(t, success, failure)?;
+    let rate = success / (success + failure);
+    let ch = if !t.no_color || rate >= 0.95 {
+        '■'
+    } else if rate >= 0.5 {
+        '▲'
+    } else {
+        '✗'
+    };
+    Some((ch, c))
 }
 
 /// Colour for an activity-health block (success rate with the web thresholds).
