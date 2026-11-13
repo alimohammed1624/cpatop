@@ -156,8 +156,7 @@ shot() {
 
   # Quit like a user would; the server session is logged out in cleanup.
   tmux send-keys -t "$sess" q
-  local i
-  for i in $(seq 1 30); do
+  for _ in $(seq 1 30); do
     tmux has-session -t "$sess" 2>/dev/null || break
     sleep 0.1
   done

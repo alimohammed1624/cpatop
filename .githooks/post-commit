@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# post-commit: on branch main, run scripts/ci.sh for the new commit in the
+# background (detached; the commit and the terminal are not held up). The
+# result goes to <git-common-dir>/cpatop-ci/<sha>.{log,status} and a desktop
+# notification (notify-send, else gdbus); without one, or on FAIL, the next
+# hook prints a one-line result.
+#
+#   CPATOP_SKIP_CI=1       skip this commit
+#   CPATOP_CI_ARGS="..."   flags for ci.sh (default "--mac"; "" = local only)
+#
+# Enable with scripts/setup-hooks.sh.
+
+[ "${CPATOP_SKIP_CI:-}" = 1 ] && exit 0
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+[ -f "$root/scripts/lib.sh" ] && [ -x "$root/scripts/ci.sh" ] || exit 0
+# shellcheck source=scripts/lib.sh
+. "$root/scripts/lib.sh"
+
+ci_announce
+
+branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null) || exit 0
+[ "$branch" = main ] || exit 0
+
+sha=$(git rev-parse HEAD) || exit 0
+# `git commit <paths>` points GIT_INDEX_FILE at a temporary index that is
+# gone once the commit finishes.
+unset GIT_INDEX_FILE
+
+# shellcheck disable=SC2086 # CPATOP_CI_ARGS is a word list
+setsid nohup "$root/scripts/ci.sh" --sha "$sha" --notify ${CPATOP_CI_ARGS---mac} \
+    </dev/null >/dev/null 2>&1 &
+
+echo "cpatop CI: started for ${sha:0:7} in the background (log: $(ci_dir)/$sha.log)" >&2
+exit 0

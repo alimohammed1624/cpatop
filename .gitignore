@@ -27,3 +27,6 @@ api.key
 .vscode/
 *.swp
 .DS_Store
+
+# Release builds (scripts/release.sh)
+/dist/

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# pre-push: when pushing main, require a passing local CI run
+# (scripts/ci.sh) for the commit being pushed.
+#
+#   FAIL                 push refused (see the log)
+#   PASS                 push goes ahead
+#   running or missing   depends on CPATOP_PREPUSH:
+#     wait   (default)   wait for the running CI, or run it now, then decide
+#     warn               print a warning and push anyway
+#     block              refuse the push
+#
+# Bypass once with `git push --no-verify`. Enable with scripts/setup-hooks.sh.
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+[ -f "$root/scripts/lib.sh" ] && [ -x "$root/scripts/ci.sh" ] || exit 0
+# shellcheck source=scripts/lib.sh
+. "$root/scripts/lib.sh"
+
+ci_announce
+
+mode=${CPATOP_PREPUSH:-wait}
+case "$mode" in
+    wait | warn | block) ;;
+    *) echo "pre-push: CPATOP_PREPUSH must be wait, warn or block (got '$mode')" >&2; exit 1 ;;
+esac
+
+zero=0000000000000000000000000000000000000000
+shas=()
+while read -r _lref lsha rref _rsha; do
+    [ "$rref" = refs/heads/main ] || continue
+    [ "$lsha" = "$zero" ] && continue # deleting main
+    shas+=("$lsha")
+done
+
+dir=$(ci_dir)
+rc=0
+for sha in "${shas[@]}"; do
+    short=${sha:0:7}
+    state=$(ci_state "$sha")
+    if [ "$state" = RUNNING ] || [ "$state" = NONE ]; then
+        what="has no local CI result"
+        [ "$state" = RUNNING ] && what="is still running local CI"
+        case "$mode" in
+            warn)
+                echo "pre-push: warning: $short $what; pushing anyway (CPATOP_PREPUSH=warn)" >&2
+                continue
+                ;;
+            block)
+                echo "pre-push: $short $what; push refused (CPATOP_PREPUSH=block)." >&2
+                echo "  run scripts/ci.sh --sha $short, or bypass with git push --no-verify" >&2
+                rc=1
+                continue
+                ;;
+        esac
+        if [ "$state" = RUNNING ]; then
+            echo "pre-push: $short $what; waiting for it (log: $dir/$sha.log, Ctrl-C to abort)..." >&2
+            ci_wait "$sha"
+        else
+            echo "pre-push: $short $what; running scripts/ci.sh now (Ctrl-C to abort)..." >&2
+            "$root/scripts/ci.sh" --sha "$sha" </dev/null >&2
+            # Exit 2 = another run for this commit started meanwhile.
+            ci_wait "$sha"
+        fi
+        state=$(ci_state "$sha")
+    fi
+    case "$state" in
+        PASS)
+            echo "pre-push: $short local CI PASS ($(ci_mode "$sha"))" >&2
+            ;;
+        FAIL)
+            echo "pre-push: $short local CI FAILED; push refused." >&2
+            sed -n '4,$p' "$dir/$sha.status" >&2
+            echo "  log: $dir/$sha.log" >&2
+            echo "  fix it, or bypass with git push --no-verify" >&2
+            rc=1
+            ;;
+        *)
+            echo "pre-push: $short has no local CI result; push refused." >&2
+            rc=1
+            ;;
+    esac
+done
+exit "$rc"

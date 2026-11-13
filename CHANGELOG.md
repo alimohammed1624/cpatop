@@ -174,6 +174,12 @@ fixed in the app; and cpatop tells you when a newer release is out.
   the heatmap ranks model columns by tokens.
 - Without colour (`NO_COLOR`) meters, heat cells and selections stay
   readable (distinct glyphs, reverse video).
+- CI and releases run locally instead of on GitHub Actions:
+  `scripts/ci.sh` (started in the background by a `post-commit` hook on
+  `main`, enforced by a `pre-push` hook) and `scripts/release.sh vX.Y.Z`
+  (Linux builds locally, macOS builds on a Mac over ssh; same assets and
+  `SHA256SUMS` as before). Enable the hooks with `scripts/setup-hooks.sh`.
+  The GitHub workflows now run only when started by hand.
 
 ### Fixed
 - Table sparklines top out at `▇` so bars in neighbouring rows no longer
