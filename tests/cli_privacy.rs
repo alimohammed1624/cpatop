@@ -148,3 +148,71 @@ fn privacy_from_the_config_file_scrubs_too() {
         assert_clean(args, &out);
     }
 }
+
+/// Quoted local parts with escaped quotes and blanks (`"alice \"bob"@…`)
+/// echoed back by argument errors.
+#[test]
+fn privacy_scrubs_escaped_quoted_emails_in_argument_errors() {
+    let home = Scratch::new("quoted");
+    for v in [
+        r#""alice \"bob"@example.org"#,
+        r#""alice \"bob\" smith"@example.org"#,
+        r#"x "alice, bob"@example.org"#,
+    ] {
+        for args in [
+            vec!["--privacy", "--range", v],
+            vec!["--privacy", "--base-url", v],
+            vec!["--privacy", "--theme", "x", v],
+        ] {
+            let (code, out) = run(&home.0, &args);
+            assert_ne!(code, 0, "{args:?}:\n{out}");
+            assert_clean(&args, &out);
+            assert!(!out.contains("smith"), "{args:?}:\n{out}");
+        }
+    }
+}
+
+/// `cpatop --privacy paths` keeps the useful part of each path.
+#[test]
+fn privacy_paths_mask_only_identifying_segments() {
+    let home = Scratch::new("paths");
+    let o = Command::new(env!("CARGO_BIN_EXE_cpatop"))
+        .args(["--privacy", "paths"])
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("XDG_STATE_HOME")
+        .env("HOME", home.0.join("tmp.Zx9Qw8Er7T"))
+        .env("CPATOP_NO_UPDATE_CHECK", "1")
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&o.stdout);
+    assert!(!out.contains("‹key›"), "{out}");
+    assert!(!out.contains("Zx9Qw8Er7T"), "{out}");
+    assert!(out.contains("~/.config/cpatop/config.toml"), "{out}");
+    assert!(out.contains("~/.local/state/cpatop/session.json"), "{out}");
+}
+
+/// A credential file error names the option, and its path only when
+/// privacy is off: no nested `(file (‹path›))`.
+#[test]
+fn credential_file_errors_name_the_option() {
+    let home = Scratch::new("credfile");
+    let (_, out) = run(
+        &home.0,
+        &["--privacy", "--password-file", "/tmp/nope/admin.pw"],
+    );
+    assert!(
+        out.contains("cannot read --password-file: no such file"),
+        "{out}"
+    );
+    assert!(!out.contains("(‹path›)") && !out.contains("nope"), "{out}");
+    let (_, out) = run(&home.0, &["--password-file", "/tmp/nope/admin.pw"]);
+    assert!(
+        out.contains("cannot read --password-file /tmp/nope/admin.pw: no such file"),
+        "{out}"
+    );
+    let (_, out) = run(&home.0, &["--api-key-file", "/tmp/nope/k"]);
+    assert!(
+        out.contains("cannot read --api-key-file /tmp/nope/k"),
+        "{out}"
+    );
+}

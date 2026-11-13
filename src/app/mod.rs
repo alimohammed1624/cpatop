@@ -14,8 +14,8 @@ pub use overlay::{Overlay, PickItem, PickKind, Picker, RangeEditor, Unit};
 pub use privacy::{
     HIDDEN, IP_MASK, PATH_MASK, PROVIDER_ABBREVS, Sensitive, contains_ip, guard_buffer, ident_kind,
     ident_kind_short, is_identifier, is_ip, is_sensitive, looks_like_key, mask_ips, output_privacy,
-    provider_abbrev, raw_ident_name, register_safe_name, scrub, scrub_output, sensitive_spans,
-    set_output_privacy, shown_path, strip_ansi,
+    private_path, provider_abbrev, raw_ident_name, register_safe_name, scrub, scrub_output,
+    sensitive_spans, set_output_privacy, shown_path, strip_ansi,
 };
 pub use server_edit::ServerEdit;
 
@@ -281,6 +281,14 @@ pub struct App {
     /// Privacy mode: spans the render guard masked in the last frame
     /// (should stay 0 — panes replace identifiers themselves).
     pub privacy_guard_hits: Cell<usize>,
+    /// Settings given on the command line for this run only (`--privacy`,
+    /// `--range`, `--theme`, `--symbols`, `--refresh`): while a setting
+    /// still has its command-line value it is saved as it was in
+    /// `saved_ui`, so an override never sticks to the next start; a change
+    /// made in the app is saved as usual.
+    pub cli_overrides: UiState,
+    /// The UI state as loaded at start.
+    pub saved_ui: UiState,
     /// Tag of a newer cpatop release, from the background update check.
     pub update_available: Option<String>,
     /// The "change server URL" field (offline, login and connecting screens).
@@ -377,6 +385,8 @@ impl App {
                 .privacy_salt
                 .unwrap_or_else(|| fastrand::u64(1..=i64::MAX as u64)),
             privacy_guard_hits: Cell::new(0),
+            cli_overrides: UiState::default(),
+            saved_ui: ui.clone(),
             update_available: None,
             server_edit: None,
             server_notice: None,
@@ -441,6 +451,23 @@ impl App {
             pane_order: Some(layout::PANE_ORDER),
             ..Default::default()
         };
+        // Command-line values are for this run only.
+        let (o, s) = (&self.cli_overrides, &self.saved_ui);
+        if o.privacy.is_some() && o.privacy == st.privacy {
+            st.privacy = s.privacy;
+        }
+        if o.range.is_some() && o.range == st.range {
+            st.range = s.range;
+        }
+        if o.theme.is_some() && o.theme == st.theme {
+            st.theme = s.theme.clone();
+        }
+        if o.graph_symbols.is_some() && o.graph_symbols == st.graph_symbols {
+            st.graph_symbols = s.graph_symbols;
+        }
+        if o.refresh_secs.is_some() && o.refresh_secs == st.refresh_secs {
+            st.refresh_secs = s.refresh_secs;
+        }
         for (t, i) in &self.layout_idx {
             st.layout.insert(t.key().into(), *i);
         }

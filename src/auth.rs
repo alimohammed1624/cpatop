@@ -244,7 +244,7 @@ impl AuthManager {
     async fn login_with(&mut self, cred: &Credential) -> Result<(), (String, bool)> {
         self.send(AuthEvent::LoggingIn {
             mode: cred.mode,
-            source: cred.source.to_string(),
+            source: cred.origin(),
         });
         match self.client.login(cred.mode, &cred.secret).await {
             Ok(token) => match self.client.session().await {
@@ -263,7 +263,7 @@ impl AuthManager {
                 )),
                 Err(e) => Err((describe(&e), false)),
             },
-            Err(ApiError::Unauthorized(m)) => Err((format!("{m} (from {})", cred.source), true)),
+            Err(ApiError::Unauthorized(m)) => Err((format!("{m} (from {})", cred.origin()), true)),
             Err(ApiError::RateLimited { retry_after, .. }) => Err((
                 format!(
                     "too many login attempts — try again in {}s",

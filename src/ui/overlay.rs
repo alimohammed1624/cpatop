@@ -134,6 +134,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("t / T", "next / previous theme"),
             ("b", "graph symbols braille / block / ascii"),
             ("x", "privacy: hide e-mails, API keys, IPs"),
+            ("", "and typed input (/ and picker searches)"),
             ("X X", "log out on the server (twice in 3 s)"),
             ("b · ^S", "change server URL (offline · login)"),
             ("?", "this help"),
@@ -402,7 +403,7 @@ pub fn picker(f: &mut Frame, app: &App, hit: &mut Hit, p: &Picker) {
             " › ",
             Style::default().fg(t.hi).add_modifier(Modifier::BOLD),
         ),
-        Span::styled(p.query.clone(), Style::default().fg(t.title)),
+        Span::styled(app.typed(&p.query), Style::default().fg(t.title)),
         Span::styled("█", Style::default().fg(t.hi)),
     ]);
     f.buffer_mut().set_line(inner.x, inner.y, &q, inner.width);
@@ -466,6 +467,17 @@ pub fn picker(f: &mut Frame, app: &App, hit: &mut Hit, p: &Picker) {
     }
 }
 
+/// A range error that quotes what was typed (`"x" is not a date`): the
+/// quoted part hidden like the field itself in privacy mode.
+fn quoted_input(app: &App, e: &str) -> String {
+    match (e.find('"'), e.rfind('"')) {
+        (Some(a), Some(b)) if app.settings.privacy && b > a => {
+            format!("{}{}{}", &e[..a + 1], app.typed_date(&e[a + 1..b]), &e[b..])
+        }
+        _ => e.to_string(),
+    }
+}
+
 pub fn range_editor(f: &mut Frame, app: &App, ed: &RangeEditor) {
     let t = app.theme();
     let area = f.area();
@@ -504,13 +516,13 @@ pub fn range_editor(f: &mut Frame, app: &App, ed: &RangeEditor) {
     let mut lines = vec![
         Line::from(Span::styled(format!(" {fmt_hint}"), dim)),
         Line::from(""),
-        field("start", &ed.start, ed.field == 0),
-        field("end", &ed.end, ed.field == 1),
+        field("start", &app.typed_date(&ed.start), ed.field == 0),
+        field("end", &app.typed_date(&ed.end), ed.field == 1),
         Line::from(""),
     ];
     match &ed.error {
         Some(e) => lines.push(Line::from(Span::styled(
-            format!(" ✗ {e}"),
+            format!(" ✗ {}", quoted_input(app, e)),
             Style::default().fg(t.err).add_modifier(Modifier::BOLD),
         ))),
         None => lines.push(Line::from(Span::styled(format!(" {limit}"), dim))),

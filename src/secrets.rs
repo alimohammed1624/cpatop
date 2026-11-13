@@ -58,7 +58,7 @@ pub enum Source {
 impl std::fmt::Display for Source {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Source::File(p) => write!(f, "file {}", crate::app::shown_path(p)),
+            Source::File(p) => f.write_str(&file_label("file", p)),
             Source::Env(v) => write!(f, "${v}"),
             Source::Keyring => f.write_str("OS keyring"),
             Source::Prompt => f.write_str("login screen"),
@@ -71,6 +71,36 @@ pub struct Credential {
     pub mode: LoginMode,
     pub secret: Secret,
     pub source: Source,
+}
+
+impl Credential {
+    /// Where the credential came from, for messages: `--password-file
+    /// /path/admin.pw` (just `--password-file` in privacy mode),
+    /// `$CPATOP_API_KEY`, `OS keyring`, `login screen`.
+    pub fn origin(&self) -> String {
+        match &self.source {
+            Source::File(p) => file_label(file_flag(self.mode), p),
+            s => s.to_string(),
+        }
+    }
+}
+
+/// The option that names a credential file for a login mode.
+pub fn file_flag(mode: LoginMode) -> &'static str {
+    match mode {
+        LoginMode::Admin => "--password-file",
+        LoginMode::ApiKey => "--api-key-file",
+    }
+}
+
+/// `what` and the file's path, or `what` alone in privacy mode (paths name
+/// users and hosts): `--password-file /home/x/admin.pw`, `--password-file`.
+pub fn file_label(what: &str, path: &Path) -> String {
+    if crate::app::output_privacy() {
+        what.to_string()
+    } else {
+        format!("{what} {}", path.display())
+    }
 }
 
 /// Credentials discovered at startup.
@@ -128,10 +158,10 @@ pub struct ResolveOptions {
 }
 
 /// Read a secret from a file, trimming surrounding whitespace / newline.
-/// `what` names the file in messages (`password file`); its path is shown
-/// as `(‹path›)` in privacy mode.
+/// `what` names the file in messages (`--password-file`); its path follows
+/// it, except in privacy mode (see [`file_label`]).
 pub fn read_secret_file(path: &Path, what: &str) -> Result<(Secret, Option<String>), String> {
-    let shown = crate::app::shown_path(path);
+    let shown = file_label(what, path);
     let raw = std::fs::read_to_string(path).map_err(|e| {
         // The OS message, without anything that could repeat the path.
         let reason = match e.kind() {
@@ -141,14 +171,14 @@ pub fn read_secret_file(path: &Path, what: &str) -> Result<(Secret, Option<Strin
             std::io::ErrorKind::InvalidData => "not UTF-8 text".to_string(),
             _ => crate::app::scrub_output(&e.to_string()),
         };
-        format!("cannot read {what} {shown}: {reason}")
+        format!("cannot read {shown}: {reason}")
     })?;
     let s = raw.trim();
     if s.is_empty() {
-        return Err(format!("{what} {shown} is empty"));
+        return Err(format!("{shown} is empty"));
     }
     if s.len() > 4000 {
-        return Err(format!("{what} {shown} is too large"));
+        return Err(format!("{shown} is too large"));
     }
     let mut warning = None;
     #[cfg(unix)]
@@ -158,7 +188,7 @@ pub fn read_secret_file(path: &Path, what: &str) -> Result<(Secret, Option<Strin
             && meta.permissions().mode() & 0o077 != 0
         {
             warning = Some(format!(
-                "{what} {shown} is readable by other users; consider chmod 600"
+                "{shown} is readable by other users; consider chmod 600"
             ));
         }
     }
@@ -180,14 +210,11 @@ pub fn resolve(opts: &ResolveOptions) -> Result<Credentials, String> {
         ..Default::default()
     };
     for mode in [LoginMode::Admin, LoginMode::ApiKey] {
-        let (file, env, what) = match mode {
-            LoginMode::Admin => (
-                opts.password_file.as_ref(),
-                "CPATOP_PASSWORD",
-                "password file",
-            ),
-            LoginMode::ApiKey => (opts.api_key_file.as_ref(), "CPATOP_API_KEY", "API key file"),
+        let (file, env) = match mode {
+            LoginMode::Admin => (opts.password_file.as_ref(), "CPATOP_PASSWORD"),
+            LoginMode::ApiKey => (opts.api_key_file.as_ref(), "CPATOP_API_KEY"),
         };
+        let what = file_flag(mode);
         let mut found = None;
         if let Some(path) = file {
             let (secret, warning) = read_secret_file(path, what)?;

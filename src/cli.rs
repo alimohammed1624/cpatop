@@ -12,6 +12,9 @@ use std::path::PathBuf;
 /// --password-file / --api-key-file, the CPATOP_PASSWORD / CPATOP_API_KEY
 /// environment variables, the OS keyring (`cpatop keyring set`), or type them
 /// into the login screen.
+///
+/// --theme, --range, --refresh, --symbols and --privacy apply to this run
+/// only; changes made inside the app (t, r, +/-, b, x) are remembered.
 #[derive(Debug, Parser)]
 #[command(name = "cpatop", version, about, long_about)]
 pub struct Cli {
@@ -59,7 +62,8 @@ pub struct Cli {
     #[arg(long, global = true, value_enum, value_name = "KIND")]
     pub symbols: Option<GraphSymbols>,
 
-    /// Hide e-mail addresses, API keys and IP addresses (screenshots, screen sharing)
+    /// Hide e-mail addresses, API keys and IP addresses (screenshots, screen
+    /// sharing), for this run only; `x` in the app toggles it and is remembered
     #[arg(long, global = true)]
     pub privacy: bool,
 

@@ -116,6 +116,37 @@ impl App {
         })
     }
 
+    /// Text the user is typing (a `/` filter, a picker search) or typed
+    /// earlier and shown back (a filter in a pane title). In privacy mode it
+    /// is hidden from the first character — before an `@` is typed a
+    /// half-typed address or key looks like any other word — as bullets
+    /// and a character count: `••••• 5`. Filtering still uses the real text.
+    pub fn typed(&self, s: &str) -> String {
+        if self.settings.privacy {
+            hide_typed(s)
+        } else {
+            s.to_string()
+        }
+    }
+
+    /// A date or time typed into the custom-range editor: in privacy mode
+    /// every character other than digits, `-`, `:`, `.` and blanks is a
+    /// bullet, so dates stay readable while anything else stays hidden.
+    pub fn typed_date(&self, s: &str) -> String {
+        if !self.settings.privacy {
+            return s.to_string();
+        }
+        s.chars()
+            .map(|c| {
+                if c.is_ascii_digit() || matches!(c, '-' | ':' | '.' | ' ') {
+                    c
+                } else {
+                    '•'
+                }
+            })
+            .collect()
+    }
+
     /// An IP address field (`‹ip›` in privacy mode).
     pub fn ip(&self, s: &str) -> String {
         if self.settings.privacy && !s.is_empty() && s != "-" {
@@ -557,6 +588,16 @@ fn key_item_name(i: &ApiKeyItem) -> String {
     }
 }
 
+/// Typed text hidden as bullets (at most eight) and its length in
+/// characters: `••••• 5`; empty stays empty.
+pub fn hide_typed(s: &str) -> String {
+    let n = s.chars().count();
+    if n == 0 {
+        return String::new();
+    }
+    format!("{} {n}", "•".repeat(n.min(8)))
+}
+
 // ---------------------------------------------------------------- detection
 
 /// Whether a string is (or contains) an e-mail address, an API key (in full
@@ -919,17 +960,7 @@ fn sensitive_spans_with(s: &str, long_tokens: bool) -> Vec<(usize, usize, Sensit
             i += 1;
             continue;
         }
-        let mut a = i;
-        // A quoted local part may contain spaces: `"alice smith"@x.org`.
-        if a > 0
-            && chars[a - 1].1 == '"'
-            && let Some(q) = chars[..a - 1].iter().rposition(|c| c.1 == '"')
-        {
-            a = q;
-        }
-        while a > 0 && email_char(chars[a - 1].1) {
-            a -= 1;
-        }
+        let mut a = local_start(&chars, i);
         let mut b = i + 1;
         while b < chars.len() && email_char(chars[b].1) {
             b += 1;
@@ -1028,6 +1059,52 @@ fn sensitive_spans_with(s: &str, long_tokens: bool) -> Vec<(usize, usize, Sensit
         i = j;
     }
     normalize(spans)
+}
+
+/// Characters that end a field whatever the quoting: line breaks and the
+/// non-ASCII drawing characters the UI puts between fields (`│`, `·`, `‹›`).
+fn hard_delimiter(c: char) -> bool {
+    c == '\n' || c == '\r' || (!c.is_whitespace() && !email_char(c))
+}
+
+/// Whether the character at `k` ends an unquoted field: a blank (not
+/// escaped with `\\`) or `,` `;` `<` `>` `[` `]`. Parentheses, braces and `|`
+/// are not: RFC 5322 allows comments `(…)` and `{|}` in local parts.
+fn soft_delimiter(chars: &[(usize, char)], k: usize) -> bool {
+    let c = chars[k].1;
+    (c.is_whitespace() && (k == 0 || chars[k - 1].1 != '\\'))
+        || matches!(c, ',' | ';' | '<' | '>' | '[' | ']')
+}
+
+/// Where the local part of the e-mail address whose `@` is at char index
+/// `at` starts. Without a `"` between the field start and the `@`, the
+/// address starts after the last blank, `,`, `;`, `<`, `>`, `[` or `]`.
+/// With one, quoting is in play — and quoted local parts may hold blanks, commas and
+/// escaped quotes (`"alice \"bob\" smith"@x.org`) — so rather than trust an
+/// escape-aware reading of possibly malformed input, the address is taken
+/// to start at the first `"` of the field (bounded only by line breaks and
+/// drawing characters), plus any unquoted characters glued to it. This
+/// over-masks text that merely precedes a quoted address on the same field;
+/// it never leaves part of the local part visible.
+fn local_start(chars: &[(usize, char)], at: usize) -> usize {
+    // The field: back to a hard delimiter.
+    let mut field = at;
+    while field > 0 && !hard_delimiter(chars[field - 1].1) {
+        field -= 1;
+    }
+    // The unquoted reading: back to a blank or list/bracket character.
+    let mut a = at;
+    while a > field && !soft_delimiter(chars, a - 1) {
+        a -= 1;
+    }
+    let Some(q) = (field..at).find(|k| chars[*k].1 == '"') else {
+        return a;
+    };
+    let mut a = q.min(a);
+    while a > field && !soft_delimiter(chars, a - 1) {
+        a -= 1;
+    }
+    a
 }
 
 /// Sort and merge overlapping spans (the earlier kind wins).
@@ -1158,14 +1235,50 @@ pub fn output_privacy() -> bool {
     OUTPUT_PRIVACY.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// A file path for a message: `(‹path›)` in privacy mode — paths name
+/// A file path for a message: `‹path›` in privacy mode — paths name
 /// users, hosts and sometimes e-mail addresses.
 pub fn shown_path(p: &std::path::Path) -> String {
     if output_privacy() {
-        format!("({PATH_MASK})")
+        PATH_MASK.to_string()
     } else {
         p.display().to_string()
     }
+}
+
+/// A path for `cpatop paths` in privacy mode: the home directory reads
+/// `~`, the user-name segment of any other home directory (`/home/x`,
+/// `/Users/x`) `‹user›`, and any segment holding an e-mail address, key
+/// or IP address `‹path›`; the rest (`.config/cpatop/config.toml`) stays,
+/// so the output is still useful.
+pub fn private_path(p: &std::path::Path, home: Option<&std::path::Path>) -> String {
+    use std::path::Component;
+    let (rest, mut out) = match home.filter(|h| !h.as_os_str().is_empty()) {
+        Some(h) if p.starts_with(h) => (p.strip_prefix(h).unwrap_or(p), "~".to_string()),
+        _ => (p, String::new()),
+    };
+    let mut prev = String::new();
+    for c in rest.components() {
+        let seg = c.as_os_str().to_string_lossy().into_owned();
+        let shown = match c {
+            Component::RootDir => {
+                out.push('/');
+                continue;
+            }
+            Component::Normal(_)
+                if matches!(prev.as_str(), "home" | "Users") && out == format!("/{prev}") =>
+            {
+                "‹user›".to_string()
+            }
+            Component::Normal(_) if !sensitive_spans(&seg).is_empty() => PATH_MASK.to_string(),
+            _ => seg.clone(),
+        };
+        if !out.is_empty() && !out.ends_with('/') {
+            out.push('/');
+        }
+        out.push_str(&shown);
+        prev = seg;
+    }
+    out
 }
 
 /// Text about to be printed: in privacy mode without terminal escape
@@ -1417,6 +1530,103 @@ mod privacy_tests {
                 assert!(!row.contains(frag), "guard {input:?} -> {row:?}");
             }
         }
+    }
+
+    /// Quoted local parts with escaped quotes, blanks and list characters
+    /// (P1): no word of the local part or the domain survives, whatever
+    /// precedes the address and however the quoting is (mis)formed.
+    #[test]
+    fn quoted_local_parts_with_escapes_never_leak() {
+        let a = app();
+        for text in [
+            r#""alice \"bob"@example.org"#,
+            r#""alice \"bob\" smith"@example.org"#,
+            r#"filter "alice \"bob\" smith"@example.org, retry"#,
+            r#"--range "alice \"bob"@example.org"#,
+            r#"invalid value '"alice \"bob\" smith"@example.org' for '--range'"#,
+            r#""alice,bob;smith"@example.org"#,
+            r#""alice\\"@example.org"#,
+            r#"\"alice bob"@example.org"#,
+            r#""alice" bob"@example.org"#,
+            r#"x "alice (bob) <smith>"@example.org y"#,
+            r#"alice\ bob@example.org"#,
+            r#"alice(bob)smith@example.org"#,
+            r#"to: "alice @ bob"@example.org"#,
+            "│ \"alice \\\"bob\"@example.org │",
+        ] {
+            let out = [a.privacy_text(text), scrub(text)];
+            let mut buf = Buffer::empty(ratatui::layout::Rect::new(0, 0, 100, 1));
+            buf.set_string(0, 0, text, ratatui::style::Style::default());
+            guard_buffer(&mut buf);
+            let row: String = (0..100).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+            for o in out.iter().chain([&row]) {
+                for frag in ["alice", "bob", "smith", "example"] {
+                    assert!(!o.contains(frag), "{text:?} -> {o:?} leaks {frag:?}");
+                }
+            }
+        }
+        // Fuzz: random words joined by blanks, escaped quotes, escaped
+        // backslashes, commas and brackets inside a quoted local part,
+        // after random text.
+        let mut r = Rng(0x51ed_270b_9a3c_4f11);
+        for _ in 0..5000 {
+            let n = 1 + r.below(4);
+            let mut words = vec![];
+            let mut local = String::new();
+            for i in 0..n {
+                let w = r.word("klmnopqrstuvw", 5, 8);
+                if i > 0 {
+                    local.push_str(r.pick(&[
+                        " ", "\\\"", " \\\" ", "\\\\", ",", "(", ") ", "<", "@", "  ",
+                    ]));
+                }
+                local.push_str(&w);
+                words.push(w);
+            }
+            if r.below(3) == 0 {
+                local.push_str(r.pick(&["\\\"", "\\\\", " "]));
+            }
+            let pre = r.pick(&[
+                "", "filter ", "x: ", "\"", "a \"b\" ", "to <", "(", "[", "--range ",
+            ]);
+            let post = r.pick(&["", " retry", ">", ", next", "'"]);
+            let text = format!("{pre}\"{local}\"@example.org{post}");
+            let mut buf = Buffer::empty(ratatui::layout::Rect::new(0, 0, 160, 1));
+            buf.set_string(0, 0, &text, ratatui::style::Style::default());
+            guard_buffer(&mut buf);
+            let row: String = (0..160).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+            for o in [a.privacy_text(&text), scrub(&text), row] {
+                for w in words.iter().map(String::as_str).chain(["example"]) {
+                    assert!(!o.contains(w), "{text:?} -> {o:?} leaks {w:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn paths_mask_only_identifying_segments() {
+        use std::path::Path;
+        let home = Path::new("/tmp/tmp.VMXveRdbhA/home");
+        assert_eq!(
+            private_path(&home.join(".config/cpatop/config.toml"), Some(home)),
+            "~/.config/cpatop/config.toml"
+        );
+        assert_eq!(
+            private_path(
+                Path::new("/home/alice/.local/state/cpatop/s.json"),
+                Some(home)
+            ),
+            "/home/‹user›/.local/state/cpatop/s.json"
+        );
+        assert_eq!(
+            private_path(Path::new("/Users/bob/x"), None),
+            "/Users/‹user›/x"
+        );
+        assert_eq!(
+            private_path(Path::new("/srv/alice@example.org/10.0.0.1/cfg"), None),
+            "/srv/‹path›/‹path›/cfg"
+        );
+        assert_eq!(private_path(Path::new("/etc/cpatop"), None), "/etc/cpatop");
     }
 
     #[test]

@@ -1,7 +1,9 @@
 use clap::Parser;
 use cpatop::api::client::normalize_base_url;
 use cpatop::api::{ApiError, Client, LoginMode};
-use cpatop::app::{App, output_privacy, scrub_output, set_output_privacy, shown_path};
+use cpatop::app::{
+    App, output_privacy, private_path, scrub_output, set_output_privacy, shown_path,
+};
 use cpatop::cli::{Cli, Command, KeyringAction};
 use cpatop::config::{DEFAULT_BASE_URL, FileConfig, Paths, Settings, UiState};
 use cpatop::secrets::{self, ResolveOptions, Secret};
@@ -274,15 +276,19 @@ fn run() -> Result<(), CliError> {
             return Ok(());
         }
         Some(Command::Paths) => {
-            let show = |p: Option<std::path::PathBuf>| {
-                p.map(|p| p.display().to_string())
-                    .unwrap_or_else(|| "(unavailable)".into())
+            // In privacy mode each path is masked segment by segment
+            // (`~/.config/cpatop/…`), not scrubbed whole as free text.
+            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            let show = |p: Option<std::path::PathBuf>| match p {
+                Some(p) if output_privacy() => private_path(&p, home.as_deref()),
+                Some(p) => p.display().to_string(),
+                None => "(unavailable)".into(),
             };
-            out(format!("config file : {}", show(config_path.clone())));
-            out(format!("ui state    : {}", show(paths.ui_state_file())));
-            out(format!("themes dir  : {}", show(paths.themes_dir())));
-            out(format!("session     : {}", show(paths.session_file())));
-            out(format!("update cache: {}", show(paths.update_cache_file())));
+            println!("config file : {}", show(config_path.clone()));
+            println!("ui state    : {}", show(paths.ui_state_file()));
+            println!("themes dir  : {}", show(paths.themes_dir()));
+            println!("session     : {}", show(paths.session_file()));
+            println!("update cache: {}", show(paths.update_cache_file()));
             return Ok(());
         }
         Some(Command::CheckUpdate) => {
@@ -430,7 +436,17 @@ fn run() -> Result<(), CliError> {
         std::env::var_os("CI").as_deref(),
     );
 
+    // Command-line values apply to this run only; they are not saved.
+    let cli_overrides = cpatop::config::UiState {
+        privacy: cli.privacy.then_some(true),
+        range: cli.range.map(|_| settings.range),
+        theme: cli.theme.as_ref().map(|_| settings.theme.clone()),
+        graph_symbols: cli.symbols.map(|_| settings.graph_symbols),
+        refresh_secs: cli.refresh.map(|_| settings.refresh_secs),
+        ..Default::default()
+    };
     let mut app = App::new(settings, themes, &ui_state);
+    app.cli_overrides = cli_overrides;
     app.warnings = warnings;
 
     let rt = tokio::runtime::Builder::new_multi_thread()

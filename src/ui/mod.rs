@@ -493,10 +493,16 @@ fn tab_window(widths: &[u16], active: usize, avail: u16) -> (usize, usize) {
 fn filter_prompt(f: &mut Frame, app: &App, id: PaneId) {
     let t = app.theme();
     let area = f.area();
+    // In privacy mode the text is hidden as it is typed (see App::typed).
+    let hint = if app.settings.privacy {
+        "Enter keep · Esc clear · input hidden in privacy mode"
+    } else {
+        "Enter keep · Esc clear"
+    };
     let text = format!(
-        " filter {}: {}█  (Enter keep · Esc clear) ",
+        " filter {}: {}█  ({hint}) ",
         layout::pane_def(id).2.name,
-        app.table(id).filter
+        app.typed(&app.table(id).filter)
     );
     let w = (fmt::width(&text) as u16).min(area.width);
     let r = Rect::new(area.x, area.bottom() - 1, w, 1);

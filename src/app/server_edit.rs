@@ -51,16 +51,19 @@ impl ServerEdit {
     }
 }
 
-/// The typed URL as shown in privacy mode: the scheme, `:port` and `/` stay,
-/// every other character (host, IP, user, path) becomes `•`. One character
-/// per character typed, so the cursor stays put.
+/// The typed URL as shown in privacy mode, consistent with the header: the
+/// scheme, a host name and the `:port` stay readable (`http://localhost:1`)
+/// so the field can be edited; an IP literal (or anything that may become
+/// one: digits, dots, hex and colons), user info, an e-mail-like part and
+/// the path become `•` (`/` kept). One character per character typed, so
+/// the cursor stays put.
 pub fn privacy_echo(s: &str) -> String {
     let bullets = |t: &str| "•".repeat(t.chars().count());
     let (scheme, rest) = match s.find("://") {
         Some(i) if s[..i].chars().all(|c| c.is_ascii_alphabetic()) => s.split_at(i + 3),
         _ => ("", s),
     };
-    let auth_end = rest.find('/').unwrap_or(rest.len());
+    let auth_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let (auth, path) = rest.split_at(auth_end);
     let port_at = auth.rfind(':').filter(|&i| {
         let host = &auth[..i];
@@ -71,11 +74,31 @@ pub fn privacy_echo(s: &str) -> String {
         Some(i) => auth.split_at(i),
         None => (auth, ""),
     };
+    let host = if host_in_clear(host) {
+        host.to_string()
+    } else {
+        bullets(host)
+    };
     let path: String = path
         .chars()
         .map(|c| if c == '/' { '/' } else { '•' })
         .collect();
-    format!("{scheme}{}{port}{path}", bullets(host))
+    format!("{scheme}{host}{port}{path}")
+}
+
+/// Whether a typed host can be shown: a host name (letters, digits, `-`,
+/// `.`) with a letter that is not a hex digit — so no IPv4 or IPv6 literal,
+/// finished or half-typed — without user info or `@`, and nothing the
+/// privacy detector flags.
+fn host_in_clear(host: &str) -> bool {
+    !host.is_empty()
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+        && host
+            .chars()
+            .any(|c| c.is_ascii_alphabetic() && !c.is_ascii_hexdigit())
+        && !crate::app::is_sensitive(host)
 }
 
 impl App {
@@ -224,14 +247,27 @@ mod tests {
             privacy_echo("http://127.0.0.1:8318"),
             "http://•••••••••:8318"
         );
+        // Host names and ports read like the header; paths do not.
         assert_eq!(
             privacy_echo("https://keeper.example/sub"),
-            "https://••••••••••••••/•••"
+            "https://keeper.example/•••"
         );
+        assert_eq!(privacy_echo("http://localhost:1"), "http://localhost:1");
+        assert_eq!(privacy_echo("localhost:8318/a?k=1"), "localhost:8318/•••••");
         assert_eq!(privacy_echo("10.0.0.1"), "••••••••");
         assert_eq!(privacy_echo("http://[::1]:8318"), "http://•••••:8318");
         assert_eq!(privacy_echo("http://u:pw@h"), "http://••••••");
+        assert_eq!(
+            privacy_echo("http://alice@example.org:8318"),
+            "http://•••••••••••••••••:8318"
+        );
         assert_eq!(privacy_echo("fe80::1"), "•••••••");
+        // Half-typed addresses never show: `10.`, `fe80`, `2001:db8`.
+        assert_eq!(privacy_echo("http://10."), "http://•••");
+        assert_eq!(privacy_echo("http://10.0.0"), "http://••••••");
+        assert_eq!(privacy_echo("fe80"), "••••");
+        assert_eq!(privacy_echo("2001:db8"), "••••••••");
+        assert_eq!(privacy_echo("http://[fe80"), "http://•••••");
         for s in ["http://127.0.0.1:8318", "x.example/a/b", "http://h:1/"] {
             assert_eq!(privacy_echo(s).chars().count(), s.chars().count(), "{s}");
         }

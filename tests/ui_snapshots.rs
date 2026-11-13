@@ -332,6 +332,22 @@ fn privacy_masks_the_server_url_field() {
     assert_private(&s, "server field");
     assert!(s.contains("http://•••••••••:8318/••••••••••"), "{s}");
     assert_eq!(app.privacy_guard_hits.get(), 0, "masked before the guard");
+    // A host name and port stay readable, as in the header (P3); the
+    // path and user info do not.
+    app.on_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+    for c in "http://localhost:1/keeper-tst".chars() {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    let s = render(&mut app, 80, 24);
+    assert_private(&s, "server field host");
+    assert!(s.contains("http://localhost:1/••••••••••"), "{s}");
+    app.on_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+    for c in "http://dem@localhost:1".chars() {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    let s = render(&mut app, 80, 24);
+    assert_private(&s, "server field user info");
+    assert!(s.contains("http://•••••••••••••:1"), "{s}");
     // The saved-confirmation names no directories.
     app.server_edit = None;
     app.on_server_saved(Ok("/home/dem/.config/cpatop/config.toml".into()));
@@ -1296,4 +1312,123 @@ fn short_panes_collapse_instead_of_drawing_empty_boxes() {
             }
         }
     }
+}
+
+/// What P2 types character by character; no prefix of it may show.
+const TYPED: &[&str] = &[
+    r#""alice \"bob"@example.org"#,
+    r#""alice \"bob\" smith"@example.org"#,
+    "alice/bob",
+    "abcdefghijklmnopqrst",
+    "10.0.0.5",
+];
+
+/// Whether a rendered screen shows any part of a typed prefix that the
+/// screen before typing (`base`) did not: a run of three or more letters,
+/// or the start of an IP address.
+fn shows_typed(screen: &str, base: &str, prefix: &str) -> Option<String> {
+    for run in prefix.split(|c: char| !c.is_ascii_alphabetic()) {
+        for w in 3..=run.len() {
+            for i in 0..=run.len() - w {
+                let frag = &run[i..i + w];
+                // Short runs only count once they are distinctive.
+                if (w >= 4 || ["ali", "bob", "smi", "exa"].contains(&frag))
+                    && screen.contains(frag)
+                    && !base.contains(frag)
+                {
+                    return Some(frag.to_string());
+                }
+            }
+        }
+    }
+    if prefix.starts_with("10.0") && screen.contains("10.0") && !base.contains("10.0") {
+        return Some(prefix.into());
+    }
+    None
+}
+
+/// In privacy mode, `/` filters and picker searches are hidden from the
+/// first character typed (P2): render after every keystroke.
+#[test]
+fn privacy_hides_typed_input_at_every_keystroke() {
+    use crossterm::event::KeyCode;
+    for text in TYPED {
+        // `/` in the focused table of each tab.
+        for tab in [Tab::Overview, Tab::Credentials, Tab::Models] {
+            let mut app = populated(Role::Admin);
+            app.settings.privacy = true;
+            render_tab(&mut app, tab, 120, 30);
+            for _ in 0..8 {
+                press(&mut app, KeyCode::Char('/'));
+                if matches!(app.mode, cpatop::app::InputMode::Filter(_)) {
+                    break;
+                }
+                press(&mut app, KeyCode::Char('f'));
+            }
+            assert!(
+                matches!(app.mode, cpatop::app::InputMode::Filter(_)),
+                "no table to filter on {tab:?}"
+            );
+            let base = render(&mut app, 120, 30);
+            let mut typed = String::new();
+            for c in text.chars() {
+                press(&mut app, KeyCode::Char(c));
+                typed.push(c);
+                let s = render(&mut app, 120, 30);
+                assert!(
+                    s.contains("input hidden in privacy mode"),
+                    "{tab:?} prompt:\n{s}"
+                );
+                if let Some(f) = shows_typed(&s, &base, &typed) {
+                    panic!("{tab:?} filter {typed:?} shows {f:?}:\n{s}");
+                }
+            }
+            // Kept filter: the pane title shows bullets and a count.
+            press(&mut app, KeyCode::Enter);
+            let s = render(&mut app, 120, 30);
+            assert!(shows_typed(&s, &base, text).is_none(), "{tab:?} kept:\n{s}");
+            assert!(
+                s.contains(&format!("/•••••••• {}", text.chars().count())),
+                "{tab:?} title:\n{s}"
+            );
+        }
+        // The API-key picker's search.
+        let mut app = populated(Role::Admin);
+        app.settings.privacy = true;
+        render_tab(&mut app, Tab::Overview, 120, 30);
+        press(&mut app, KeyCode::Char('a'));
+        assert!(app.overlay.is_some(), "key picker did not open");
+        let bases = [render(&mut app, 120, 30), render(&mut app, 50, 12)];
+        let mut typed = String::new();
+        for c in text.chars() {
+            press(&mut app, KeyCode::Char(c));
+            typed.push(c);
+            for ((w, h), base) in [(120, 30), (50, 12)].into_iter().zip(&bases) {
+                let s = render(&mut app, w, h);
+                if let Some(f) = shows_typed(&s, base, &typed) {
+                    panic!("picker {typed:?} at {w}x{h} shows {f:?}:\n{s}");
+                }
+            }
+        }
+    }
+}
+
+/// `--privacy` from the command line is not saved; `x` in the app is (P4).
+#[test]
+fn command_line_privacy_is_not_persisted() {
+    use crossterm::event::KeyCode;
+    let mut app = new_app();
+    app.settings.privacy = true;
+    app.cli_overrides.privacy = Some(true);
+    assert_eq!(app.ui_state().privacy, None, "nothing saved before");
+    app.saved_ui.privacy = Some(false);
+    assert_eq!(app.ui_state().privacy, Some(false), "saved value kept");
+    // Toggling in the app is a choice to remember.
+    let mut app = populated(Role::Admin);
+    app.settings.privacy = true;
+    app.cli_overrides.privacy = Some(true);
+    render(&mut app, 80, 24);
+    press(&mut app, KeyCode::Char('x'));
+    assert!(!app.settings.privacy);
+    assert_eq!(app.ui_state().privacy, Some(false));
 }

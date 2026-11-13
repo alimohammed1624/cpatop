@@ -161,7 +161,7 @@ pub fn frame(
                 right.push(Span::styled(" ", Style::default()));
             }
             right.push(Span::styled(
-                format!("/{}", st.filter),
+                format!("/{}", app.typed(&st.filter)),
                 Style::default().fg(t.hi).add_modifier(Modifier::BOLD),
             ));
         }
@@ -559,7 +559,7 @@ pub fn table_in(
         let msg = if st.filter.is_empty() {
             empty.to_string()
         } else {
-            format!("no rows match /{}", st.filter)
+            format!("no rows match /{}", app.typed(&st.filter))
         };
         widgets::message(f.buffer_mut(), inner, &msg, app.theme().graph_text);
         return;
