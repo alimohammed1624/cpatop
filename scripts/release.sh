@@ -78,11 +78,13 @@ main() {
     sha=$(git rev-parse HEAD)
     check "$([ "$branch" = main ] && echo 1 || echo 0)" "not on main (on $branch)"
     check "$([ -z "$(git status --porcelain)" ] && echo 1 || echo 0)" "work tree is not clean"
-    if git fetch --quiet "$remote" main 2>/dev/null; then
-        check "$([ "$sha" = "$(git rev-parse FETCH_HEAD)" ] && echo 1 || echo 0)" \
-            "HEAD ${sha:0:7} is not $remote/main ($(git rev-parse --short FETCH_HEAD)); push main first"
+    local remote_main
+    remote_main=$(git ls-remote "$remote" refs/heads/main 2>/dev/null | cut -f1)
+    if [ -n "$remote_main" ]; then
+        check "$([ "$sha" = "$remote_main" ] && echo 1 || echo 0)" \
+            "HEAD ${sha:0:7} is not $remote main (${remote_main:0:7}); push main first"
     else
-        check 0 "could not fetch $remote main"
+        check 0 "could not read main from $remote"
     fi
     cargo_version=$(git show "$sha:Cargo.toml" | sed -n 's/^version = "\(.*\)"$/\1/p' | head -n1)
     check "$([ "$version" = "$cargo_version" ] && echo 1 || echo 0)" \
