@@ -2,7 +2,6 @@
 //! (The `Esc`-quits bug would have been caught here.)
 
 use chrono::{DateTime, Utc};
-use cpatop::api::models::*;
 use cpatop::api::{LoginMode, Role};
 use cpatop::app::{App, Effect, Overlay, PickKind, ResultFilter, Screen};
 use cpatop::auth::{AuthCmd, AuthEvent};
