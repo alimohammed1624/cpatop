@@ -271,9 +271,10 @@ fn rolling_label(a: &Activity, off: chrono::FixedOffset) -> Option<String> {
     if secs <= 0 || (secs == D && s.time() == chrono::NaiveTime::MIN) {
         return None;
     }
-    let half = (a.bucket_seconds / 2.0).max(1.0) as i64;
-    let days = (secs + half) / D;
-    Some(if days >= 2 && (secs - days * D).abs() <= half {
+    // The window is cut to whole blocks and to the range: within a few
+    // hours of N days it reads as N×24h.
+    let days = (secs + D / 2) / D;
+    Some(if days >= 2 && (secs - days * D).abs() <= D / 8 {
         format!("rolling {days}×24h")
     } else {
         format!("rolling {}h", (secs + 1800) / 3600)
@@ -536,7 +537,9 @@ pub fn activity(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         let text = match (parse(&a.window_start), parse(&a.window_end)) {
             // Cropped to the selected range: the range, then the server's
             // window, so it is clear the server answered for a longer span.
-            (Some(_), Some(_)) if cropped.is_some() => {
+            // (A server window as long as the range, only offset from it,
+            // gets the dates below instead of `7d · server window 7d`.)
+            (Some(_), Some(_)) if cropped.is_some_and(|c| c != app.range.label()) => {
                 let server = cropped.unwrap_or_default();
                 let range = app.range.label();
                 if area.width >= 50 {
@@ -869,6 +872,25 @@ mod tests {
         let (c, server) = crop(&day24, rs, re).unwrap();
         assert_eq!(server, "24h");
         assert_eq!(c.window_start, "2026-11-13T14:00:00+05:30");
+    }
+
+    #[test]
+    fn a_rolling_window_says_so() {
+        let off: chrono::FixedOffset = "+05:30".parse().unwrap();
+        let a = |s: &str, e: &str| Activity {
+            window_start: s.into(),
+            window_end: e.into(),
+            bucket_seconds: 3600.0,
+            ..Default::default()
+        };
+        // A week cut to the range, a few minutes short.
+        let w = a("2026-11-07T03:39:00+05:30", "2026-11-14T03:25:00+05:30");
+        assert_eq!(rolling_label(&w, off).as_deref(), Some("rolling 7×24h"));
+        let d = a("2026-11-13T03:00:00+05:30", "2026-11-14T03:00:00+05:30");
+        assert_eq!(rolling_label(&d, off).as_deref(), Some("rolling 24h"));
+        // A whole local day is not rolling.
+        let t = a("2026-11-14T00:00:00+05:30", "2026-11-15T00:00:00+05:30");
+        assert_eq!(rolling_label(&t, off), None);
     }
 
     #[test]

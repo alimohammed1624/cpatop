@@ -228,8 +228,13 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
             // of the day (00:30 at +05:30; see help, "reading the numbers").
             let cut = (*daily)
                 .then(|| {
-                    let (start, _) = app.range.bounds(app.server_now());
-                    crate::series::utc_hour_cut(start)
+                    let now = app.server_now();
+                    let midnight = now
+                        .date_naive()
+                        .and_time(chrono::NaiveTime::MIN)
+                        .and_local_timezone(*now.offset())
+                        .single()?;
+                    crate::series::utc_hour_cut(midnight)
                 })
                 .flatten()
                 .filter(|_| area.width >= 70)
