@@ -2,7 +2,7 @@
 source: tests/ui_snapshots.rs
 expression: s
 ---
- cpatop ⌂ localhost:8318 │ key #1 dem… │ ◷ today │ ↻ 0s ago │ ● ok       ? help
+ cpatop ⌂ localhost:8318 │ key #1 dem… │ ◷ today │ ⟳ 10s │ ↻ 0s │ ● ok   ? help
 ─┤ Overview ├┤ Realtime ├┤ Analysis ├───────────────────────── layout balanced ─
 ╭─¹ totals ──────────────────────────────────────────────────────────── today ─╮
 │ requests 1,268   ✓ 1,229  ✗ 39   success ■■■■■■■■ 96.92%   tokens 132M       │

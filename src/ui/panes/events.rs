@@ -175,9 +175,10 @@ fn event_fields(app: &App, e: &UsageEvent, key: &str, source: &str) -> Vec<(&'st
     v
 }
 
-/// Lines of the detail pane at an inner width (fields wrap when narrow).
-pub fn detail_lines(width: u16) -> u16 {
-    if width >= TWO_COLUMNS {
+/// Lines of the detail pane at an inner width (fields wrap when narrow),
+/// plus two for the error text of a failed request.
+pub fn detail_lines(app: &App, width: u16) -> u16 {
+    let base = if width >= TWO_COLUMNS {
         4
     } else if width >= 76 {
         8
@@ -185,7 +186,100 @@ pub fn detail_lines(width: u16) -> u16 {
         10
     } else {
         12
+    };
+    let failed = app
+        .live
+        .selected
+        .as_ref()
+        .and_then(|id| app.live.events.iter().find(|e| &e.id == id))
+        .is_some_and(|e| e.failed);
+    base + if failed { 2 } else { 0 }
+}
+
+/// The readable part of an upstream error body: `type: message` of a JSON
+/// error (`{"error":{"type":…,"message":…}}`), else the body as it is.
+fn error_text(body: &str) -> String {
+    let body = body.replace(['\n', '\r'], " ");
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(body.trim()) else {
+        return body;
+    };
+    let err = v.get("error").filter(|e| e.is_object()).unwrap_or(&v);
+    let s = |k: &str| {
+        err.get(k)
+            .and_then(|x| x.as_str())
+            .filter(|x| !x.is_empty())
+    };
+    match (s("type").or(s("status")).or(s("code")), s("message")) {
+        (Some(t), Some(m)) => format!("{t}: {m}"),
+        (None, Some(m)) => m.to_string(),
+        _ => body,
     }
+}
+
+/// The error line of a failed request: the text its credential's error log
+/// has for it (scrubbed in privacy mode, cut to two lines of `width`), or
+/// why there is none.
+fn error_line(app: &App, e: &UsageEvent, width: usize) -> Option<Line<'static>> {
+    if !e.failed {
+        return None;
+    }
+    let t = app.theme();
+    let key = Span::styled("error ", Style::default().fg(t.graph_text));
+    let note = |s: &str| Span::styled(s.to_string(), Style::default().fg(t.graph_text));
+    if app.role != Some(crate::api::Role::Admin) {
+        return None;
+    }
+    let Some(ident) = app.identity_for(e.auth_index.as_deref().unwrap_or("")) else {
+        return Some(Line::from(vec![
+            key,
+            note("not recorded (unknown credential)"),
+        ]));
+    };
+    let slot = app
+        .data
+        .identity_errors
+        .as_ref()
+        .filter(|(id, _)| *id == ident.id)
+        .map(|(_, l)| l);
+    let body = match slot {
+        Some(l) => match (&l.data, &l.error) {
+            (Some(errs), _) => match crate::app::match_error(e, &errs.events) {
+                Some(x) => {
+                    let mut text = app.privacy_text(&error_text(&x.body_summary));
+                    if x.body_truncated {
+                        text.push('…');
+                    }
+                    let mut v = vec![
+                        key,
+                        Span::styled(
+                            format!("HTTP {} ", x.status_code),
+                            Style::default().fg(t.err),
+                        ),
+                    ];
+                    if let Some(c) = x.code.as_deref().filter(|c| !c.is_empty()) {
+                        v.push(note(&format!("({}) ", app.privacy_text(c))));
+                    }
+                    let head: usize = v.iter().map(|s| s.width()).sum();
+                    // Two lines at most (wrapping loses a few cells at
+                    // word breaks).
+                    let room = (width * 2).saturating_sub(head + 8).max(20);
+                    v.push(Span::styled(
+                        fmt::trunc(&text, room),
+                        Style::default().fg(t.title),
+                    ));
+                    return Some(Line::from(v));
+                }
+                None => note("not in the credential's recent error log"),
+            },
+            (None, Some(err)) => Span::styled(
+                format!("✗ {}", app.privacy_text(err)),
+                Style::default().fg(t.err),
+            ),
+            (None, None) => note("loading…"),
+        },
+        None => note("loading…"),
+    };
+    Some(Line::from(vec![key, body]))
 }
 
 pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
@@ -211,7 +305,8 @@ pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
                 .as_deref()
                 .map(|k| app.key_name_by_label(k))
                 .unwrap_or("-".into());
-            let source = app.credential_name(e.auth_index.as_deref().unwrap_or(""), &e.source);
+            let (source, source_short) =
+                app.credential_labels(e.auth_index.as_deref().unwrap_or(""), &e.source);
             let result = if e.failed {
                 Span::styled(
                     format!("✗ {}", e.status_code.unwrap_or(0)),
@@ -239,7 +334,12 @@ pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
                     text(&e.timestamp),
                 )
                 .text(key.clone(), text(&key))
-                .text(source.clone(), text(&source))
+                .name(
+                    source.clone(),
+                    source_short,
+                    Style::default(),
+                    text(&source),
+                )
                 .text(model.clone(), text(&model))
                 .text(
                     e.reasoning_effort.clone().unwrap_or("-".into()),
@@ -451,6 +551,8 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             v(fmt::trunc(&app.user_agent(&opt(&e.user_agent)), 80)),
         ]),
     ];
+    // A failed request's error text, right under its result.
+    let error = error_line(app, e, inner.width.saturating_sub(1) as usize);
     let body = Rect::new(
         inner.x + 1,
         inner.y,
@@ -485,7 +587,19 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             buf.set_line(body.x, y, &fit(l, lw), lw as u16);
             buf.set_line(rx, y, &fit(r, rw), rw as u16);
         }
+        // The error text spans the full width below the two columns.
+        if let Some(l) = error {
+            let y = body.y + 4;
+            if y < body.bottom() {
+                let rest = Rect::new(body.x, y, body.width, body.bottom() - y);
+                f.render_widget(Paragraph::new(l).wrap(Wrap { trim: true }), rest);
+            }
+        }
         return;
+    }
+    let mut lines = lines;
+    if let Some(l) = error {
+        lines.insert(2, l);
     }
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), body);
 }
@@ -494,3 +608,25 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
 const TWO_COLUMNS: u16 = 150;
 const DETAIL_GAP: usize = 4;
 const MIN_RIGHT: usize = 60;
+
+#[cfg(test)]
+mod tests {
+    use super::error_text;
+
+    #[test]
+    fn json_error_bodies_read_as_type_and_message() {
+        assert_eq!(
+            error_text(
+                r#"{"type":"error","error":{"type":"rate_limit_error","message":"slow down"},"request_id":"x"}"#
+            ),
+            "rate_limit_error: slow down"
+        );
+        assert_eq!(error_text(r#"{"message":"bad"}"#), "bad");
+        assert_eq!(error_text("context canceled"), "context canceled");
+        // Cut-off JSON stays as it is.
+        assert_eq!(
+            error_text(r#"{"error":{"message":"cut"#),
+            r#"{"error":{"message":"cut"#
+        );
+    }
+}

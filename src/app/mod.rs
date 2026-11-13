@@ -8,11 +8,12 @@ mod messages;
 pub mod overlay;
 mod privacy;
 
-pub use live::{EventFilters, LiveState, LiveStatus, ResultFilter};
+pub use live::{EventFilters, LiveState, LiveStatus, ResultFilter, match_error};
 pub use overlay::{Overlay, PickItem, PickKind, Picker, RangeEditor, Unit};
 pub use privacy::{
-    HIDDEN, IP_MASK, Sensitive, contains_ip, guard_buffer, ident_kind, is_identifier, is_ip,
-    is_sensitive, looks_like_key, mask_ips, raw_ident_name, scrub, sensitive_spans,
+    HIDDEN, IP_MASK, PROVIDER_ABBREVS, Sensitive, contains_ip, guard_buffer, ident_kind,
+    ident_kind_short, is_identifier, is_ip, is_sensitive, looks_like_key, mask_ips,
+    provider_abbrev, raw_ident_name, scrub, sensitive_spans,
 };
 
 use crate::api::models::*;
@@ -230,6 +231,9 @@ pub struct App {
     pub hidden: HashMap<Tab, Vec<PaneId>>,
     pub focus: HashMap<Tab, PaneId>,
     pub dims: HashMap<PaneId, usize>,
+    /// Dimensions restored from the state file that the first data has not
+    /// confirmed yet (see [`App::settle_dims`]).
+    pub dims_unchecked: Vec<PaneId>,
     /// Graph cursor (bucket index) per graph pane.
     pub cursor: HashMap<PaneId, usize>,
     pub mode: InputMode,
@@ -274,14 +278,15 @@ pub struct App {
 pub fn dims_for(id: PaneId, role: Option<Role>) -> &'static [&'static str] {
     let admin = role == Some(Role::Admin);
     match (id, admin) {
-        (PaneId::OvDist, true) => &["models", "api keys", "credentials", "providers"],
+        // "AI providers" are the server's API-key provider credentials.
+        (PaneId::OvDist, true) => &["models", "api keys", "credentials", "AI providers"],
         // A key viewer sees one key: an "api keys" dimension adds nothing.
         (PaneId::OvDist, false) => &["models"],
-        (PaneId::RtShare, true) => &["models", "api keys", "credentials", "providers"],
+        (PaneId::RtShare, true) => &["models", "api keys", "credentials", "AI providers"],
         (PaneId::RtShare, false) => &["models"],
         // Models already have their own pane on the Analysis tab, so the
         // composition starts on credentials.
-        (PaneId::AnComposition, true) => &["credentials", "api keys", "providers", "models"],
+        (PaneId::AnComposition, true) => &["credentials", "api keys", "AI providers", "models"],
         (PaneId::AnComposition, false) => &["models"],
         _ => &[],
     }
@@ -324,6 +329,7 @@ impl App {
             hidden: HashMap::new(),
             focus: HashMap::new(),
             dims: HashMap::new(),
+            dims_unchecked: Vec::new(),
             cursor: HashMap::new(),
             mode: InputMode::Normal,
             overlay: None,
@@ -388,6 +394,9 @@ impl App {
         for (k, v) in &ui.dims {
             if let Some(id) = pane_from_key(k, order) {
                 self.dims.insert(id, *v);
+                if *v != 0 {
+                    self.dims_unchecked.push(id);
+                }
             }
         }
     }
@@ -465,6 +474,66 @@ impl App {
     pub fn dim(&self, id: PaneId) -> usize {
         let n = dims_for(id, self.role).len().max(1);
         self.dims.get(&id).copied().unwrap_or(0) % n
+    }
+
+    /// Rows a multi-dimension table has in dimension `dim`, once its data
+    /// is loaded.
+    pub fn dim_len(&self, id: PaneId, dim: usize) -> Option<usize> {
+        let name = *dims_for(id, self.role).get(dim)?;
+        let d = &self.data;
+        match id {
+            PaneId::OvDist => {
+                let c = d.comparisons.get()?;
+                Some(match name {
+                    "models" => c.models.len(),
+                    "api keys" => c.api_keys.len(),
+                    "credentials" => c.credentials.len(),
+                    _ => c.ai_providers.len(),
+                })
+            }
+            PaneId::RtShare => {
+                let u = &d.realtime.get()?.current_usage;
+                Some(match name {
+                    "models" => u.models.len(),
+                    "api keys" => u.api_keys.len(),
+                    "credentials" => u.credentials.len(),
+                    _ => u.ai_providers.len(),
+                })
+            }
+            PaneId::AnComposition => {
+                let a = d.analysis.get()?;
+                Some(match name {
+                    "models" => a.model_composition.len(),
+                    "api keys" => a.api_key_composition.len(),
+                    "credentials" => a.credentials_composition.len(),
+                    _ => a.ai_provider_composition.len(),
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// A dimension restored at startup that turns out empty while the
+    /// pane's first dimension has rows (no API-key AI providers on this
+    /// server) falls back to the first one, so a start never opens on an
+    /// empty table. Checked once per pane, when its data has loaded.
+    pub fn settle_dims(&mut self) {
+        let mut changed = false;
+        let pending = std::mem::take(&mut self.dims_unchecked);
+        for id in pending {
+            let cur = self.dim(id);
+            match (self.dim_len(id, cur), self.dim_len(id, 0)) {
+                (None, _) | (_, None) => self.dims_unchecked.push(id),
+                (Some(0), Some(n)) if n > 0 && cur != 0 => {
+                    self.dims.insert(id, 0);
+                    changed = true;
+                }
+                _ => {}
+            }
+        }
+        if changed {
+            self.effects.push(Effect::SaveState);
+        }
     }
 
     pub fn tabs(&self) -> &'static [Tab] {
@@ -621,6 +690,42 @@ impl App {
                 if kind == "codex" || kind == "claude" {
                     self.effects
                         .push(Effect::Fetch(Command::QuotaHistory { auth_index: idx }));
+                }
+            }
+        }
+        // A failed request's error text comes from its credential's error
+        // log: fetch it when such a request is selected (again for another
+        // request, so errors logged since are found).
+        if self.tab == Tab::Events
+            && let Some(id) = self.hit.selected.get(&PaneId::EvLog).cloned()
+            && self.live.selected.as_deref() != Some(id.as_str())
+        {
+            self.live.selected = Some(id.clone());
+            let cred = self
+                .live
+                .events
+                .iter()
+                .find(|e| e.id == id && e.failed)
+                .and_then(|e| self.identity_for(e.auth_index.as_deref().unwrap_or("")))
+                .map(|i| i.id.clone());
+            if let Some(cid) = cred {
+                // Loading already, or loaded with this request's error.
+                let have = self.data.identity_errors.as_ref().is_some_and(|(c, l)| {
+                    *c == cid
+                        && match l.get() {
+                            None => l.error.is_none(),
+                            Some(errs) => self
+                                .live
+                                .events
+                                .iter()
+                                .find(|e| e.id == id)
+                                .is_some_and(|e| live::match_error(e, &errs.events).is_some()),
+                        }
+                });
+                if !have {
+                    self.data.identity_errors = Some((cid.clone(), Loaded::default()));
+                    self.effects
+                        .push(Effect::Fetch(Command::IdentityErrors { id: cid }));
                 }
             }
         }

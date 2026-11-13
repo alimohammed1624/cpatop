@@ -45,6 +45,24 @@ fn price(v: f64) -> String {
     format!("${s}")
 }
 
+/// Price branches and conditional multipliers, as the web UI's
+/// "<b> branches · <c> conditions": only the kinds a model has, `—` for a
+/// flat price.
+fn rules_label(branches: usize, conditions: usize) -> String {
+    let mut parts = Vec::new();
+    if branches > 0 {
+        parts.push(fmt::plural(branches, "branch", "branches"));
+    }
+    if conditions > 0 {
+        parts.push(fmt::plural(conditions, "condition", "conditions"));
+    }
+    if parts.is_empty() {
+        "—".into()
+    } else {
+        parts.join(" · ")
+    }
+}
+
 pub fn pricing(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
     let l = &app.data.pricing;
@@ -64,7 +82,7 @@ pub fn pricing(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         return;
     }
     let Some(p) = l.get() else { return };
-    let rows = p
+    let mut rows: Vec<TRow> = p
         .models
         .iter()
         .map(|m| {
@@ -90,24 +108,28 @@ pub fn pricing(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
                 .text(price(b.cache_write), num(b.cache_write))
                 .text(format!("×{}", m.model_multiplier), num(m.model_multiplier))
                 .text(
-                    // Price branches and conditional multipliers, as the
-                    // web UI's "<b> branches · <c> conditions".
-                    format!(
-                        "{} · {}",
-                        fmt::plural(m.branches.len(), "branch", "branches"),
-                        fmt::plural(m.conditional_multipliers.len(), "condition", "conditions")
-                    ),
+                    rules_label(m.branches.len(), m.conditional_multipliers.len()),
                     num((m.branches.len() + m.conditional_multipliers.len()) as f64),
                 )
                 .filter(m.model.clone())
                 .details(vec![
                     ("style", app.privacy(&m.pricing_style)),
                     ("multiplier", format!("×{}", m.model_multiplier)),
-                    ("price rule details", rules.join(" · ")),
+                    (
+                        "price rules",
+                        if rules.is_empty() {
+                            "none (flat prices)".into()
+                        } else {
+                            rules.join(" · ")
+                        },
+                    ),
                     ("prices", "USD per 1M tokens".into()),
                 ])
         })
         .collect();
+    // Without any branched or conditional price the rules column is only
+    // dashes: it takes no width.
+    let cols = crate::ui::table::drop_blank_cols(&price_cols(inner.width), &mut rows, &[7]);
     table_in(
         f,
         app,
@@ -115,7 +137,7 @@ pub fn pricing(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         PaneId::MoPricing,
         inner,
         focused,
-        &price_cols(inner.width),
+        &cols,
         rows,
         "no model prices configured",
     );
@@ -346,7 +368,14 @@ fn recalc_text(app: &App) -> Vec<Line<'static>> {
 
 #[cfg(test)]
 mod tests {
-    use super::provider_of;
+    use super::{provider_of, rules_label};
+
+    #[test]
+    fn flat_prices_have_no_rules() {
+        assert_eq!(rules_label(0, 0), "—");
+        assert_eq!(rules_label(2, 0), "2 branches");
+        assert_eq!(rules_label(1, 1), "1 branch · 1 condition");
+    }
 
     #[test]
     fn providers() {

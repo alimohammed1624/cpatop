@@ -103,19 +103,24 @@ fn dashboard(f: &mut Frame, app: &App, hit: &mut Hit) {
 /// How far the header has been squeezed to fit (see [`header_segments`]).
 /// Each level keeps everything the previous one dropped out and gives up one
 /// more thing, least useful first.
-const HEADER_LEVELS: u8 = 9;
+const HEADER_LEVELS: u8 = 10;
+
+/// Header cadence of tabs refreshed only on demand (`R`), and its short
+/// form for narrow terminals.
+const MANUAL: &str = "manual (R)";
+const MANUAL_SHORT: &str = "manual";
 
 /// The header's segments at a squeeze level: 0 is everything in full; then
-/// the refresh cadence goes, the host goes, the age loses "ago", a key
-/// viewer's key is named by its number only, the age goes, the update badge
-/// shrinks to `↑` (it never goes), then the role, the range and the key
-/// filter.
+/// the age loses "ago", `manual (R)` shortens to `manual`, the refresh
+/// cadence goes, the host goes, a key viewer's key is named by its number
+/// only, the age goes, the update badge shrinks to `↑` (it never goes),
+/// then the role, the range and the key filter.
 fn header_segments(app: &App, level: u8) -> Vec<Vec<Span<'static>>> {
     let t = app.theme();
     let dim = Style::default().fg(t.graph_text);
     let val = Style::default().fg(t.title);
     let mut segs: Vec<Vec<Span<'static>>> = Vec::new();
-    if level < 2 {
+    if level < 4 {
         segs.push(vec![
             Span::styled("⌂ ", dim),
             Span::styled(app.host_label(), val),
@@ -129,12 +134,12 @@ fn header_segments(app: &App, level: u8) -> Vec<Vec<Span<'static>>> {
         .unwrap_or_default();
     let role = match app.role {
         Some(Role::Admin) => "admin".to_string(),
-        Some(Role::KeyViewer) if level >= 4 => format!("key #{key_id}"),
+        Some(Role::KeyViewer) if level >= 5 => format!("key #{key_id}"),
         Some(Role::KeyViewer) if app.settings.privacy => app.session_key_name(),
         Some(Role::KeyViewer) => format!("key {}", app.session_key_name()),
         None => "-".into(),
     };
-    if level < 7 {
+    if level < 8 {
         segs.push(vec![Span::styled(
             role,
             Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
@@ -145,11 +150,11 @@ fn header_segments(app: &App, level: u8) -> Vec<Vec<Span<'static>>> {
         layout::Tab::Credentials | layout::Tab::Quota | layout::Tab::Models => "all time".into(),
         _ => app.range.label(),
     };
-    if level < 8 {
+    if level < 9 {
         segs.push(vec![Span::styled("◷ ", dim), Span::styled(range, val)]);
     }
     if let Some(k) = &app.api_key
-        && level < 9
+        && level < 10
     {
         segs.push(vec![
             Span::styled("⚿ ", dim),
@@ -166,16 +171,17 @@ fn header_segments(app: &App, level: u8) -> Vec<Vec<Span<'static>>> {
         }
         Cadence::Every(d) => format!("{}s", d.as_secs()),
         Cadence::Live => "live".into(),
-        Cadence::OnDemand => "on R".into(),
+        Cadence::OnDemand if level >= 2 => MANUAL_SHORT.into(),
+        Cadence::OnDemand => MANUAL.into(),
     };
-    if level < 1 {
+    if level < 3 {
         segs.push(vec![Span::styled("⟳ ", dim), Span::styled(cadence, val)]);
     }
     let at = app.last_update();
     let age = at
         .map(|at| {
             let a = fmt::age(app.now().saturating_duration_since(at).as_secs());
-            if level < 3 { a + " ago" } else { a }
+            if level < 1 { a + " ago" } else { a }
         })
         .unwrap_or_else(|| "—".into());
     let age_style = if app.is_stale(at).is_some() {
@@ -183,14 +189,14 @@ fn header_segments(app: &App, level: u8) -> Vec<Vec<Span<'static>>> {
     } else {
         val
     };
-    if level < 5 {
+    if level < 6 {
         segs.push(vec![Span::styled("↻ ", dim), Span::styled(age, age_style)]);
     }
     // A newer cpatop release (details in the help overlay): shortened when
     // space is short, never hidden.
     if let Some(tag) = &app.update_available {
         let badge = Style::default().fg(t.ok).add_modifier(Modifier::BOLD);
-        segs.push(if level < 6 {
+        segs.push(if level < 7 {
             vec![
                 Span::styled("↑ ", badge),
                 Span::styled(format!("v{}", crate::update::display_version(tag)), badge),

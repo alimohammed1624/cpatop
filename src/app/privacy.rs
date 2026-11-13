@@ -253,10 +253,17 @@ impl App {
     /// it: the same account on several providers gets ` · claude`,
     /// ` · codex`…, and `#id` when even that is not unique.
     pub fn ident_label(&self, i: &Identity) -> String {
+        self.ident_labels(i).0
+    }
+
+    /// [`App::ident_label`] and its compact form, where the provider suffix
+    /// is abbreviated (`account-1 · ag`) so the account name itself never
+    /// has to be cut. Both are the same when there is no suffix.
+    pub fn ident_labels(&self, i: &Identity) -> (String, String) {
         let base = raw_ident_name(i);
         let name = self.account(base);
         let Some(page) = self.data.identities.get() else {
-            return name;
+            return (name.clone(), name);
         };
         let same: Vec<&Identity> = page
             .identities
@@ -264,22 +271,35 @@ impl App {
             .filter(|o| raw_ident_name(o) == base)
             .collect();
         if same.len() <= 1 {
-            return name;
+            return (name.clone(), name);
         }
         let kind = ident_kind(i);
+        let short = ident_kind_short(i);
         if same.iter().filter(|o| ident_kind(o) == kind).count() > 1 {
-            format!("{name} · {kind} #{}", i.id)
+            (
+                format!("{name} · {kind} #{}", i.id),
+                format!("{name} · {short} #{}", i.id),
+            )
         } else {
-            format!("{name} · {kind}")
+            (format!("{name} · {kind}"), format!("{name} · {short}"))
         }
     }
 
     /// Name for a credential known by a usage key and server label.
     pub fn credential_name(&self, key: &str, label: &str) -> String {
+        self.credential_labels(key, label).0
+    }
+
+    /// [`App::credential_name`] and its compact form (see
+    /// [`App::ident_labels`]).
+    pub fn credential_labels(&self, key: &str, label: &str) -> (String, String) {
         match self.identity_for(key) {
-            Some(i) => self.ident_label(i),
-            None if label.is_empty() || label == "-" => label.to_string(),
-            None => self.account(label),
+            Some(i) => self.ident_labels(i),
+            None if label.is_empty() || label == "-" => (label.to_string(), label.to_string()),
+            None => {
+                let n = self.account(label);
+                (n.clone(), n)
+            }
         }
     }
 
@@ -363,6 +383,52 @@ pub fn ident_kind(i: &Identity) -> String {
         format!("{} (api)", i.kind)
     } else {
         i.kind.clone()
+    }
+}
+
+/// [`ident_kind`] abbreviated (`cl`, `cx api`), for names in tight columns.
+pub fn ident_kind_short(i: &Identity) -> String {
+    let k = provider_abbrev(&i.kind);
+    if i.auth_type == 2 {
+        format!("{k} api")
+    } else {
+        k
+    }
+}
+
+/// Known provider types and their two-letter abbreviations (shown in the
+/// help overlay).
+pub const PROVIDER_ABBREVS: &[(&str, &str)] = &[
+    ("claude", "cl"),
+    ("codex", "cx"),
+    ("antigravity", "ag"),
+    ("gemini", "gm"),
+    ("gemini-cli", "gc"),
+    ("vertex", "vx"),
+    ("aistudio", "as"),
+    ("openai", "oa"),
+    ("openai-compatibility", "oc"),
+    ("qwen", "qw"),
+    ("iflow", "if"),
+    ("kimi", "km"),
+    ("xai", "xa"),
+];
+
+/// A provider type's abbreviation: from [`PROVIDER_ABBREVS`], else short
+/// names as they are and the first three letters of longer ones (never two
+/// letters, so they cannot be mistaken for a known provider).
+pub fn provider_abbrev(kind: &str) -> String {
+    let k = kind.trim();
+    if let Some((_, a)) = PROVIDER_ABBREVS
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(k))
+    {
+        return (*a).to_string();
+    }
+    if k.chars().count() <= 4 {
+        k.to_string()
+    } else {
+        k.chars().take(3).collect()
     }
 }
 

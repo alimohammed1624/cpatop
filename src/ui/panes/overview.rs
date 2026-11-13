@@ -372,15 +372,20 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
     let rows: Vec<TRow> = items
         .iter()
         .map(|i| {
-            let name = match dim {
-                1 => app.key_name(&i.key, &i.label),
-                2 => app.credential_name(&i.key, &i.label),
-                _ => app.privacy(&i.label),
+            let (name, short) = match dim {
+                1 => (app.key_name(&i.key, &i.label), String::new()),
+                2 => app.credential_labels(&i.key, &i.label),
+                _ => (app.privacy(&i.label), String::new()),
+            };
+            let short = if short.is_empty() {
+                name.clone()
+            } else {
+                short
             };
             let share = fmt::ratio_pct(i.total_tokens, total).unwrap_or(0.0);
             let cache = fmt::ratio_pct(i.cache_read_tokens, i.input_tokens);
             TRow::new(i.key.clone())
-                .text(name.clone(), text(&name))
+                .name(name.clone(), short, Style::default(), text(&name))
                 .styled(
                     fmt::compact(i.total_tokens),
                     Style::default().fg(t.title),
@@ -457,7 +462,7 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
         focused,
         &DIST_COLS,
         rows,
-        "no usage in this range",
+        &super::empty_dim_text(app, PaneId::OvDist, "no usage in this range"),
         &chart_for,
     );
 }

@@ -157,6 +157,18 @@ impl Cell {
         }
     }
 
+    /// Width this cell needs at the least without being cut: its narrowest
+    /// alternative (a name's compact form), else what it would like.
+    fn need(&self) -> usize {
+        match self {
+            Cell::Choice(alts) => alts
+                .last()
+                .map(|s| s.iter().map(|x| x.width()).sum())
+                .unwrap_or(0),
+            c => c.want(),
+        }
+    }
+
     /// Width this cell would like.
     fn want(&self) -> usize {
         match self {
@@ -253,6 +265,22 @@ impl TRow {
     /// Append a cell made of spans.
     pub fn spans(mut self, spans: Vec<Span<'static>>, key: SortKey) -> TRow {
         self.cells.push(Cell::Spans(spans));
+        self.sort.push(key);
+        self
+    }
+    /// Append a name with a compact form (`account-1 · antigravity`,
+    /// `account-1 · ag`): the full name where the column has room for every
+    /// row's, the compact one otherwise.
+    pub fn name(mut self, full: String, short: String, style: Style, key: SortKey) -> TRow {
+        if full == short {
+            self.cells
+                .push(Cell::Spans(vec![Span::styled(full, style)]));
+        } else {
+            self.cells.push(Cell::Choice(vec![
+                vec![Span::styled(full, style)],
+                vec![Span::styled(short, style)],
+            ]));
+        }
         self.sort.push(key);
         self
     }
@@ -396,12 +424,22 @@ pub fn order(mut rows: Vec<TRow>, st: &TableState) -> Vec<TRow> {
 
 /// Longest content per column (header included).
 pub fn content_widths(cols: &[Col], rows: &[TRow]) -> Vec<usize> {
+    widths_by(cols, rows, Cell::want)
+}
+
+/// Width per column below which some cell is cut even in its narrowest
+/// form (header included).
+fn need_widths(cols: &[Col], rows: &[TRow]) -> Vec<usize> {
+    widths_by(cols, rows, Cell::need)
+}
+
+fn widths_by(cols: &[Col], rows: &[TRow], w: fn(&Cell) -> usize) -> Vec<usize> {
     cols.iter()
         .enumerate()
         .map(|(i, c)| {
             rows.iter()
                 .filter_map(|r| r.cells.get(i))
-                .map(Cell::want)
+                .map(w)
                 .max()
                 .unwrap_or(0)
                 .max(fmt::width(&c.title) + 1)
@@ -444,6 +482,12 @@ pub struct Placed {
 
 /// Choose which columns fit and their widths (see the module docs).
 pub fn fit(cols: &[Col], content: &[usize], width: u16) -> Vec<Placed> {
+    fit_needs(cols, content, content, width)
+}
+
+/// [`fit`], where `need` is the width below which a column's cells are cut
+/// (names with a compact form need only that).
+pub fn fit_needs(cols: &[Col], content: &[usize], need: &[usize], width: u16) -> Vec<Placed> {
     let mut keep: Vec<usize> = (0..cols.len()).collect();
     let total = |k: &[usize]| -> u16 {
         k.iter().map(|i| cols[*i].width).sum::<u16>() + k.len().saturating_sub(1) as u16
@@ -475,13 +519,14 @@ pub fn fit(cols: &[Col], content: &[usize], width: u16) -> Vec<Placed> {
         // text column is cut (names: at all — the cut part is what tells
         // `account-12 · codex` from `account-14 · codex`; other text by
         // several characters), drop optional columns (priority 4 and up).
+        // Names with a compact form (`account-12 · cx`) need only that.
         let starved = placed.iter().any(|p| {
             let c = &cols[p.col];
             let slack = if c.mid { 0 } else { 3 };
             c.prio == 0
                 && !c.grow
                 && c.align == Align::Left
-                && content.get(p.col).copied().unwrap_or(0) as u16 > p.width + slack
+                && need.get(p.col).copied().unwrap_or(0) as u16 > p.width + slack
         });
         if starved && drop_one(&mut keep, 4) {
             continue;
@@ -669,7 +714,7 @@ pub fn render(
         return area;
     }
     let content = content_widths(cols, rows);
-    let layout = fit(cols, &content, area.width);
+    let layout = fit_needs(cols, &content, &need_widths(cols, rows), area.width);
     // Header.
     let hs = Style::default().fg(t.title).add_modifier(Modifier::BOLD);
     for p in &layout {
@@ -784,15 +829,29 @@ pub fn render(
         buf.set_string(x, area.bottom(), s, Style::default().fg(t.graph_text));
         right_edge = x;
     }
-    // The selected row's full name when its name column is cut, on the
-    // bottom border (right-aligned, at most half the width).
+    // The selected row's full name when its name column is cut or shows
+    // the compact form, on the bottom border (right-aligned); the compact
+    // form when only that fits there and the column cuts it. Nothing when
+    // the border would only repeat what the row shows.
+    let join = |v: &[Span<'static>]| v.iter().map(|s| s.content.as_ref()).collect::<String>();
     if focused
         && area.bottom() < buf.area.bottom()
         && let Some(p) = layout.iter().find(|p| cols[p.col].mid)
-        && let Some(Cell::Spans(sp)) = rows.get(sel).and_then(|r| r.cells.get(p.col))
+        && let Some(cell) = rows.get(sel).and_then(|r| r.cells.get(p.col))
     {
-        let full: String = sp.iter().map(|s| s.content.as_ref()).collect();
-        if fmt::width(&full) > p.width as usize {
+        let (forms, shown): (Vec<String>, usize) = match cell {
+            Cell::Spans(sp) => (vec![join(sp)], 0),
+            Cell::Choice(alts) => (
+                alts.iter().map(|a| join(a)).collect(),
+                level[p.col].min(alts.len().saturating_sub(1)),
+            ),
+            _ => (vec![], 0),
+        };
+        let full = forms.first().cloned().unwrap_or_default();
+        let cut = forms
+            .get(shown)
+            .is_some_and(|s| fmt::width(s) > p.width as usize);
+        if !full.is_empty() && (shown > 0 || cut) {
             // Free border to the right of whatever the frame drew there
             // (key hints on the left).
             let y = area.bottom();
@@ -802,9 +861,23 @@ pub fn render(
                 .map(|x| x + 2)
                 .unwrap_or(area.x + 1);
             let room = right_edge.saturating_sub(used) as usize;
-            let s = fmt::trunc_mid(&format!(" ▸ {full} "), room);
-            let w = fmt::width(&s) as u16;
-            if w > 6 {
+            let pick = forms
+                .iter()
+                .enumerate()
+                .find(|(_, f)| fmt::width(f) + 4 <= room);
+            let s = match pick {
+                Some((k, f)) if k < shown || cut => Some(format!(" ▸ {f} ")),
+                Some(_) => None,
+                None if cut => Some(fmt::trunc_mid(
+                    &format!(" ▸ {} ", forms.last().unwrap_or(&full)),
+                    room,
+                )),
+                None => None,
+            };
+            let w = s.as_deref().map(fmt::width).unwrap_or(0) as u16;
+            if let Some(s) = s
+                && w > 6
+            {
                 buf.set_string(
                     right_edge.saturating_sub(w),
                     area.bottom(),
@@ -914,6 +987,19 @@ mod tests {
     }
 
     #[test]
+    fn compact_names_spare_optional_columns() {
+        let cols = [
+            flex("name", 12),
+            col("tokens", 7, Align::Right, 0),
+            col("plan", 6, Align::Left, 5),
+        ];
+        // Full names 23 wide, compact 14: the plan column stays.
+        let f = fit_needs(&cols, &[23, 6, 5], &[14, 6, 5], 30);
+        assert_eq!(f.iter().map(|p| p.col).collect::<Vec<_>>(), vec![0, 1, 2]);
+        assert!(f[0].width >= 14);
+    }
+
+    #[test]
     fn meters_absorb_the_rest() {
         let cols = [
             flex("name", 8),
@@ -993,5 +1079,96 @@ mod selection_tests {
         );
         assert!(buf[(0, 1)].modifier.contains(Modifier::REVERSED));
         assert!(!buf[(0, 2)].modifier.contains(Modifier::REVERSED));
+    }
+
+    fn row_text(buf: &Buffer, y: u16) -> String {
+        (0..buf.area.width)
+            .map(|x| buf[(x, y)].symbol().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn names_go_compact_before_they_are_cut() {
+        let t = Theme::default();
+        let cols = [flex("name", 6), col("n", 3, Align::Right, 0)];
+        let rows = vec![
+            TRow::new("a")
+                .name(
+                    "account-1 · antigravity".into(),
+                    "account-1 · ag".into(),
+                    Style::default(),
+                    text("a"),
+                )
+                .text("1", num(1.0)),
+            TRow::new("b")
+                .name(
+                    "account-2".into(),
+                    "account-2".into(),
+                    Style::default(),
+                    text("b"),
+                )
+                .text("2", num(2.0)),
+        ];
+        let st = TableState::default();
+        let mut buf = Buffer::empty(Rect::new(0, 0, 40, 5));
+        render(
+            &mut buf,
+            Rect::new(0, 0, 20, 3),
+            &t,
+            &cols,
+            &rows,
+            &st,
+            true,
+        );
+        assert!(
+            row_text(&buf, 1).starts_with("account-1 · ag "),
+            "{}",
+            row_text(&buf, 1)
+        );
+        assert!(row_text(&buf, 2).starts_with("account-2 "));
+        // No room on the border for the full name: it would only repeat
+        // the row.
+        assert!(!row_text(&buf, 3).contains('▸'), "{}", row_text(&buf, 3));
+        // A wider table whose name column is still narrow: the border
+        // names the selected row in full.
+        let wide = [
+            flex("name", 6),
+            col("n", 3, Align::Right, 0),
+            col("x", 12, Align::Left, 0),
+        ];
+        let rows: Vec<TRow> = rows.into_iter().map(|r| r.text("", text(""))).collect();
+        let mut buf = Buffer::empty(Rect::new(0, 0, 40, 5));
+        render(
+            &mut buf,
+            Rect::new(0, 0, 32, 3),
+            &t,
+            &wide,
+            &rows,
+            &st,
+            true,
+        );
+        assert!(
+            row_text(&buf, 1).starts_with("account-1 · ag "),
+            "{}",
+            row_text(&buf, 1)
+        );
+        assert!(
+            row_text(&buf, 3).contains("▸ account-1 · antigravity "),
+            "{}",
+            row_text(&buf, 3)
+        );
+        // With room, every name is shown in full.
+        let mut buf = Buffer::empty(Rect::new(0, 0, 40, 5));
+        render(
+            &mut buf,
+            Rect::new(0, 0, 40, 3),
+            &t,
+            &cols,
+            &rows,
+            &st,
+            true,
+        );
+        assert!(row_text(&buf, 1).starts_with("account-1 · antigravity "));
+        assert!(!row_text(&buf, 3).contains('▸'));
     }
 }

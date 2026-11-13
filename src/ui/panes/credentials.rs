@@ -17,6 +17,14 @@ pub(super) fn ident_name(app: &App, i: &Identity) -> String {
     app.ident_label(i)
 }
 
+/// The plan shown for a credential: its own record's or, when the record
+/// has none (Claude), the one its cached quota reports (`true`).
+fn shown_plan(app: &App, i: &Identity) -> Option<(String, bool)> {
+    super::quota::known_plan(plan(i))
+        .map(|p| (p, false))
+        .or_else(|| super::quota::quota_plan(app, i).map(|p| (p, true)))
+}
+
 pub(super) fn plan(i: &Identity) -> String {
     i.subscription
         .as_ref()
@@ -47,7 +55,14 @@ pub(super) fn identity_fields(app: &App, i: &Identity) -> Vec<(&'static str, Str
         ("type", crate::app::ident_kind(i)),
         ("provider", app.privacy(&i.provider)),
         ("auth type", app.privacy(&i.auth_type_name)),
-        ("plan", plan(i)),
+        (
+            "plan",
+            match shown_plan(app, i) {
+                Some((p, true)) => format!("{p} (from quota)"),
+                Some((p, false)) => p,
+                None => String::new(),
+            },
+        ),
         (
             "subscription",
             i.subscription
@@ -243,7 +258,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
         .identities
         .iter()
         .map(|i| {
-            let name = ident_name(app, i);
+            let (name, short) = app.ident_labels(i);
             let ps = i.period_stats.clone().unwrap_or_default();
             let (req, ok, input, cache_r, tok) = if i.period_stats.is_some() {
                 (
@@ -273,10 +288,11 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
             let cache = fmt::ratio_pct(cache_r, input);
             let last = i.last_used_at.as_deref().and_then(|s| fmt::since(s, now));
             let kind = crate::app::ident_kind(i);
+            let plan_s = shown_plan(app, i).map(|p| p.0).unwrap_or("—".into());
             TRow::new(i.id.clone())
-                .text(name.clone(), text(&name))
+                .name(name.clone(), short, Style::default(), text(&name))
                 .text(kind.clone(), text(&kind))
-                .text(plan(i), text(&plan(i)))
+                .text(plan_s.clone(), text(&plan_s))
                 .text(
                     i.priority.map(|p| p.to_string()).unwrap_or("-".into()),
                     num(i.priority.unwrap_or(i64::MIN) as f64),
@@ -307,7 +323,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                     last.map(fmt::age).unwrap_or("-".into()),
                     num(-(last.map(|x| x as f64).unwrap_or(f64::MAX))),
                 )
-                .filter(format!("{name} {} {} {}", i.kind, i.provider, plan(i)))
+                .filter(format!("{name} {} {} {plan_s}", i.kind, i.provider))
                 .details(identity_fields(app, i))
         })
         .collect();
@@ -354,8 +370,10 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         )],
         stat(t, "provider", i.provider.clone(), Some(t.fg)),
     ];
-    if !plan(i).is_empty() {
-        items.push(stat(t, "plan", plan(i), Some(t.accent)));
+    match shown_plan(app, i) {
+        Some((p, false)) => items.push(stat(t, "plan", p, Some(t.accent))),
+        Some((p, true)) => items.push(stat(t, "plan", format!("{p} (quota)"), Some(t.accent))),
+        None => {}
     }
     if let Some(until) = i.active_until.as_deref()
         && let Some(s) = fmt::until(until, now)

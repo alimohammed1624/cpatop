@@ -20,7 +20,7 @@ expression: s
 │   0┤       ⣀⣀⣀⣿⣿⣤⣤            ⣤⣤⣶⣶⣿⣿⣤⣤⣤⣿⣿⣿⣿⣿⣿││ 12:00 ■■■■■■■■■              │
 │    └00:00──────04:00────08:00────12:00──16:00││ ■ok ■≥80% ■≥50% ■<50% ■idle  │
 ╰──────────────────────────────────────────────╯╰──────────────────────────────╯
-╭─⁴ distribution ◆ ──────────────────── models│api keys│credentials│providers ─╮
+╭─⁴ distribution ◆ ───────────────── models│api keys│credentials│AI providers ─╮
 │name              tokens share            req  fail      cost trend           │
 │claude-opus-5-5    76.6M ■■■■■■ 58.3%     813     2    $44.25 ▁▁▁▁▆▂▁▁▁▁▂▃▄▁▄▇│
 │claude-fable-5-2   42.9M ■■■■■■ 32.7%     307    37    $46.96 ▁▁▁▁▁▁▁▁▁▁▁▁▁▂▅▇│

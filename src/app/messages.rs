@@ -346,12 +346,16 @@ impl App {
                 d.quota_history = Some((idx, l));
                 e
             }
-            Payload::IdentityErrors(id, r) => {
+            // A late answer for a credential no longer selected is dropped.
+            Payload::IdentityErrors(id, r)
+                if d.identity_errors.as_ref().is_none_or(|(cur, _)| *cur == id) =>
+            {
                 let mut l = Loaded::default();
                 let e = l.apply(r, now);
                 d.identity_errors = Some((id, l));
                 e
             }
+            Payload::IdentityErrors(..) => None,
             Payload::Catalog(r) => d.catalog.apply(r, now),
             Payload::Pricing(r) => d.pricing.apply(r, now),
             Payload::RecalcCurrent(r) => d.recalc.apply(r, now),
@@ -383,6 +387,10 @@ impl App {
                 }
             }
         };
+        // Before the next frame, so a restored empty dimension never shows.
+        if !self.dims_unchecked.is_empty() {
+            self.settle_dims();
+        }
         match err {
             Some(ApiError::Unauthorized(_)) => self.session_expired(),
             Some(ApiError::Migrating) => {
@@ -440,7 +448,7 @@ impl App {
             Tab::Realtime => &[Group::Realtime],
             Tab::Analysis => &[Group::Analysis],
             Tab::Events => &[Group::Detail, Group::EventFilters],
-            Tab::Credentials => &[Group::Credentials, Group::Detail],
+            Tab::Credentials => &[Group::Credentials, Group::Detail, Group::Quota],
             Tab::Quota => &[Group::Quota, Group::Credentials],
             Tab::Models => &[Group::Models],
             Tab::Settings => &[

@@ -577,17 +577,19 @@ pub fn share(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
     let rows = items
         .iter()
         .map(|i| {
-            let name = if i.key == "__realtime_others__" {
-                "Others".to_string()
+            let (name, short) = if i.key == "__realtime_others__" {
+                ("Others".to_string(), "Others".to_string())
             } else if dim == 1 {
-                app.key_name(&i.key, &i.label)
+                let n = app.key_name(&i.key, &i.label);
+                (n.clone(), n)
             } else if dim == 2 {
-                app.credential_name(&i.key, &i.label)
+                app.credential_labels(&i.key, &i.label)
             } else {
-                app.privacy(&i.label)
+                let n = app.privacy(&i.label);
+                (n.clone(), n)
             };
             TRow::new(i.key.clone())
-                .text(name.clone(), text(&name))
+                .name(name.clone(), short, Style::default(), text(&name))
                 .meter(
                     i.share / 100.0,
                     None,
@@ -624,7 +626,7 @@ pub fn share(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
         focused,
         &SHARE_COLS,
         rows,
-        "no traffic in window",
+        &super::empty_dim_text(app, PaneId::RtShare, "no traffic in window"),
     );
 }
 
