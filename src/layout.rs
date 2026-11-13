@@ -638,6 +638,38 @@ pub fn compute(
     // Rows that put extra height to use (charts under tables) next, then
     // everything else.
     grow_pass(&mut heights, &mut spare, false, true);
+    // Rows sized exactly to their content (a one-line message) stay as
+    // they are while any other row can take the rest.
+    let rigid: Vec<bool> = rows.iter().map(|r| r.max == Some(r.min)).collect();
+    if rows
+        .iter()
+        .zip(&rigid)
+        .any(|(r, rg)| !r.collapsed && !rg && r.weight > 0)
+    {
+        let mut h2: Vec<u16> = heights.clone();
+        // Pin rigid rows by treating them as collapsed for this pass.
+        let flexible: Vec<usize> = (0..rows.len()).filter(|i| !rigid[*i]).collect();
+        while spare > 0 {
+            let pick = flexible
+                .iter()
+                .copied()
+                .filter(|i| !rows[*i].collapsed && rows[*i].weight > 0)
+                .min_by(|i, j| {
+                    let (a, b) = (&rows[*i], &rows[*j]);
+                    let fa = h2[*i].saturating_sub(a.min) as u32 * b.weight.max(1) as u32;
+                    let fb = h2[*j].saturating_sub(b.min) as u32 * a.weight.max(1) as u32;
+                    fa.cmp(&fb)
+                });
+            match pick {
+                Some(i) => {
+                    h2[i] += 1;
+                    spare -= 1;
+                }
+                None => break,
+            }
+        }
+        heights = h2;
+    }
     grow_pass(&mut heights, &mut spare, false, false);
     if spare > 0
         && let Some(last) = heights.last_mut()

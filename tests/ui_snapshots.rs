@@ -465,8 +465,13 @@ fn no_color_keeps_outcomes_and_legends_distinct() {
         Group::Realtime,
         Payload::Realtime(Ok(serde_json::from_value(rt).unwrap())),
     );
-    let s = render_tab(&mut app, Tab::Realtime, 160, 48);
-    assert!(s.contains('░') && s.contains("░ fail"), "{s}");
+    for (w, h) in SIZES {
+        let s = render_tab(&mut app, Tab::Realtime, w, h);
+        assert!(
+            s.contains('░') && s.contains("█ ok ░ fail"),
+            "{w}x{h} legend cut:\n{s}"
+        );
+    }
     let s = render_tab(&mut app, Tab::Overview, 160, 48);
     // Legend glyphs: ■ ▲ ✗ for health, · for idle, shades for tokens.
     for g in ["■≥95%", "▲≥50%", "✗<50%", "·idle", "░▒▓█"] {

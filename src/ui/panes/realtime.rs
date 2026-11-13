@@ -355,16 +355,21 @@ pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
             Style::default().fg(t.graph_text),
         ),
     ];
-    if t.no_color {
-        head.push(Span::styled(
-            "  █ ok ░ fail",
-            Style::default().fg(t.graph_text),
-        ));
-    }
     if let Some(i) = cur {
         head.push(Span::styled(
             format!("  ▸ {}", cursor_time(&b[i], false)),
             Style::default().fg(t.hi),
+        ));
+    }
+    // Without colour the bars are told apart by their glyphs: the legend
+    // goes on the head line when it fits, else on the plot's top row.
+    const LEGEND: &str = "█ ok ░ fail";
+    let head_w: usize = head.iter().map(|s| s.width()).sum();
+    let legend_in_head = t.no_color && head_w + 2 + LEGEND.chars().count() < inner.width as usize;
+    if legend_in_head {
+        head.push(Span::styled(
+            format!("  {LEGEND}"),
+            Style::default().fg(t.graph_text),
         ));
     }
     f.buffer_mut().set_line(
@@ -413,6 +418,17 @@ pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
         super::overlay_failures(f, app, plot, &fail, top, symbols);
         if let Some(i) = cur {
             widgets::draw_cursor(f.buffer_mut(), plot, i, req.len(), t);
+        }
+    }
+    if t.no_color && !legend_in_head {
+        let w = LEGEND.chars().count() as u16;
+        if plot.width > w + 1 {
+            f.buffer_mut().set_string(
+                plot.right() - w,
+                plot.y,
+                LEGEND,
+                Style::default().fg(t.graph_text),
+            );
         }
     }
 }
