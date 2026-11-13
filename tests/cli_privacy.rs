@@ -187,8 +187,13 @@ fn privacy_paths_mask_only_identifying_segments() {
     let out = String::from_utf8_lossy(&o.stdout);
     assert!(!out.contains("‹key›"), "{out}");
     assert!(!out.contains("Zx9Qw8Er7T"), "{out}");
-    assert!(out.contains("~/.config/cpatop/config.toml"), "{out}");
-    assert!(out.contains("~/.local/state/cpatop/session.json"), "{out}");
+    // `~/.config/cpatop/config.toml` on Linux, `~/Library/Application
+    // Support/cpatop/config.toml` on macOS.
+    assert_eq!(out.lines().count(), 5, "{out}");
+    for line in out.lines() {
+        assert!(line.contains(": ~/") && line.contains("/cpatop/"), "{out}");
+    }
+    assert!(out.contains("/cpatop/config.toml"), "{out}");
 }
 
 /// A credential file error names the option, and its path only when
