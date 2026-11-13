@@ -1,8 +1,11 @@
 //! Quota tab: inspection summary, quota windows per credential and history.
 
-use super::credentials::{ident_name, plan};
-use super::{RowChart, frame, placeholder, stale_marker, table_with_chart, time_labels};
-use crate::api::models::{Identity, QuotaRow};
+use super::credentials::{ident_name, identity_fields, plan};
+use super::{
+    RowChart, frame, placeholder, stale_marker, table_with_chart, time_labels, token_details, when,
+    yes_no,
+};
+use crate::api::models::{Identity, InspectionResult, QuotaRefreshTask, QuotaRow};
 use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
@@ -182,6 +185,144 @@ fn flag_cell(app: &App, age: Option<u64>) -> Vec<Vec<Span<'static>>> {
     ]
 }
 
+/// Every field of a quota row for the popup: the window, the cached check,
+/// the inspection result and the credential, through the privacy helpers.
+fn quota_fields(
+    app: &App,
+    i: &Identity,
+    task: Option<&Result<QuotaRefreshTask, String>>,
+    insp: Option<&InspectionResult>,
+    r: Option<&QuotaRow>,
+    status: &str,
+) -> Vec<(&'static str, String)> {
+    let opt = |o: &Option<String>| o.clone().unwrap_or_default();
+    let mut v = vec![("credential", ident_name(app, i))];
+    if let Some(r) = r {
+        let used = r.used_pct().unwrap_or(0.0);
+        let cents = r.metric.as_deref() == Some("usd_cents");
+        let amount = |x: Option<f64>| match x {
+            Some(x) if cents => format!("${:.2}", x / 100.0),
+            Some(x) => fmt::int(x),
+            None => String::new(),
+        };
+        v.extend([
+            ("window", app.privacy(&r.display_label())),
+            ("quota left", format!("{:.1}%", 100.0 - used)),
+            ("used", format!("{used:.1}%")),
+            (
+                "used / limit",
+                match (r.used, r.limit) {
+                    (Some(_), Some(_)) => format!("{} / {}", amount(r.used), amount(r.limit)),
+                    _ => String::new(),
+                },
+            ),
+            ("remaining", amount(r.remaining)),
+            ("metric", app.privacy(&opt(&r.metric))),
+            ("resets in", when(app, r.reset_at.as_deref())),
+            (
+                "window length",
+                r.window
+                    .as_ref()
+                    .and_then(|w| w.seconds)
+                    .map(fmt::secs)
+                    .unwrap_or_default(),
+            ),
+            (
+                "tokens",
+                r.window_usage_tokens.map(fmt::int).unwrap_or_default(),
+            ),
+            (
+                "cost",
+                if cents {
+                    String::new()
+                } else {
+                    r.window_usage_cost
+                        .map(|c| format!("${c:.4}"))
+                        .unwrap_or_default()
+                },
+            ),
+            (
+                "limit reached",
+                r.limit_reached.map(yes_no).unwrap_or_default(),
+            ),
+            ("allowed", r.allowed.map(yes_no).unwrap_or_default()),
+            ("group", app.privacy(&opt(&r.group_label))),
+            (
+                "breakdown",
+                r.usage_breakdown
+                    .iter()
+                    .map(|b| {
+                        format!(
+                            "{} {}",
+                            app.privacy(&b.product),
+                            b.used_percent
+                                .map(|p| format!("{p:.0}%"))
+                                .unwrap_or_default()
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" · "),
+            ),
+        ]);
+    }
+    v.push(("status", status.to_string()));
+    match task {
+        Some(Ok(task)) => {
+            v.extend([
+                ("quota check", app.privacy(&task.status)),
+                (
+                    "check HTTP status",
+                    task.http_status_code
+                        .map(|c| c.to_string())
+                        .unwrap_or_default(),
+                ),
+                ("check error", app.privacy_text(&opt(&task.error))),
+                ("checked", when(app, task.refreshed_at.as_deref())),
+                ("cached until", when(app, task.expires_at.as_deref())),
+            ]);
+            if let Some(q) = &task.quota {
+                if let Some(n) = q.reset_credits_available {
+                    v.push(("reset credits", fmt::int(n)));
+                }
+                if let Some(g) = &q.claude_reset_grants {
+                    v.extend([
+                        ("reset grants", fmt::int(g.available_count)),
+                        ("grant eligible", yes_no(g.eligible)),
+                        (
+                            "not eligible because",
+                            app.privacy_text(&opt(&g.ineligible_reason)),
+                        ),
+                        ("grants reset", when(app, g.weekly_resets_at.as_deref())),
+                        ("grant cooldown", when(app, g.cooldown_until.as_deref())),
+                    ]);
+                }
+            }
+        }
+        Some(Err(e)) => v.push(("check error", app.privacy_text(e))),
+        None => v.push(("quota check", "not cached".into())),
+    }
+    if let Some(r) = insp {
+        v.extend([
+            ("inspection", app.privacy(&r.status.replace('_', " "))),
+            (
+                "inspection HTTP status",
+                r.http_status_code
+                    .map(|c| c.to_string())
+                    .unwrap_or_default(),
+            ),
+            ("inspection error", app.privacy_text(&opt(&r.error))),
+            ("inspected", when(app, r.refreshed_at.as_deref())),
+        ]);
+    }
+    // The credential itself (its name and plan are already listed).
+    v.extend(
+        identity_fields(app, i)
+            .into_iter()
+            .filter(|(k, _)| !matches!(*k, "name" | "plan")),
+    );
+    v
+}
+
 pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
     let l = &app.data.quota;
@@ -265,7 +406,11 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                     .text("", num(-1.0))
                     .text("", num(-1.0))
                     .choice(st_cell.clone(), text(&st_text))
-                    .filter(filter.clone()),
+                    .filter(filter.clone())
+                    .detail("plan", plan_s.clone())
+                    .detail("window", "—")
+                    .detail("quota left", "—")
+                    .details(quota_fields(app, i, task, insp, None, &st_text)),
             );
             continue;
         }
@@ -344,7 +489,9 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                     .text(tok, num(r.window_usage_tokens.unwrap_or(0.0)))
                     .text(cost, num(r.window_usage_cost.unwrap_or(0.0)))
                     .choice(cell, text(&st_text))
-                    .filter(filter.clone()),
+                    .filter(filter.clone())
+                    .detail("plan", plan_s.clone())
+                    .details(quota_fields(app, i, task, insp, Some(r), &st_text)),
             );
         }
     }
@@ -408,6 +555,54 @@ const HIST_COLS: [Col; 9] = [
     col("cost", 8, Align::Right, 1),
     col("tok/1%", 7, Align::Right, 2),
 ];
+
+/// Every field of a quota cycle for the row popup.
+fn cycle_fields(
+    app: &App,
+    c: &crate::api::models::QuotaCycle,
+    median: Option<f64>,
+) -> Vec<(&'static str, String)> {
+    let u = &c.usage;
+    let pct = |p: Option<f64>| p.map(|p| format!("{p:.1}%")).unwrap_or_default();
+    let mut v = vec![
+        ("cycle", app.privacy(&c.status)),
+        ("window length", fmt::secs(c.window_seconds)),
+        ("started", when(app, Some(&c.window_started_at))),
+        ("resets", when(app, Some(&c.reset_at))),
+        ("effective start", when(app, Some(&c.effective_started_at))),
+        ("effective end", when(app, Some(&c.effective_ended_at))),
+        ("first observed", when(app, Some(&c.first_observed_at))),
+        ("last observed", when(app, Some(&c.last_observed_at))),
+        ("left at start", pct(c.first_remaining_percent)),
+        ("left at end", pct(c.last_remaining_percent)),
+        ("observations", fmt::int(c.observation_count)),
+        ("drops observed", fmt::int(c.transitions.len() as f64)),
+        (
+            "tokens per 1% of quota",
+            median.map(fmt::int).unwrap_or_default(),
+        ),
+        ("requests", fmt::int(u.requests)),
+        ("successes", fmt::int(u.successful_requests)),
+        ("failures", fmt::int(u.failed_requests)),
+    ];
+    v.extend(token_details(
+        u.input_tokens,
+        u.output_tokens,
+        u.cache_read_tokens,
+        u.cache_creation_tokens,
+        u.reasoning_tokens,
+        u.total_tokens,
+    ));
+    v.push((
+        "cost",
+        if u.cost_available {
+            format!("${:.4}", u.total_cost_usd)
+        } else {
+            String::new()
+        },
+    ));
+    v
+}
 
 /// Rows of the quota table: one per window, at least one per credential.
 pub fn list_len(app: &App) -> Option<usize> {
@@ -585,6 +780,7 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
                     num(median.unwrap_or(-1.0)),
                 )
                 .filter(c.status.clone())
+                .details(cycle_fields(app, c, median))
         })
         .collect();
     // Spare rows chart the tokens each window allowed, oldest first.

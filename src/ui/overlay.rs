@@ -81,6 +81,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
         &[
             ("↑↓ j k", "move selection (mouse wheel too)"),
             ("Enter", "every field of the selected row"),
+            ("  ↑↓ [ ]", "  scroll it / previous, next row"),
             ("PgUp PgDn g G", "page / top / bottom"),
             ("/", "find in the focused table"),
             ("s / S", "sort by next column / reverse"),
@@ -464,7 +465,10 @@ pub fn range_editor(f: &mut Frame, app: &App, ed: &RangeEditor) {
         .render(inner, f.buffer_mut());
 }
 
-/// Every field of a table's selected row, untruncated (wrapped).
+/// Every field of a table's selected row, untruncated (wrapped). Longer
+/// than the screen, it scrolls (↑↓ j k PgUp PgDn g G or the mouse wheel)
+/// and the bottom border says how much is left; `[` `]` step through the
+/// table's rows.
 pub fn row_detail(f: &mut Frame, app: &App, hit: &Hit, id: crate::layout::PaneId) {
     let t = app.theme();
     let area = f.area();
@@ -472,24 +476,30 @@ pub fn row_detail(f: &mut Frame, app: &App, hit: &Hit, id: crate::layout::PaneId
         return;
     };
     let name = crate::layout::pane_def(id).2.name;
+    // Field names over a third of the box wrap their values less.
+    let max_w = area.width.saturating_sub(4) as usize;
     let key_w = fields
         .iter()
         .map(|(k, _)| fmt::width(k))
         .max()
         .unwrap_or(4)
-        .max(4);
+        .clamp(4, (max_w / 3).max(8));
     let val_w = fields
         .iter()
         .map(|(_, v)| fmt::width(v))
         .max()
         .unwrap_or(10);
-    let w = (key_w + val_w + 5).clamp(30, area.width.saturating_sub(4) as usize) as u16;
+    let w = (key_w + val_w + 5).clamp(44, max_w.max(10)) as u16;
     let text_w = (w as usize).saturating_sub(key_w + 5).max(8);
     let mut lines: Vec<Line<'static>> = Vec::new();
     for (k, v) in fields {
         let chunks = wrap_chars(v, text_w);
         for (i, c) in chunks.into_iter().enumerate() {
-            let key = if i == 0 { k.clone() } else { String::new() };
+            let key = if i == 0 {
+                fmt::trunc(k, key_w)
+            } else {
+                String::new()
+            };
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("{key:<key_w$}  "),
@@ -499,17 +509,46 @@ pub fn row_detail(f: &mut Frame, app: &App, hit: &Hit, id: crate::layout::PaneId
             ]));
         }
     }
-    let h = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let content_h = lines.len() as u16;
+    let h = (content_h + 2).min(area.height.saturating_sub(2));
     let r = centered(area, w, h);
-    let inner = boxed(f, t, r, &format!("{name} · row"), "↑↓ row · Esc close");
-    f.render_widget(
-        Paragraph::new(lines),
+    let inner_h = r.height.saturating_sub(2);
+    let max = content_h.saturating_sub(inner_h) as usize;
+    app.row_max.set(max);
+    app.row_page.set(inner_h.saturating_sub(1).max(1) as usize);
+    let off = app.row_scroll.min(max) as u16;
+    let st = app.table(id);
+    let (sel, n) = (
+        st.selected.min(st.len.get().saturating_sub(1)),
+        st.len.get(),
+    );
+    let title = format!("{name} · row {}/{n}", sel + 1);
+    let below = content_h.saturating_sub(off + inner_h);
+    let bottom = if max > 0 {
+        let pos = match (off > 0, below > 0) {
+            (true, true) => format!("▲{off} ▼{below} more"),
+            (false, _) => format!("▼ {below} more"),
+            (true, false) => format!("▲ {off} above"),
+        };
+        let full = format!("{pos} · ↑↓ PgUp PgDn scroll · [ ] row · Esc close");
+        // Narrow: the keys in short, so none is cut off.
+        if fmt::width(&full) + 6 > r.width as usize {
+            format!("{pos} · ↑↓ · [ ] row · Esc")
+        } else {
+            full
+        }
+    } else {
+        "[ ] or Shift+↑↓ row · Esc close".to_string()
+    };
+    let inner = boxed(f, t, r, &title, &bottom);
+    Paragraph::new(lines).scroll((off, 0)).render(
         Rect::new(
             inner.x + 1,
             inner.y,
             inner.width.saturating_sub(1),
             inner.height,
         ),
+        f.buffer_mut(),
     );
 }
 

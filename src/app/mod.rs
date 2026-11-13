@@ -252,6 +252,11 @@ pub struct App {
     pub help_scroll: usize,
     pub help_max: Cell<usize>,
     pub help_page: Cell<usize>,
+    /// Row popup scroll offset; like the help, the renderer reports the
+    /// largest useful offset and the visible height.
+    pub row_scroll: usize,
+    pub row_max: Cell<usize>,
+    pub row_page: Cell<usize>,
     /// Privacy mode: account names → credential id, cached per credential
     /// list (keyed by its load time).
     pub privacy_aliases: RefCell<(Option<Instant>, HashMap<String, u64>)>,
@@ -337,6 +342,9 @@ impl App {
             help_scroll: 0,
             help_max: Cell::new(0),
             help_page: Cell::new(10),
+            row_scroll: 0,
+            row_max: Cell::new(0),
+            row_page: Cell::new(10),
             privacy_aliases: RefCell::new((None, HashMap::new())),
             privacy_salt: ui
                 .privacy_salt

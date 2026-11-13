@@ -434,20 +434,106 @@ pub fn table_in(
     hit.bodies.push((id, body));
     let sel = st.selected.min(rows.len() - 1);
     hit.selected.insert(id, rows[sel].id.clone());
-    let fields = cols
-        .iter()
-        .zip(&rows[sel].cells)
-        .filter_map(|(c, cell)| {
-            let v = cell.text()?;
-            let v = v.trim();
-            let title = match c.title.trim() {
-                "" => "·".to_string(),
-                t => t.to_string(),
-            };
-            (!v.is_empty()).then(|| (title, v.to_string()))
-        })
-        .collect();
-    hit.row_fields.insert(id, fields);
+    hit.row_fields.insert(id, row_fields(cols, &rows[sel]));
+}
+
+/// Fields of a row for the popup: each column under its spelled-out title,
+/// with the row's detail fields replacing cells of the same name (exact
+/// numbers instead of `3.2M`) and the rest following. Blank values and
+/// placeholders (`-`, `—`) are left out.
+pub fn row_fields(cols: &[Col], row: &TRow) -> Vec<(String, String)> {
+    let mut fields: Vec<(String, String)> = if row.detail_only {
+        Vec::new()
+    } else {
+        cols.iter()
+            .zip(&row.cells)
+            .filter_map(|(c, cell)| Some((table::long_title(&c.title), cell.text()?)))
+            .collect()
+    };
+    for (k, v) in &row.detail {
+        match fields.iter_mut().find(|(f, _)| f == k) {
+            Some(f) => f.1 = v.clone(),
+            None => fields.push((k.clone(), v.clone())),
+        }
+    }
+    fields
+        .into_iter()
+        .map(|(k, v)| (k, v.trim().to_string()))
+        .filter(|(_, v)| !matches!(v.as_str(), "" | "-" | "—" | "--"))
+        .collect()
+}
+
+/// A server timestamp in full for the row popup, with how long ago (or how
+/// far ahead) it is.
+pub fn when(app: &App, s: Option<&str>) -> String {
+    let Some(s) = s.filter(|s| !s.is_empty()) else {
+        return String::new();
+    };
+    let now = app.clock.utc();
+    let full = app.privacy_text(&fmt::ts_fmt(s, "%Y-%m-%d %H:%M:%S %:z"));
+    match (fmt::since(s, now), fmt::until(s, now)) {
+        (Some(a), _) if a > 0 => format!("{full} ({} ago)", fmt::age(a)),
+        (_, Some(u)) if u > 0 => format!("{full} (in {})", fmt::secs(u as f64)),
+        _ => full,
+    }
+}
+
+/// Exact token counts for the row popup.
+pub fn token_details(
+    input: f64,
+    output: f64,
+    cache_read: f64,
+    cache_write: f64,
+    reasoning: f64,
+    total: f64,
+) -> Vec<(&'static str, String)> {
+    vec![
+        ("tokens", fmt::int(total)),
+        ("input tokens", fmt::int(input)),
+        ("output tokens", fmt::int(output)),
+        ("cache read tokens", fmt::int(cache_read)),
+        ("cache write tokens", fmt::int(cache_write)),
+        ("reasoning tokens", fmt::int(reasoning)),
+    ]
+}
+
+/// The id behind a usage row of a dimension (`api keys`, `credentials`…)
+/// for the row popup: key ids as `#3`, credential identities as opaque ids.
+pub fn dim_key_field(app: &App, dim: &str, key: &str) -> Vec<(&'static str, String)> {
+    match dim {
+        "api keys" => vec![("key id", format!("#{key}"))],
+        "credentials" => {
+            let mut v = vec![("auth index", app.opaque_id(key))];
+            if let Some(i) = app.identity_for(key) {
+                v.extend([
+                    ("credential id", format!("#{}", i.id)),
+                    ("type", crate::app::ident_kind(i)),
+                    ("provider", app.privacy(&i.provider)),
+                ]);
+            }
+            v
+        }
+        _ => vec![],
+    }
+}
+
+/// Request counts with the success rate, for the row popup.
+pub fn request_details(requests: f64, failures: f64) -> Vec<(&'static str, String)> {
+    vec![
+        ("requests", fmt::int(requests)),
+        ("failures", fmt::int(failures)),
+        (
+            "success rate",
+            fmt::ratio_pct(requests - failures, requests)
+                .map(|p| fmt::pct(p, 2))
+                .unwrap_or_default(),
+        ),
+    ]
+}
+
+/// `yes` / `no`.
+pub fn yes_no(b: bool) -> String {
+    if b { "yes" } else { "no" }.to_string()
 }
 
 /// A chart of the selected table row, drawn under the table when the pane

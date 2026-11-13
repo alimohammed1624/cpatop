@@ -749,3 +749,319 @@ fn row_popup_shows_full_fields() {
         "{s}"
     );
 }
+
+fn press(app: &mut App, code: crossterm::event::KeyCode) {
+    use crossterm::event::{Event, KeyEvent, KeyModifiers};
+    app.on_event(Event::Key(KeyEvent::new(code, KeyModifiers::NONE)));
+}
+
+/// Everything the open row popup shows, scrolled from top to bottom a page
+/// at a time.
+fn popup_pages(app: &mut App, w: u16, h: u16) -> String {
+    use crossterm::event::KeyCode;
+    let mut out = render(app, w, h);
+    for _ in 0..50 {
+        let before = app.row_scroll;
+        press(app, KeyCode::PageDown);
+        if app.row_scroll == before {
+            break;
+        }
+        out.push_str(&render(app, w, h));
+    }
+    out
+}
+
+/// Table panes of a tab, in order.
+fn table_panes(tab: Tab) -> Vec<PaneId> {
+    cpatop::layout::panes(tab)
+        .iter()
+        .filter(|d| d.table)
+        .map(|d| d.id)
+        .collect()
+}
+
+/// The row popup scrolls when its fields do not fit (keys, wheel, ends),
+/// shows where it is, and `[` `]` step through the table's rows.
+#[test]
+fn row_popup_scrolls_and_steps_rows() {
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+    let mut app = populated(Role::Admin);
+    render_tab(&mut app, Tab::Credentials, 80, 24);
+    press(&mut app, KeyCode::Enter);
+    let s = render(&mut app, 80, 24);
+    assert!(s.contains("credentials · row 1/"), "{s}");
+    assert!(s.contains("▼") && s.contains("more"), "{s}");
+    assert!(s.contains("[ ] row"), "{s}");
+    let max = app.row_max.get();
+    assert!(max > 0);
+    // ↓ scrolls the popup, not the table underneath.
+    press(&mut app, KeyCode::Down);
+    assert_eq!(app.row_scroll, 1);
+    assert_eq!(app.table(PaneId::CrList).selected, 0);
+    let s = render(&mut app, 80, 24);
+    assert!(s.contains("▲1 ▼"), "{s}");
+    // End / Home / PgDn stay in range.
+    press(&mut app, KeyCode::End);
+    assert_eq!(app.row_scroll, max);
+    let s = render(&mut app, 80, 24);
+    assert!(s.contains("above"), "{s}");
+    press(&mut app, KeyCode::PageDown);
+    assert_eq!(app.row_scroll, max);
+    press(&mut app, KeyCode::Home);
+    assert_eq!(app.row_scroll, 0);
+    // The mouse wheel scrolls the popup too.
+    let wheel = |kind| {
+        Event::Mouse(MouseEvent {
+            kind,
+            column: 40,
+            row: 12,
+            modifiers: KeyModifiers::NONE,
+        })
+    };
+    app.on_event(wheel(MouseEventKind::ScrollDown));
+    assert_eq!(app.row_scroll, 3.min(max));
+    assert_eq!(app.table(PaneId::CrList).selected, 0);
+    app.on_event(wheel(MouseEventKind::ScrollUp));
+    assert_eq!(app.row_scroll, 0);
+    // `]` and Shift+↓ step to the next row, from the top; `[` goes back.
+    press(&mut app, KeyCode::End);
+    press(&mut app, KeyCode::Char(']'));
+    assert_eq!(app.table(PaneId::CrList).selected, 1);
+    assert_eq!(app.row_scroll, 0);
+    let s = render(&mut app, 80, 24);
+    assert!(s.contains("credentials · row 2/"), "{s}");
+    app.on_event(Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT)));
+    assert_eq!(app.table(PaneId::CrList).selected, 0);
+    press(&mut app, KeyCode::Char(']'));
+    press(&mut app, KeyCode::Char('['));
+    assert_eq!(app.table(PaneId::CrList).selected, 0);
+    press(&mut app, KeyCode::Esc);
+    assert!(app.overlay.is_none());
+}
+
+/// The popup lists the whole record behind a row, not just the columns
+/// on screen, with spelled-out names.
+#[test]
+fn row_popup_covers_the_whole_record() {
+    use crossterm::event::KeyCode;
+    let mut app = populated(Role::Admin);
+    let cases: [(Tab, PaneId, &[&str]); 9] = [
+        (
+            Tab::Credentials,
+            PaneId::CrList,
+            &[
+                "auth type",
+                "provider",
+                "priority",
+                "state",
+                "lifetime requests",
+                "health, last 5h",
+                "5h failures",
+                "auth index",
+                "last used",
+                "last error",
+            ],
+        ),
+        (
+            Tab::Events,
+            PaneId::EvLog,
+            &[
+                "API key",
+                "source",
+                "endpoint",
+                "client IP",
+                "user agent",
+                "request id",
+                "cache read tokens",
+                "time to first token",
+            ],
+        ),
+        (
+            Tab::Quota,
+            PaneId::QuList,
+            &[
+                "credential",
+                "quota left",
+                "resets in",
+                "quota check",
+                "checked",
+                "auth type",
+            ],
+        ),
+        (
+            Tab::Settings,
+            PaneId::StKeys,
+            &["id", "last synced", "requests", "input tokens", "cost"],
+        ),
+        (
+            Tab::Settings,
+            PaneId::StSessions,
+            &[
+                "logged in via",
+                "last seen",
+                "expires",
+                "user agent",
+                "current",
+            ],
+        ),
+        (
+            Tab::Models,
+            PaneId::MoPricing,
+            &["cache read", "multiplier", "price rules"],
+        ),
+        (
+            Tab::Overview,
+            PaneId::OvDist,
+            &[
+                "requests",
+                "failures",
+                "success rate",
+                "output tokens",
+                "cache read rate",
+            ],
+        ),
+        (
+            Tab::Analysis,
+            PaneId::AnEfficiency,
+            &[
+                "cost per 1M tokens",
+                "cost per request",
+                "output tokens per request",
+            ],
+        ),
+        (
+            Tab::Realtime,
+            PaneId::RtSpeed,
+            &["speed, first half", "speed change"],
+        ),
+    ];
+    for (tab, pane, want) in cases {
+        render_tab(&mut app, tab, 120, 40);
+        app.focus.insert(tab, pane);
+        render(&mut app, 120, 40);
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            app.overlay,
+            Some(cpatop::app::Overlay::Row(pane)),
+            "{tab:?}"
+        );
+        if pane == PaneId::QuList {
+            // The first credential has no quota windows cached.
+            press(&mut app, KeyCode::Char(']'));
+        }
+        let s = popup_pages(&mut app, 120, 40);
+        for w in want {
+            assert!(s.contains(w), "{tab:?} {pane:?}: {w:?} missing:\n{s}");
+        }
+        press(&mut app, KeyCode::Esc);
+    }
+}
+
+/// With privacy on, the popup of every table on every tab, in every
+/// dimension, scrolled to the end, shows nothing planted (also at 50x12,
+/// where it scrolls most).
+#[test]
+fn row_popup_respects_privacy() {
+    use crossterm::event::KeyCode;
+    for role in [Role::Admin, Role::KeyViewer] {
+        let mut app = populated(role);
+        let mut n = 0;
+        let admin = role == Role::Admin;
+        let pick = |a: &'static str, k: &'static str| if admin { a } else { k };
+        data(
+            &mut app,
+            Group::Overview,
+            Payload::Comparisons(Ok(planted(
+                pick(
+                    "usage-overview-comparisons.json",
+                    "key-overview-comparisons.json",
+                ),
+                &mut n,
+            ))),
+        );
+        data(
+            &mut app,
+            Group::Realtime,
+            Payload::Realtime(Ok(planted(
+                pick("usage-overview-realtime.json", "key-overview-realtime.json"),
+                &mut n,
+            ))),
+        );
+        data(
+            &mut app,
+            Group::Analysis,
+            Payload::Analysis(Ok(planted(
+                pick("usage-analysis.json", "key-analysis.json"),
+                &mut n,
+            ))),
+        );
+        if admin {
+            data(
+                &mut app,
+                Group::Credentials,
+                Payload::Identities(Ok(planted("usage-identities-page.json", &mut n))),
+            );
+            data(
+                &mut app,
+                Group::Quota,
+                Payload::Inspection(Ok(planted("quota-inspection.json", &mut n))),
+            );
+            data(
+                &mut app,
+                Group::KeyOptions,
+                Payload::ApiKeys(Ok(planted("usage-api-keys.json", &mut n))),
+            );
+            data(
+                &mut app,
+                Group::KeyUsage,
+                Payload::KeyUsage(Ok(planted("usage-overview-comparisons.json", &mut n))),
+            );
+            data(
+                &mut app,
+                Group::Settings,
+                Payload::Sessions(Ok(planted("auth-sessions.json", &mut n))),
+            );
+            let page: EventsPage = planted("usage-events.json", &mut n);
+            app.on_msg(Msg::Live(LiveEvent::Snapshot(Box::new(LiveSnapshot {
+                events: page.events,
+                total_count: page.total_count,
+                has_more: false,
+                next_cursor: None,
+                range_start: "2026-11-13T00:00:00+05:30".into(),
+                range_end: "2026-11-13T23:59:59.999999999+05:30".into(),
+                end_exclusive: false,
+                snapshot_at: None,
+            }))));
+        }
+        app.settings.privacy = true;
+        let tabs: Vec<Tab> = app.tabs().to_vec();
+        let mut opened = 0;
+        for tab in tabs {
+            for pane in table_panes(tab) {
+                for (w, h) in [(50, 12), (160, 48)] {
+                    for dim in 0..4 {
+                        app.dims.insert(pane, dim);
+                        render_tab(&mut app, tab, w, h);
+                        app.focus.insert(tab, pane);
+                        render(&mut app, w, h);
+                        press(&mut app, KeyCode::Enter);
+                        if app.overlay.is_none() {
+                            continue;
+                        }
+                        opened += 1;
+                        let s = popup_pages(&mut app, w, h);
+                        let what = format!("{role:?} {tab:?} {pane:?} dim {dim} {w}x{h}");
+                        assert_nothing_planted(&s, &what);
+                        assert_eq!(
+                            app.privacy_guard_hits.get(),
+                            0,
+                            "guard fired ({what}):\n{s}"
+                        );
+                        press(&mut app, KeyCode::Esc);
+                    }
+                }
+            }
+        }
+        assert!(opened > 20, "{role:?}: only {opened} popups");
+    }
+}

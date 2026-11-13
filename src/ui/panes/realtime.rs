@@ -1,8 +1,8 @@
 //! Realtime tab.
 
 use super::{
-    Series, chart, chart_head, cursor, cursor_time, dim_tabs, frame, nice_max, placeholder,
-    stale_marker, table_in, time_labels,
+    Series, chart, chart_head, cursor, cursor_time, dim_key_field, dim_tabs, frame, nice_max,
+    placeholder, stale_marker, table_in, time_labels,
 };
 use crate::api::models::{LatencyPoint, Realtime, TopItem};
 use crate::app::{App, Hit};
@@ -570,6 +570,10 @@ pub fn share(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
         return;
     };
     let dim = app.dim(PaneId::RtShare);
+    let dim_name = crate::app::dims_for(PaneId::RtShare, app.role)
+        .get(dim)
+        .copied()
+        .unwrap_or("");
     let rows = items
         .iter()
         .map(|i| {
@@ -598,6 +602,17 @@ pub fn share(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
                 .text(fmt::count(i.requests), num(i.requests))
                 .text(fmt::usd_opt(i.cost), num(i.cost.unwrap_or(-1.0)))
                 .filter(name)
+                .details(dim_key_field(app, dim_name, &i.key))
+                .details(vec![
+                    ("share", format!("{} of tokens", fmt::pct(i.share, 2))),
+                    ("tokens", fmt::int(i.tokens)),
+                    ("requests", fmt::int(i.requests)),
+                    (
+                        "cost",
+                        i.cost.map(|c| format!("${c:.4}")).unwrap_or_default(),
+                    ),
+                    ("window", app.window.param().to_string()),
+                ])
         })
         .collect();
     table_in(
@@ -665,8 +680,9 @@ pub fn speed(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
             };
             // A half without samples says so, dimmed, instead of a bare `-`.
             let none = Style::default().fg(t.graph_text);
+            let model = app.privacy(&s.model);
             TRow::new(s.model.clone())
-                .text(s.model.clone(), text(&s.model))
+                .text(model.clone(), text(&model))
                 .styled(
                     half_text(a),
                     if a.is_some() { Style::default() } else { none },
@@ -693,6 +709,43 @@ pub fn speed(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
                 .text(fmt::int(s.speed_sample_count), num(s.speed_sample_count))
                 .text(fmt::compact(s.total_tokens), num(s.total_tokens))
                 .filter(s.model.clone())
+                .details(vec![
+                    (
+                        "speed change",
+                        delta.map(|d| format!("{d:+.2}%")).unwrap_or_default(),
+                    ),
+                    (
+                        "first half samples",
+                        fmt::int(s.first_half.speed_sample_count),
+                    ),
+                    (
+                        "second half samples",
+                        fmt::int(s.second_half.speed_sample_count),
+                    ),
+                    ("tokens", fmt::int(s.total_tokens)),
+                    ("window", app.window.param().to_string()),
+                    (
+                        "halves",
+                        format!(
+                            "{} – {} – {}",
+                            r.model_speed
+                                .start
+                                .as_deref()
+                                .map(|x| fmt::ts_fmt(x, "%H:%M:%S"))
+                                .unwrap_or_default(),
+                            r.model_speed
+                                .mid
+                                .as_deref()
+                                .map(|x| fmt::ts_fmt(x, "%H:%M:%S"))
+                                .unwrap_or_default(),
+                            r.model_speed
+                                .end
+                                .as_deref()
+                                .map(|x| fmt::ts_fmt(x, "%H:%M:%S"))
+                                .unwrap_or_default()
+                        ),
+                    ),
+                ])
         })
         .collect();
     table_in(

@@ -27,6 +27,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     hit.selected.clear();
     hit.picker.clear();
     hit.row_fields.clear();
+    // Every table on screen gets its own state, so the row count it records
+    // while drawing is there for the first key press (not lost in the shared
+    // empty default).
+    for d in layout::panes(app.tab).iter().filter(|d| d.table) {
+        app.table_mut(d.id);
+    }
     render(f, app, &mut hit);
     app.hit = hit;
     // Privacy mode: the last line of defence runs on the finished frame.
