@@ -418,7 +418,6 @@ fn tab_bar(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect) {
     // Right side: layout preset name, then the hidden panes.
     let preset = layout::presets(app.tab)[app.preset(app.tab)].name;
     let info = format!(" layout {preset} ");
-    let iw = fmt::width(&info) as u16;
     let mut right = area.right() - 1;
     if !hidden.is_empty() {
         let hw = fmt::width(&hidden) as u16;
@@ -432,12 +431,17 @@ fn tab_bar(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect) {
             );
         }
     }
-    if x + iw + 2 < right {
-        let info = if hidden.is_empty() {
-            info
-        } else {
-            format!(" layout {preset} ·")
-        };
+    // With hidden panes: ` layout stacked ·`, or ` stacked ·` when short
+    // of room, so the layout name stays next to the hidden list.
+    let candidates = if hidden.is_empty() {
+        vec![info]
+    } else {
+        vec![format!(" layout {preset} ·"), format!(" {preset} ·")]
+    };
+    if let Some(info) = candidates
+        .into_iter()
+        .find(|c| x + fmt::width(c) as u16 + 2 < right)
+    {
         let iw = fmt::width(&info) as u16;
         buf.set_string(right - iw, area.y, info, Style::default().fg(t.graph_text));
     }
