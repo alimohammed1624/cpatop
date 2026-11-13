@@ -69,7 +69,7 @@ ci_announce() {
         line=$(head -n1 "$dir/$sha.status" 2>/dev/null) || line=""
         case "$line" in
             PASS* | FAIL*)
-                printf 'cpatop CI: %s %s (log: %s)\n' "${sha:0:7}" "$line" "$dir/$sha.log" >&2
+                printf 'cpatop CI: %s (log: %s)\n' "$line" "$dir/$sha.log" >&2
                 rm -f "$f"
                 ;;
         esac

@@ -159,6 +159,7 @@ main() {
     if [ "$notify" = 1 ]; then
         local sent=0
         notify "cpatop CI: $verdict (${sha:0:7}, $elapsed)" "$subject"$'\n'"$log" "$verdict" && sent=1
+        echo "desktop notification: $([ "$sent" = 1 ] && echo sent || echo unavailable)" >>"$log"
         # A failure is repeated by the next hook even if a notification went out.
         if [ "$sent" = 0 ] || [ "$verdict" = FAIL ]; then
             : >"$dir/$sha.unseen"
