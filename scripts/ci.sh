@@ -191,7 +191,7 @@ notify() {
         gdbus call --session --dest org.freedesktop.Notifications \
             --object-path /org/freedesktop/Notifications \
             --method org.freedesktop.Notifications.Notify \
-            cpatop-ci 0 '' "$1" "$2" '[]' "{'urgency': <byte $level>}" -1 >/dev/null 2>&1
+            -- cpatop-ci 0 '' "$1" "$2" '[]' "{'urgency': <byte $level>}" -1 >/dev/null 2>&1
 }
 
 # record <name> <result> <seconds>
