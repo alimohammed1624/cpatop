@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# Enable the local CI git hooks for this clone and check prerequisites.
+# Opt in to the local CI git hooks for this clone and check prerequisites.
+# Optional: GitHub Actions runs CI on every push to main and every pull
+# request, and builds releases from v* tags; the hooks only add a local
+# pre-flight (.githooks/post-commit runs scripts/ci.sh on main,
+# .githooks/pre-push checks its result before pushing main).
 #
 #   scripts/setup-hooks.sh          set core.hooksPath=.githooks, check tools
 #   scripts/setup-hooks.sh --mac    also install Rust (rustup, user-level) on
 #                                   the Mac if it is missing
 #
 # Idempotent. core.hooksPath is per repository (shared by its worktrees).
+# Opt out again with: git config --unset core.hooksPath
 
 set -uo pipefail
 

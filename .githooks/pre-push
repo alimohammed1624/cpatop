@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # pre-push: when pushing main, require a passing local CI run
-# (scripts/ci.sh) for the commit being pushed.
+# (scripts/ci.sh) for the commit being pushed. Optional: GitHub Actions runs
+# CI on the push either way; this hook only catches failures before they
+# reach GitHub.
 #
 #   FAIL                 push refused (see the log)
 #   PASS                 push goes ahead
@@ -9,7 +11,8 @@
 #     warn               print a warning and push anyway
 #     block              refuse the push
 #
-# Bypass once with `git push --no-verify`. Enable with scripts/setup-hooks.sh.
+# Bypass once with `git push --no-verify`. Active only after
+# scripts/setup-hooks.sh; disable with git config --unset core.hooksPath.
 
 root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 [ -f "$root/scripts/lib.sh" ] && [ -x "$root/scripts/ci.sh" ] || exit 0

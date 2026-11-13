@@ -1,12 +1,27 @@
-# MANUAL FALLBACK ONLY: this workflow no longer runs on push or pull
-# request, to save GitHub Actions minutes. CI runs locally instead:
-# scripts/ci.sh, started by the .githooks/post-commit hook on main and
-# enforced by .githooks/pre-push (see README "Development"). Run this
-# workflow by hand from the Actions tab if the local setup is unavailable.
+# CI for cpatop on GitHub Actions (the primary CI; free for this public
+# repo). Runs on every push to main, on every pull request and by hand from
+# the Actions tab.
+#
+#   linux     cargo fmt --check, clippy -D warnings, tests (ubuntu-latest)
+#   musl      static x86_64-unknown-linux-musl release build, checked static
+#   macos     clippy -D warnings and tests (macos-latest, Apple silicon)
+#   lint      shellcheck (install.sh, scripts/*.sh, .githooks/*), actionlint
+#
+# scripts/ci.sh runs the same checks locally; it is an optional pre-flight
+# (see README "Development"). Keep the two in step.
 name: CI
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
+
+# A new push to a pull request cancels its older runs; every push to main
+# gets a complete run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -15,8 +30,9 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
+  linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -24,29 +40,64 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
 
-  build:
-    needs: check
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-          - os: macos-latest
-            target: aarch64-apple-darwin
-    runs-on: ${{ matrix.os }}
+  musl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TARGET: x86_64-unknown-linux-musl
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
-      - if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - run: cargo build --release --locked --target ${{ matrix.target }}
+        with:
+          key: x86_64-unknown-linux-musl
+      # musl-gcc compiles ring's C code for the musl target.
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --locked --target "$TARGET"
+      - name: Binary is static
+        run: |
+          bin=target/$TARGET/release/cpatop
+          file "$bin"
+          file "$bin" | grep -Eq 'static(-pie)? linked|statically linked'
+          "$bin" --version
       - uses: actions/upload-artifact@v4
         with:
-          name: cpatop-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/cpatop
+          name: cpatop-x86_64-unknown-linux-musl
+          path: target/x86_64-unknown-linux-musl/release/cpatop
+          retention-days: 7
+
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: shellcheck
+      - name: shellcheck
+        run: shellcheck -x install.sh scripts/*.sh .githooks/*
+      # actionlint's own installer, pinned; it also runs shellcheck on the
+      # workflows' run: blocks.
+      - name: actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+        run: |
+          bash <(curl -sSfL "https://raw.githubusercontent.com/rhysd/actionlint/v$ACTIONLINT_VERSION/scripts/download-actionlint.bash") "$ACTIONLINT_VERSION" "$RUNNER_TEMP"
+          "$RUNNER_TEMP/actionlint" -color .github/workflows/*.yml

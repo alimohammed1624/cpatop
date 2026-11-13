@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Local CI for cpatop: what .github/workflows/ci.yml checks, run on this
-# machine (and optionally on the Mac over ssh) instead of GitHub Actions.
+# Optional local CI for cpatop: the checks of .github/workflows/ci.yml, run
+# on this machine (and optionally on a Mac over ssh) as a pre-flight before
+# pushing. GitHub Actions is the primary CI (every push to main and every
+# pull request); nothing requires this script to have run.
 #
 #   scripts/ci.sh [--mac] [--quick] [--sha <rev>]
 #
