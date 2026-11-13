@@ -25,8 +25,6 @@ use std::borrow::Cow;
 
 const H: i64 = 3600;
 const D: i64 = 86_400;
-/// Row-label column: `23:00` / `Thu 06` / `11-13` plus a gap.
-const LABEL_W: u16 = 7;
 
 /// Row spans to try for a grain, finest first.
 fn spans_for(grain: &str) -> &'static [i64] {
@@ -90,6 +88,12 @@ impl Blocks {
         let all = spans_for(&self.grain);
         let len = (self.end - self.start).max(all[0]);
         all.iter().copied().filter(|s| *s <= len).collect()
+    }
+
+    /// Row-label column: a space, the label (`23:00`, `11-13`, or `Thu 06`
+    /// on windows longer than a day) and a gap.
+    fn label_w(&self) -> u16 {
+        if self.end - self.start > D + H { 8 } else { 7 }
     }
 
     /// Local midnight at or before `t`.
@@ -202,8 +206,8 @@ fn plan(b: &Blocks, w: u16, h: u16) -> Plan {
 
 /// [`plan`] with cells at most `max_rh` lines tall.
 fn plan_with(b: &Blocks, w: u16, h: u16, max_rh: u16) -> Plan {
-    let full = w.saturating_sub(LABEL_W + 1);
-    let half = (w.saturating_sub(1) / 2).saturating_sub(LABEL_W + 1);
+    let full = w.saturating_sub(b.label_w() + 1);
+    let half = (w.saturating_sub(1) / 2).saturating_sub(b.label_w() + 1);
     // (both maps, no pooling, drawn area, titled, rows): higher is better.
     type Score = (bool, bool, u32, bool, usize);
     let mut best: Option<(Plan, Score)> = None;
@@ -391,8 +395,8 @@ pub fn activity_size(app: &App, w: u16) -> Size {
     // The finest rows, one line each: side by side when both maps fit the
     // width, stacked otherwise.
     let finest = b.spans()[0];
-    let half = (inner_w.saturating_sub(1) / 2).saturating_sub(LABEL_W + 1);
-    let full = inner_w.saturating_sub(LABEL_W + 1);
+    let half = (inner_w.saturating_sub(1) / 2).saturating_sub(b.label_w() + 1);
+    let full = inner_w.saturating_sub(b.label_w() + 1);
     let side = Grid::fit(&b, finest, half, 1, 2);
     let maps_h = if half >= 8 && !side.pooled {
         side.lines() + 1
@@ -510,7 +514,8 @@ pub fn activity(f: &mut Frame, app: &App, area: Rect, focused: bool) {
                 if area.width >= 50 {
                     format!("{range} · server window {server}")
                 } else {
-                    format!("{range} · of {server}")
+                    // The header names the range; the title keeps the warning.
+                    format!("server {server}")
                 }
             }
             // A whole local day (today, yesterday): just the date.
@@ -683,7 +688,7 @@ fn draw_map(buf: &mut Buffer, t: &Theme, area: Rect, b: &Blocks, p: &Plan, token
         }
         let label = b.local(g.origin + r as i64 * g.span).format(label_fmt);
         buf.set_string(area.x + 1, ry, label.to_string(), dim);
-        let mut x = area.x + LABEL_W;
+        let mut x = area.x + b.label_w();
         for c in 0..g.cols {
             if x + g.cw > area.right() {
                 break;
