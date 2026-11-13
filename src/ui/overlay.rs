@@ -377,34 +377,6 @@ pub fn range_editor(f: &mut Frame, app: &App, ed: &RangeEditor) {
         .render(inner, f.buffer_mut());
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn text(cols: &[Vec<Line<'static>>]) -> String {
-        cols.iter()
-            .flatten()
-            .map(|l| {
-                l.spans
-                    .iter()
-                    .map(|s| s.content.as_ref())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    #[test]
-    fn help_describes_what_quitting_does_to_the_session() {
-        let t = &crate::theme::all_themes(None).0[0];
-        let kept = text(&help_columns(t, 1, false));
-        assert!(kept.contains("quit (the server session is kept)"));
-        let out = text(&help_columns(t, 1, true));
-        assert!(out.contains("quit and log out on the server"));
-        assert!(!out.contains("session is kept"));
-    }
-}
-
 /// Every field of a table's selected row, untruncated (wrapped).
 pub fn row_detail(f: &mut Frame, app: &App, hit: &Hit, id: crate::layout::PaneId) {
     let t = app.theme();
@@ -485,4 +457,32 @@ fn wrap_chars(s: &str, w: usize) -> Vec<String> {
         out.push(cur);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(cols: &[Vec<Line<'static>>]) -> String {
+        cols.iter()
+            .flatten()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn help_describes_what_quitting_does_to_the_session() {
+        let t = &crate::theme::all_themes(None).0[0];
+        let kept = text(&help_columns(t, 1, false));
+        assert!(kept.contains("quit (the server session is kept)"));
+        let out = text(&help_columns(t, 1, true));
+        assert!(out.contains("quit and log out on the server"));
+        assert!(!out.contains("session is kept"));
+    }
 }
