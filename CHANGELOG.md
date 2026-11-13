@@ -44,6 +44,12 @@ All notable changes to cpatop are documented here. The format follows
 - Release workflow building Linux (x86_64, aarch64; static musl) and macOS
   (x86_64, aarch64, universal) binaries.
 - Key-event tests and HTTP integration tests against a mock Keeper.
+- The release workflow runs `cargo fmt --check`, clippy and the tests
+  before building, refuses a tag that is not `v` + the `Cargo.toml`
+  version, and treats a manual run on a branch as a dry run (builds, never
+  publishes).
+- The README lists every release archive, including the universal macOS
+  binary (`cpatop-universal-apple-darwin.tar.gz`) for manual download.
 
 ### Changed
 - Analysis series are rebuilt on dense, calendar-aligned axes (UTC hours

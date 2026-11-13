@@ -13,6 +13,10 @@
 #
 # Asset names (cpatop-<target>.tar.gz containing cpatop-<target>/cpatop):
 # keep asset names in sync with .github/workflows/release.yml.
+# Releases also carry cpatop-universal-apple-darwin.tar.gz (one macOS binary
+# for both architectures); this script deliberately installs the smaller
+# architecture-specific archive instead. The README documents the universal
+# one for manual download.
 #
 # POSIX sh only. Everything runs from main(), called on the last line, so a
 # truncated download never executes a partial script.

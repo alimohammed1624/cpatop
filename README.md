@@ -95,13 +95,31 @@ sh install.sh
 the binary (`rm ~/.local/bin/cpatop`). `cpatop paths` lists the config and
 state directories, which you can delete too.
 
-**Release archives by hand.** Each release has `cpatop-<target>.tar.gz`
-archives plus `SHA256SUMS`:
+**Release archives by hand.** Each release has these archives plus
+`SHA256SUMS`; each `cpatop-<target>.tar.gz` contains a `cpatop-<target>/`
+directory with the binary:
+
+| Archive | Platform |
+| --- | --- |
+| `cpatop-x86_64-unknown-linux-musl.tar.gz` | Linux x86_64 (static) |
+| `cpatop-aarch64-unknown-linux-musl.tar.gz` | Linux aarch64 (static) |
+| `cpatop-x86_64-apple-darwin.tar.gz` | macOS Intel |
+| `cpatop-aarch64-apple-darwin.tar.gz` | macOS Apple silicon |
+| `cpatop-universal-apple-darwin.tar.gz` | macOS, one binary for both (larger) |
+
+The install script always picks the architecture-specific archive; download
+the universal one by hand when you want a single binary that runs on both
+Intel and Apple silicon Macs (e.g. to copy between machines).
 
 ```sh
-tar xzf cpatop-x86_64-unknown-linux-musl.tar.gz
-install -m 755 cpatop-x86_64-unknown-linux-musl/cpatop ~/.local/bin/
+base=https://github.com/alimohammed1624/cpatop/releases/latest/download
+curl -fsSLO "$base/cpatop-universal-apple-darwin.tar.gz" -O "$base/SHA256SUMS"
+grep ' cpatop-universal-apple-darwin.tar.gz$' SHA256SUMS | shasum -a 256 -c
+tar xzf cpatop-universal-apple-darwin.tar.gz
+install -m 755 cpatop-universal-apple-darwin/cpatop ~/.local/bin/
 ```
+
+On Linux, use `sha256sum -c` and the `-unknown-linux-musl` archive name.
 
 **With cargo** (Rust 1.88+):
 
