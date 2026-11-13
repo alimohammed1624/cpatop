@@ -327,10 +327,44 @@ complete starting point. A user theme with a built-in name replaces it.
 ## Development
 
 ```sh
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
+scripts/setup-hooks.sh     # once per clone: enable the git hooks, check tools
+scripts/ci.sh              # fmt, clippy -D warnings, tests, musl build, lints
 ```
+
+CI runs locally rather than on GitHub Actions (the workflows in
+`.github/workflows/` are a manual fallback only):
+
+- `scripts/ci.sh` tests the committed `HEAD` (`--sha REV` for another
+  commit): `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+  `cargo test`, a static `x86_64-unknown-linux-musl` build, shellcheck and
+  actionlint. `--quick` runs only fmt, clippy and tests; `--mac` also runs
+  them (plus an `aarch64-apple-darwin` build) on a Mac over ssh, reported as
+  skipped if the Mac is offline. The log and result go to
+  `.git/cpatop-ci/<sha>.log` and `.status`.
+- The `post-commit` hook runs `scripts/ci.sh --mac` in the background for
+  every commit on `main` and shows a desktop notification when it is done
+  (without `notify-send`, or on failure, the next hook prints the result).
+  `CPATOP_SKIP_CI=1` skips it; `CPATOP_CI_ARGS` overrides the flags.
+- The `pre-push` hook refuses to push `main` if its local CI failed. If CI is
+  missing or still running, `CPATOP_PREPUSH=wait` (default) waits for it or
+  runs it, `warn` pushes anyway, `block` refuses. `git push --no-verify`
+  bypasses the hook.
+- `scripts/release.sh vX.Y.Z` releases from a clean `main` that is pushed
+  and has passed local CI, with the tag equal to `v` + the `Cargo.toml`
+  version and a `## [X.Y.Z]` CHANGELOG section (the release notes). It builds
+  both Linux musl archives here, the macOS ones (`aarch64`, `x86_64`,
+  `universal`) on the Mac, writes `dist/` with `SHA256SUMS`, then tags,
+  pushes the tag and runs `gh release create`. `--dry-run` stops after
+  `dist/`.
+
+Needs Rust, `flock`, `ssh`, and for the full run and releases
+`cargo-zigbuild` with zig (`uv tool install cargo-zigbuild`) and the
+`x86_64-unknown-linux-musl` / `aarch64-unknown-linux-musl` targets;
+shellcheck, actionlint, `notify-send` and `gh` are optional (`gh` publishes
+releases). The Mac is the ssh host `CPATOP_MAC_HOST` (default `mba`); it
+needs non-interactive ssh (`BatchMode`), Xcode command-line tools and Rust
+(`scripts/setup-hooks.sh --mac` installs rustup for the user). It gets the
+exact commit via `git archive` over ssh and builds in `~/.cache/cpatop-ci/`.
 
 Tests parse every recorded API response in `tests/fixtures/` (scrubbed real
 Keeper v2.1.0 responses), snapshot the main screens with ratatui's
@@ -340,9 +374,7 @@ on any screen, drive the key bindings (`tests/keys.rs`) and run the client,
 pollers, live stream and session handling against a mock Keeper
 (`tests/http.rs`, via wiremock).
 
-Releases: push a `v*` tag; `.github/workflows/release.yml` builds the
-binaries and attaches them to the GitHub release. See
-[CHANGELOG.md](CHANGELOG.md).
+Release history: [CHANGELOG.md](CHANGELOG.md).
 
 `scripts/screenshots.sh` regenerates the PNGs in `docs/screenshots/` from a
 running Keeper (needs tmux, aha, chromium, ImageMagick and the "MesloLGS Nerd

@@ -12,7 +12,8 @@
 #   CPATOP_VERSION      release tag to install, e.g. v0.2.0 (default: latest)
 #
 # Asset names (cpatop-<target>.tar.gz containing cpatop-<target>/cpatop):
-# keep asset names in sync with .github/workflows/release.yml.
+# keep asset names in sync with scripts/release.sh (and the manual fallback
+# .github/workflows/release.yml).
 # Releases also carry cpatop-universal-apple-darwin.tar.gz (one macOS binary
 # for both architectures); this script deliberately installs the smaller
 # architecture-specific archive instead. The README documents the universal

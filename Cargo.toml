@@ -10,7 +10,7 @@ repository = "https://github.com/alimohammed1624/cpatop"
 homepage = "https://github.com/alimohammed1624/cpatop"
 keywords = ["tui", "dashboard", "ratatui", "cliproxyapi", "monitoring"]
 categories = ["command-line-utilities", "visualization"]
-exclude = ["docs/screenshots/", "scripts/", ".github/"]
+exclude = ["docs/screenshots/", "scripts/", ".github/", ".githooks/"]
 
 [features]
 default = ["keyring"]

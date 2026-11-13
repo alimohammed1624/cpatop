@@ -1,17 +1,20 @@
+# MANUAL FALLBACK ONLY: pushing a tag no longer triggers this workflow, to
+# save GitHub Actions minutes. Releases are built and published locally with
+# scripts/release.sh vX.Y.Z (Linux builds here, macOS builds on a Mac over
+# ssh; see README "Development"). Run this workflow by hand from the Actions
+# tab only if that is unavailable.
 name: Release
 
-# Push a tag like v0.2.0 to build release binaries and attach them to a
-# GitHub release for that tag. The tag must equal "v" + the version in
-# Cargo.toml. Running the workflow by hand (workflow_dispatch) on a branch is
-# a dry run: it checks and builds every archive but never publishes a release.
+# Run by hand on a v* tag (select the tag as the ref) to build release
+# binaries and attach them to a GitHub release for that tag. The tag must
+# equal "v" + the version in Cargo.toml. Run on a branch it is a dry run: it
+# checks and builds every archive but never publishes a release.
 #
 # Asset names are deliberately version-independent (cpatop-<target>.tar.gz,
 # containing a top-level cpatop-<target>/ dir) so that
 # https://github.com/alimohammed1624/cpatop/releases/latest/download/<asset>
 # always resolves. Keep asset names in sync with install.sh.
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -121,7 +124,7 @@ jobs:
 
   release:
     needs: [build, macos-universal]
-    # Only a pushed v* tag publishes; a manual run on a branch is a dry run.
+    # Only a run on a v* tag publishes; a manual run on a branch is a dry run.
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -133,7 +136,7 @@ jobs:
           mkdir out
           find artifacts -name '*.tar.gz' -exec cp {} out/ \;
           # install.sh looks up "<hash>  cpatop-<target>.tar.gz" lines here.
-          (cd out && sha256sum *.tar.gz > SHA256SUMS)
+          (cd out && sha256sum -- *.tar.gz > SHA256SUMS)
           ls -l out
       - uses: softprops/action-gh-release@v2
         with:

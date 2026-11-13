@@ -1,9 +1,12 @@
+# MANUAL FALLBACK ONLY: this workflow no longer runs on push or pull
+# request, to save GitHub Actions minutes. CI runs locally instead:
+# scripts/ci.sh, started by the .githooks/post-commit hook on main and
+# enforced by .githooks/pre-push (see README "Development"). Run this
+# workflow by hand from the Actions tab if the local setup is unavailable.
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
