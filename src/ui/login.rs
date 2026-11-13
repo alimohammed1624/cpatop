@@ -78,13 +78,13 @@ pub fn draw(f: &mut Frame, app: &App) {
         .warnings
         .iter()
         .take(3)
-        .flat_map(|m| wrap_indent(&format!("⚠ {m}"), text_w, 2))
+        .flat_map(|m| wrap_indent(&format!("⚠ {}", app.privacy_text(m)), text_w, 2))
         .collect();
     let error_lines = match &app.screen {
         Screen::Login(form) => form
             .error
             .as_deref()
-            .map(|e| wrap_indent(&format!("✗ {e}"), text_w, 2).len())
+            .map(|e| wrap_indent(&format!("✗ {}", app.privacy_text(e)), text_w, 2).len())
             .unwrap_or(1),
         _ => 1,
     } as u16;
@@ -111,7 +111,10 @@ pub fn draw(f: &mut Frame, app: &App) {
         ]))
         .title(
             Line::from(vec![
-                Span::styled(format!(" {} ", app.host), Style::default().fg(t.graph_text)),
+                Span::styled(
+                    format!(" {} ", app.host_label()),
+                    Style::default().fg(t.graph_text),
+                ),
                 Span::styled("─", bs),
             ])
             .right_aligned(),
@@ -130,7 +133,7 @@ pub fn draw(f: &mut Frame, app: &App) {
                 "Connecting to CPA Usage Keeper…",
                 strong,
             )));
-            lines.push(Line::from(Span::styled(app.settings.base_url.clone(), dim)));
+            lines.push(Line::from(Span::styled(app.base_url_label(), dim)));
         }
         Screen::Startup(s) => {
             lines.push(Line::from(""));
@@ -161,7 +164,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             }
             let secs = retry_at.saturating_duration_since(app.now()).as_secs();
             lines.push(Line::from(Span::styled(
-                format!("retrying in {secs}s · base URL {}", app.settings.base_url),
+                format!("retrying in {secs}s · base URL {}", app.base_url_label()),
                 dim,
             )));
             hint = "r retry now · q quit";

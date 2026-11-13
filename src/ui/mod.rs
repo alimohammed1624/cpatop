@@ -94,7 +94,7 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
     let mut segs: Vec<Vec<Span<'static>>> = Vec::new();
     segs.push(vec![
         Span::styled("⌂ ", dim),
-        Span::styled(app.host.clone(), val),
+        Span::styled(app.host_label(), val),
     ]);
     let role = match app.role {
         Some(Role::Admin) => "admin".to_string(),

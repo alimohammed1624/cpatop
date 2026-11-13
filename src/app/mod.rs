@@ -10,7 +10,7 @@ mod privacy;
 
 pub use live::{EventFilters, LiveState, LiveStatus, ResultFilter};
 pub use overlay::{Overlay, PickItem, PickKind, Picker, RangeEditor, Unit};
-pub use privacy::{is_identifier, is_ip};
+pub use privacy::{IP_MASK, contains_ip, is_identifier, is_ip, looks_like_key, mask_ips};
 
 use crate::api::models::*;
 use crate::api::sse::{LiveEvent, LiveParams};

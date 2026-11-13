@@ -32,23 +32,22 @@ impl App {
         }
     }
 
-    /// Free text (error bodies, user agents, status messages): in privacy
-    /// mode every e-mail-like or key-like word is replaced.
+    /// Free text (error bodies, user agents, URLs, status messages): in
+    /// privacy mode every IP address becomes `‹ip›` and every e-mail-like or
+    /// key-like word an `account-N` label.
     pub fn privacy_text(&self, s: &str) -> String {
         if !self.settings.privacy {
             return s.to_string();
         }
+        let s = mask_ips(s);
         let mut out = String::with_capacity(s.len());
         let mut word = String::new();
         let flush = |word: &mut String, out: &mut String| {
             if word.is_empty() {
                 return;
             }
-            let core = word.trim_end_matches(['.', ',', ':', ';']);
-            if is_ip(core) {
-                out.push_str("‹ip›");
-                out.push_str(&word[core.len()..]);
-            } else if is_identifier(core) {
+            let core = word.trim_end_matches(['.', ',', ':', ';', '!']);
+            if is_identifier(core) {
                 let tail = &word[core.len()..];
                 out.push_str(&self.alias_of(core));
                 out.push_str(tail);
@@ -58,7 +57,7 @@ impl App {
             word.clear();
         };
         for c in s.chars() {
-            if c.is_whitespace() || "\"'()<>[]{}|=,".contains(c) {
+            if c.is_whitespace() || TEXT_SEPARATORS.contains(c) {
                 flush(&mut word, &mut out);
                 out.push(c);
             } else {
@@ -69,13 +68,28 @@ impl App {
         out
     }
 
-    /// An IP address (hidden in privacy mode).
+    /// An IP address field (`‹ip›` in privacy mode).
     pub fn ip(&self, s: &str) -> String {
         if self.settings.privacy && !s.is_empty() && s != "-" {
-            "hidden".into()
+            IP_MASK.into()
         } else {
             s.to_string()
         }
+    }
+
+    /// The server's host (and sub-path) for display; IP literals are masked
+    /// in privacy mode, host names such as `localhost` are kept.
+    pub fn host_label(&self) -> String {
+        if self.settings.privacy {
+            mask_ips(&self.host)
+        } else {
+            self.host.clone()
+        }
+    }
+
+    /// The base URL for display (login and offline screens).
+    pub fn base_url_label(&self) -> String {
+        self.privacy_text(&self.settings.base_url)
     }
 
     // ------------------------------------------------------------ key names
@@ -142,21 +156,69 @@ impl App {
     }
 }
 
-/// Whether a string is (or contains) an e-mail address or an API key, in
-/// full or masked form.
+/// What an IP address is replaced with in privacy mode.
+pub const IP_MASK: &str = "‹ip›";
+
+/// Characters that end a word in free text. `/`, `?`, `&`, `#` and `:` split
+/// URLs and `key=value` pairs so every part is checked on its own.
+const TEXT_SEPARATORS: &str = "\"'`()<>[]{}|=,;/?&#:";
+
+/// Whether a string is (or contains) an e-mail address, an API key (in full
+/// or masked form, including opaque tokens such as `sk-…`) or an IP address.
 pub fn is_identifier(s: &str) -> bool {
     let s = s.trim();
     if s.contains('@') || s.contains('*') || s.contains('…') {
         return true;
     }
-    // Long opaque tokens without separators look like keys.
+    contains_ip(s) || looks_like_key(s)
+}
+
+/// Prefixes of well-known secret formats (compared case-insensitively).
+const KEY_PREFIXES: [&str; 14] = [
+    "sk-",
+    "sk_",
+    "pk-",
+    "pk_",
+    "rk_",
+    "ak-",
+    "cpa-",
+    "key-",
+    "ghp_",
+    "gho_",
+    "github_pat_",
+    "xoxb-",
+    "xoxp-",
+    "aiza",
+];
+
+/// Whether a word looks like a secret token: a known key prefix followed by
+/// at least eight characters, or a long opaque segment (16+ characters mixing
+/// letters and digits, or 20+ mixing upper and lower case). Model names and
+/// versions are split into short segments by `-`, `.` and `_`, so they pass.
+pub fn looks_like_key(s: &str) -> bool {
+    let lower = s.to_ascii_lowercase();
+    let token_char = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    if KEY_PREFIXES
+        .iter()
+        .any(|p| lower.starts_with(p) && s.len() >= p.len() + 8 && s.chars().all(token_char))
+    {
+        return true;
+    }
+    let opaque = s.split(|c: char| !c.is_ascii_alphanumeric()).any(|seg| {
+        let digits = seg.chars().any(|c| c.is_ascii_digit());
+        let letters = seg.chars().any(|c| c.is_ascii_alphabetic());
+        let upper = seg.chars().any(|c| c.is_ascii_uppercase());
+        let lower = seg.chars().any(|c| c.is_ascii_lowercase());
+        (seg.len() >= 16 && digits && letters) || (seg.len() >= 20 && upper && lower)
+    });
+    if opaque {
+        return true;
+    }
+    // Long tokens without separators other than `-`/`_`, mixing case and digits.
     s.len() >= 20
-        && !s.contains(' ')
-        && !s.contains('/')
+        && s.chars().all(token_char)
         && s.chars().any(|c| c.is_ascii_digit())
         && s.chars().any(|c| c.is_ascii_uppercase())
-        && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// Whether a word is an IP address (optionally `v4:port`).
@@ -171,6 +233,101 @@ pub fn is_ip(s: &str) -> bool {
         }
         None => false,
     }
+}
+
+/// Whether `s` contains an IP address anywhere (URLs, `host:port`, `[v6]`).
+pub fn contains_ip(s: &str) -> bool {
+    !ip_spans(s).is_empty()
+}
+
+/// Replace every IP address inside `s` with [`IP_MASK`].
+pub fn mask_ips(s: &str) -> String {
+    let spans = ip_spans(s);
+    if spans.is_empty() {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut at = 0;
+    for (a, b) in spans {
+        out.push_str(&s[at..a]);
+        out.push_str(IP_MASK);
+        at = b;
+    }
+    out.push_str(&s[at..]);
+    out
+}
+
+/// Byte ranges of the IP addresses in `s`, in order and non-overlapping.
+fn ip_spans(s: &str) -> Vec<(usize, usize)> {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    let b = s.as_bytes();
+    let hexish = |c: u8| c.is_ascii_hexdigit() || c == b':' || c == b'.';
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if !hexish(b[i]) {
+            i += 1;
+            continue;
+        }
+        // A run of hex digits, `:` and `.`: try IPv6 first (longest match
+        // starting at a group boundary), then dotted IPv4 inside the run.
+        let mut j = i;
+        while j < b.len() && hexish(b[j]) {
+            j += 1;
+        }
+        let run = &s[i..j];
+        let mut found: Option<(usize, usize)> = None;
+        if run.matches(':').count() >= 2 {
+            'outer: for a in 0..run.len() {
+                if a > 0 && run.as_bytes()[a - 1] != b':' && run.as_bytes()[a] != b':' {
+                    continue;
+                }
+                for e in (a + 2..=run.len()).rev() {
+                    let cand = &run[a..e];
+                    let groups = cand.split(':').filter(|g| !g.is_empty()).count();
+                    if (groups >= 2 || cand == "::1")
+                        && cand.contains(':')
+                        && cand.parse::<Ipv6Addr>().is_ok()
+                    {
+                        found = Some((i + a, i + e));
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        if let Some(f) = found {
+            out.push(f);
+            i = f.1;
+            continue;
+        }
+        // IPv4: four dotted decimal groups not glued to other digits.
+        let mut k = i;
+        let mut v4 = None;
+        while k < j {
+            if b[k].is_ascii_digit() && (k == 0 || !(b[k - 1].is_ascii_digit() || b[k - 1] == b'.'))
+            {
+                let mut e = k;
+                while e < b.len() && (b[e].is_ascii_digit() || b[e] == b'.') {
+                    e += 1;
+                }
+                let mut cand = &s[k..e];
+                cand = cand.trim_end_matches('.');
+                if cand.parse::<Ipv4Addr>().is_ok() {
+                    v4 = Some((k, k + cand.len()));
+                    break;
+                }
+            }
+            k += 1;
+        }
+        match v4 {
+            Some(f) => {
+                out.push(f);
+                i = f.1;
+            }
+            None => i = j.max(i + 1),
+        }
+    }
+    out
 }
 
 /// Privacy-mode key name: the id, plus the alias when it is not itself an
@@ -230,6 +387,102 @@ mod privacy_tests {
         // Stable aliases.
         assert_eq!(a.privacy("a@b.c"), a.privacy("a@b.c"));
         assert_ne!(a.privacy("a@b.c"), a.privacy("d@e.f"));
-        assert_eq!(a.ip("127.0.0.1"), "hidden");
+        assert_eq!(a.ip("127.0.0.1"), "‹ip›");
+    }
+
+    /// Adversarial inputs: (input, fragments that must not survive).
+    const LEAKS: &[(&str, &[&str])] = &[
+        ("http://10.0.0.5:8080/x", &["10.0.0.5"]),
+        ("https://192.168.1.20/keeper", &["192.168"]),
+        ("http://[::1]:8318/api", &["::1"]),
+        ("[fe80::1%eth0]:443", &["fe80"]),
+        (
+            "dial tcp 127.0.0.1:8318: connection refused",
+            &["127.0.0.1"],
+        ),
+        ("upstream=172.16.4.2,via=10.1.1.1", &["172.16", "10.1.1.1"]),
+        (
+            "xff: 203.0.113.9, 198.51.100.7",
+            &["203.0.113.9", "198.51.100.7"],
+        ),
+        (
+            "read tcp [2406:b400:d13::74d]:37854->[2607:6bc0::10]:443",
+            &["2406", "2607"],
+        ),
+        ("ip 2001:db8:0:0:0:0:0:1 down", &["2001:db8"]),
+        (
+            "key sk-abcdefghijklmnop1234 rejected",
+            &["abcdefghijklmnop"],
+        ),
+        (
+            "Authorization: Bearer sk-proj-abcdef0123456789",
+            &["abcdef0123456789"],
+        ),
+        ("token=ghp_0123456789abcdefABCDEF", &["0123456789abcdef"]),
+        (
+            "api_key=cpa-k3y-v4lue-9f8e7d6c5b4a3f2e",
+            &["9f8e7d6c5b4a3f2e"],
+        ),
+        ("opaque 9f8e7d6c5b4a3f2e1d0c tok", &["9f8e7d6c5b4a3f2e1d0c"]),
+        ("masked abc*********defghi key", &["abc*", "defghi"]),
+        ("mailto:alice@example.org", &["alice", "example.org"]),
+        ("<bob.smith@corp.example>", &["bob.smith", "corp.example"]),
+        ("\"carol@x.io\"", &["carol"]),
+        ("account dave@x.io: limit", &["dave"]),
+    ];
+
+    #[test]
+    fn adversarial_free_text_is_scrubbed() {
+        let a = app();
+        for (input, bad) in LEAKS {
+            let out = a.privacy_text(input);
+            for frag in *bad {
+                assert!(!out.contains(frag), "{input:?} -> {out:?} leaks {frag:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn harmless_text_is_kept() {
+        let a = app();
+        for s in [
+            "claude-opus-4-1-20250805",
+            "gpt-6.1-sol",
+            "gemini-2.5-pro-preview-06-05",
+            "context canceled",
+            "HTTP 503 credential validation failed",
+            "Post \"https://api.anthropic.com/v1/messages?beta=true\": EOF",
+            "localhost:8318",
+            "v2.1.0 at 18:00:25",
+            "2026-11-13T18:00:25+05:30",
+            "claude-cli/2.1.280 (external, cli)",
+        ] {
+            assert_eq!(a.privacy_text(s), s, "{s:?} changed");
+        }
+    }
+
+    #[test]
+    fn hosts_and_names_with_ips_are_hidden() {
+        let mut a = app();
+        a.host = "10.0.0.5:8318/keeper".into();
+        assert_eq!(a.host_label(), "‹ip›:8318/keeper");
+        a.host = "[::1]:8318".into();
+        assert_eq!(a.host_label(), "[‹ip›]:8318");
+        a.host = "localhost:8318".into();
+        assert_eq!(a.host_label(), "localhost:8318");
+        a.settings.base_url = "http://192.168.0.4:8318".into();
+        assert!(
+            !a.base_url_label().contains("192"),
+            "{}",
+            a.base_url_label()
+        );
+        // An alias that is an IP or a key is not shown as a name.
+        assert!(a.privacy("10.2.3.4").starts_with("account-"));
+        assert!(a.privacy("sk-abcdefghij0123456789").starts_with("account-"));
+        assert_eq!(private_key_name("4", "192.168.1.1"), "key #4");
+        assert_eq!(private_key_name("4", "ci-bot"), "key #4 ci-bot");
+        // Without privacy nothing changes.
+        a.settings.privacy = false;
+        assert_eq!(a.host_label(), "localhost:8318");
     }
 }

@@ -306,7 +306,7 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
                 }
             }
             (None, Some(err)) => lines.push(Line::from(Span::styled(
-                format!("✗ {err}"),
+                format!("✗ {}", app.privacy_text(err)),
                 Style::default().fg(t.err),
             ))),
             (None, None) => lines.push(Line::from(Span::styled(

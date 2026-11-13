@@ -223,7 +223,7 @@ pub fn recalc(f: &mut Frame, app: &App, area: Rect, focused: bool) {
             ]));
             if let Some(e) = &task.error {
                 lines.push(Line::from(Span::styled(
-                    format!("✗ {}", e.message),
+                    format!("✗ {}", app.privacy_text(&e.message)),
                     Style::default().fg(t.err),
                 )));
             }

@@ -240,7 +240,7 @@ fn server_text(app: &App) -> Vec<Line<'static>> {
         )
     };
     // The host (and sub-path) is enough here; the scheme only adds width.
-    let mut lines = vec![Line::from(vec![k("server"), v(app.host.clone())])];
+    let mut lines = vec![Line::from(vec![k("server"), v(app.host_label())])];
     if let Some(ver) = app.data.version.get() {
         lines.push(Line::from(vec![k("version"), v(ver.version.clone())]));
     }
@@ -277,7 +277,7 @@ fn server_text(app: &App) -> Vec<Line<'static>> {
         None => {
             if let Some(e) = &app.data.status.error {
                 lines.push(Line::from(Span::styled(
-                    format!("✗ {e}"),
+                    format!("✗ {}", app.privacy_text(e)),
                     Style::default().fg(t.err),
                 )));
             }

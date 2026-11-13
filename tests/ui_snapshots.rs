@@ -324,12 +324,64 @@ fn assert_private(s: &str, what: &str) {
         !s.contains('@'),
         "e-mail visible in privacy mode ({what}):\n{s}"
     );
-    for frag in ["dem", "tst", "xyz", "***", "127.0.0.1", "example.com"] {
+    for frag in [
+        "dem",
+        "tst",
+        "xyz",
+        "***",
+        "127.0.0.1",
+        "example.com",
+        "::1",
+        "10.0.0.5",
+        "fe80",
+        "abcdefghijklmnop",
+        "9f8e7d6c5b4a3f2e",
+    ] {
         assert!(
             !s.contains(frag),
             "{frag:?} visible in privacy mode ({what}):\n{s}"
         );
     }
+}
+
+/// Server text that carries IPs and keys in places a sanitizer could miss.
+const POISON: &str = "dial tcp 10.0.0.5:8080 via http://[fe80::1]:9/x for sk-abcdefghijklmnop1234 \
+                      token 9f8e7d6c5b4a3f2e1d0c";
+
+fn poison(app: &mut App) {
+    if app.role == Some(Role::Admin) {
+        let mut st: serde_json::Value = load("status.json");
+        st["last_error"] = POISON.into();
+        st["last_warning"] = POISON.into();
+        st["last_status"] = POISON.into();
+        let st: ServerStatus = serde_json::from_value(st).unwrap();
+        data(app, Group::Meta, Payload::Status(Ok(st)));
+    }
+    app.poll_error.insert(Group::Overview, POISON.into());
+    app.flash(POISON);
+}
+
+/// The offline and login screens name the server and show raw errors.
+#[test]
+fn privacy_covers_login_and_offline_screens() {
+    let mut app = new_app();
+    app.settings.privacy = true;
+    app.settings.base_url = "http://127.0.0.1:8318".into();
+    app.host = cpatop::api::client::display_host(&app.settings.base_url);
+    app.on_msg(Msg::Auth(AuthEvent::Offline {
+        message: format!("cannot reach server: {POISON}"),
+        retry_in: std::time::Duration::from_secs(5),
+    }));
+    let s = render(&mut app, 80, 24);
+    assert_private(&s, "offline");
+    assert!(s.contains("‹ip›"), "{s}");
+    app.on_msg(Msg::Auth(AuthEvent::NeedLogin {
+        error: Some(POISON.into()),
+        mode: cpatop::api::LoginMode::Admin,
+    }));
+    assert_private(&render(&mut app, 80, 24), "login");
+    app.on_msg(Msg::Auth(AuthEvent::Connecting));
+    assert_private(&render(&mut app, 80, 24), "connecting");
 }
 
 #[test]
@@ -344,8 +396,12 @@ fn privacy_mode_hides_every_identifier() {
         if role == Role::Admin {
             assert!(plain.contains("dem…"), "{plain}");
         }
-        // …and with it, none.
+        // …and with it, none — also with an IP-literal base URL and
+        // adversarial server text (URLs with IPs, opaque keys).
         app.settings.privacy = true;
+        app.settings.base_url = "http://127.0.0.1:8318".into();
+        app.host = cpatop::api::client::display_host(&app.settings.base_url);
+        poison(&mut app);
         let tabs: Vec<Tab> = app.tabs().to_vec();
         for tab in tabs {
             for (w, h) in [(80, 24), (160, 48), (220, 60)] {
