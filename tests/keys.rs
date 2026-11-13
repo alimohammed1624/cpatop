@@ -401,3 +401,33 @@ fn help_overlay_scrolls_and_closes_only_on_esc_question_q() {
         assert!(app.overlay.is_none(), "{c:?} closes help");
     }
 }
+
+#[test]
+fn old_pane_numbers_restore_the_same_panes() {
+    // A state file from before Realtime was renumbered: 5 was share, 4
+    // latency; the sort key `realtime.6` belonged to speed.
+    let mut ui = UiState::default();
+    ui.hidden.insert("realtime".into(), vec![5, 4]);
+    ui.sort.insert("realtime.6".into(), "2:desc".into());
+    let themes = || cpatop::theme::all_themes(None).0;
+    let app = App::new(Settings::default(), themes(), &ui);
+    let mut hidden = app.hidden(Tab::Realtime).to_vec();
+    hidden.sort_by_key(|id| format!("{id:?}"));
+    assert_eq!(hidden, [PaneId::RtLatency, PaneId::RtShare]);
+    assert_eq!(app.table(PaneId::RtSpeed).sort, Some((2, true)));
+    // Saved again, it is written in the new numbering and reads back.
+    let st = app.ui_state();
+    assert_eq!(st.pane_order, Some(cpatop::layout::PANE_ORDER));
+    let mut nums = st.hidden["realtime"].clone();
+    nums.sort();
+    assert_eq!(nums, [4, 6]);
+    assert_eq!(
+        st.sort.get("realtime.5").map(String::as_str),
+        Some("2:desc")
+    );
+    let again = App::new(Settings::default(), themes(), &st);
+    assert_eq!(again.table(PaneId::RtSpeed).sort, Some((2, true)));
+    let mut hidden = again.hidden(Tab::Realtime).to_vec();
+    hidden.sort_by_key(|id| format!("{id:?}"));
+    assert_eq!(hidden, [PaneId::RtLatency, PaneId::RtShare]);
+}

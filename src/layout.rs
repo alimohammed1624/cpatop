@@ -166,15 +166,35 @@ const OVERVIEW: [PaneDef; 4] = [
     p(OvActivity, "activity", 24, 6, false),
     p(OvDist, "distribution", 36, 5, true),
 ];
+/// Panes are numbered by their position here, so each tab lists them in
+/// the reading order (left→right, top→bottom) of every preset.
 const REALTIME: [PaneDef; 7] = [
     p(RtSummary, "window", 30, 4, false),
     g(RtThroughput, "throughput", 24, 7),
     g(RtOutcomes, "outcomes", 20, 6),
-    p(RtLatency, "latency", 24, 8, false),
     p(RtShare, "share", 34, 5, true),
     p(RtSpeed, "speed", 34, 5, true),
+    p(RtLatency, "latency", 24, 8, false),
     g(RtCache, "cache", 20, 6),
 ];
+
+/// Version of the pane numbering stored in the UI state. Version 1 (no
+/// version stored) numbered Realtime latency 4, share 5, speed 6.
+pub const PANE_ORDER: u32 = 2;
+
+/// Map a pane number saved under numbering `version` to today's number.
+pub fn migrate_pane_number(tab: Tab, n: usize, version: u32) -> usize {
+    if version < 2 && tab == Tab::Realtime {
+        // Old 4 latency, 5 share, 6 speed → 6, 4, 5.
+        return match n {
+            4 => 6,
+            5 => 4,
+            6 => 5,
+            n => n,
+        };
+    }
+    n
+}
 const ANALYSIS: [PaneDef; 7] = [
     g(AnTokens, "tokens", 30, 7),
     p(AnComposition, "composition", 36, 5, true),
@@ -303,7 +323,7 @@ const RT_PRESETS: [Preset; 3] = [
         rows: &[
             row(Fixed(4), 0, &[(RtSummary, 1)]),
             row(Fill(3), 1, &[(RtThroughput, 1)]),
-            row(Fill(2), 2, &[(RtOutcomes, 1), (RtCache, 1), (RtLatency, 1)]),
+            row(Fill(2), 2, &[(RtOutcomes, 1), (RtLatency, 1), (RtCache, 1)]),
         ],
     },
     Preset {
@@ -714,6 +734,46 @@ mod tests {
                 assert!(found, "{:?} not in any preset", d.id);
             }
         }
+    }
+
+    #[test]
+    fn panes_are_numbered_in_reading_order() {
+        for t in ALL_TABS {
+            for (i, p) in presets(t).iter().enumerate() {
+                let nums: Vec<usize> = p
+                    .rows
+                    .iter()
+                    .flat_map(|r| r.panes.iter())
+                    .map(|(id, _)| pane_def(*id).1)
+                    .collect();
+                assert!(nums.is_sorted(), "{t:?} preset {i}: {nums:?}");
+            }
+        }
+        // And as placed, at every size.
+        for t in ALL_TABS {
+            for i in 0..presets(t).len() {
+                for (w, h) in [(50, 10), (80, 22), (160, 46), (220, 58)] {
+                    let mut placed = compute(t, i, &[], Rect::new(0, 0, w, h), &defaults);
+                    placed.sort_by_key(|p| (p.rect.y, p.rect.x));
+                    let nums: Vec<usize> = placed.iter().map(|p| pane_def(p.id).1).collect();
+                    assert!(nums.is_sorted(), "{t:?} preset {i} at {w}x{h}: {nums:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn old_realtime_numbers_migrate() {
+        let m = |n| {
+            let new = migrate_pane_number(Tab::Realtime, n, 1);
+            panes(Tab::Realtime)[new - 1].name
+        };
+        assert_eq!(m(4), "latency");
+        assert_eq!(m(5), "share");
+        assert_eq!(m(6), "speed");
+        assert_eq!(m(7), "cache");
+        assert_eq!(migrate_pane_number(Tab::Overview, 4, 1), 4);
+        assert_eq!(migrate_pane_number(Tab::Realtime, 4, PANE_ORDER), 4);
     }
 
     fn defaults(id: PaneId, _w: u16) -> Size {

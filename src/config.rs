@@ -92,6 +92,9 @@ pub struct UiState {
     pub layout: BTreeMap<String, usize>,
     /// Hidden pane numbers per tab.
     pub hidden: BTreeMap<String, Vec<usize>>,
+    /// Pane numbering the numbers here use (`layout::PANE_ORDER`); missing
+    /// in files written before panes were renumbered.
+    pub pane_order: Option<u32>,
     /// Sort column and direction per table (`"col:desc"`).
     pub sort: BTreeMap<String, String>,
     /// Dimension index for multi-dimension tables.

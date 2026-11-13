@@ -354,11 +354,13 @@ impl App {
                 self.layout_idx.insert(t, *v % layout::presets(t).len());
             }
         }
+        let order = ui.pane_order.unwrap_or(1);
         for (k, nums) in &ui.hidden {
             if let Some(t) = Tab::from_key(k) {
                 let ps = layout::panes(t);
                 let ids: Vec<PaneId> = nums
                     .iter()
+                    .map(|n| layout::migrate_pane_number(t, *n, order))
                     .filter_map(|n| ps.get(n.wrapping_sub(1)).map(|d| d.id))
                     .collect();
                 if ids.len() < ps.len() {
@@ -367,7 +369,7 @@ impl App {
             }
         }
         for (k, v) in &ui.sort {
-            if let Some(id) = pane_from_key(k) {
+            if let Some(id) = pane_from_key(k, order) {
                 let mut parts = v.split(':');
                 if let Some(Ok(col)) = parts.next().map(str::parse::<usize>) {
                     let desc = parts.next() == Some("desc");
@@ -376,7 +378,7 @@ impl App {
             }
         }
         for (k, v) in &ui.dims {
-            if let Some(id) = pane_from_key(k) {
+            if let Some(id) = pane_from_key(k, order) {
                 self.dims.insert(id, *v);
             }
         }
@@ -393,6 +395,7 @@ impl App {
             privacy: Some(self.settings.privacy),
             privacy_salt: Some(self.privacy_salt),
             tab: self.tab_by_role.clone(),
+            pane_order: Some(layout::PANE_ORDER),
             ..Default::default()
         };
         for (t, i) in &self.layout_idx {
@@ -708,10 +711,11 @@ pub fn pane_key(id: PaneId) -> String {
     format!("{}.{n}", tab.key())
 }
 
-fn pane_from_key(k: &str) -> Option<PaneId> {
+/// The pane a persisted `tab.N` key names, `N` in numbering `order`.
+fn pane_from_key(k: &str, order: u32) -> Option<PaneId> {
     let (t, n) = k.split_once('.')?;
     let tab = Tab::from_key(t)?;
-    let n: usize = n.parse().ok()?;
+    let n = layout::migrate_pane_number(tab, n.parse().ok()?, order);
     layout::panes(tab).get(n.checked_sub(1)?).map(|d| d.id)
 }
 
