@@ -113,12 +113,12 @@ main() {
         if command -v shellcheck >/dev/null 2>&1; then
             (cd "$src" && step shellcheck lint_scripts)
         else
-            record shellcheck "skipped (not installed)" 0
+            record shellcheck "skipped (not installed)" ""
         fi
         if command -v actionlint >/dev/null 2>&1; then
             (cd "$src" && step actionlint actionlint .github/workflows/*.yml)
         else
-            record actionlint "skipped (not installed)" 0
+            record actionlint "skipped (not installed)" ""
         fi
     fi
 
@@ -157,15 +157,8 @@ main() {
     [ "$verdict" = FAIL ] && say "log: $log"
 
     if [ "$notify" = 1 ]; then
-        local sent=1
-        if command -v notify-send >/dev/null 2>&1; then
-            local urgency=normal
-            [ "$verdict" = FAIL ] && urgency=critical
-            notify-send -a cpatop-ci -u "$urgency" "cpatop CI: $verdict (${sha:0:7}, $elapsed)" \
-                "$subject"$'\n'"$log" >/dev/null 2>&1 || sent=0
-        else
-            sent=0
-        fi
+        local sent=0
+        notify "cpatop CI: $verdict (${sha:0:7}, $elapsed)" "$subject"$'\n'"$log" "$verdict" && sent=1
         # A failure is repeated by the next hook even if a notification went out.
         if [ "$sent" = 0 ] || [ "$verdict" = FAIL ]; then
             : >"$dir/$sha.unseen"
@@ -184,10 +177,26 @@ cleanup() {
     return 0
 }
 
+# notify <title> <body> <PASS|FAIL>: desktop notification via notify-send,
+# else straight over D-Bus (gdbus). Fails if neither works.
+notify() {
+    local urgency=normal level=1
+    [ "$3" = FAIL ] && urgency=critical level=2
+    if command -v notify-send >/dev/null 2>&1 &&
+        notify-send -a cpatop-ci -u "$urgency" "$1" "$2" >/dev/null 2>&1; then
+        return 0
+    fi
+    command -v gdbus >/dev/null 2>&1 &&
+        gdbus call --session --dest org.freedesktop.Notifications \
+            --object-path /org/freedesktop/Notifications \
+            --method org.freedesktop.Notifications.Notify \
+            cpatop-ci 0 '' "$1" "$2" '[]' "{'urgency': <byte $level>}" -1 >/dev/null 2>&1
+}
+
 # record <name> <result> <seconds>
 record() {
     local secs=""
-    [ "$3" != 0 ] && secs=$(fmt_secs "$3")
+    [ -n "$3" ] && secs=$(fmt_secs "$3")
     printf '%s\t%s\t%s\n' "$1" "$2" "$secs" >>"$results"
 }
 

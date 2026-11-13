@@ -49,7 +49,7 @@ check required ssh "openssh (Mac builds)"
 check optional cargo-zigbuild "static musl builds: uv tool install cargo-zigbuild (brings zig)"
 check optional shellcheck "script lint: uv tool install shellcheck-py"
 check optional actionlint "workflow lint: uv tool install actionlint-py"
-check optional notify-send "desktop notifications (libnotify)"
+check optional notify-send "desktop notifications (libnotify; gdbus is the fallback)"
 check optional gh "release.sh publishing: GitHub CLI"
 if command -v cargo-zigbuild >/dev/null 2>&1 && ! zig_env; then
     printf '  missing   zig — cargo-zigbuild needs it (pip/uv: ziglang)\n'

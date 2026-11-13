@@ -2,8 +2,8 @@
 # post-commit: on branch main, run scripts/ci.sh for the new commit in the
 # background (detached; the commit and the terminal are not held up). The
 # result goes to <git-common-dir>/cpatop-ci/<sha>.{log,status} and a desktop
-# notification (notify-send); without one, or on FAIL, the next hook prints a
-# one-line result.
+# notification (notify-send, else gdbus); without one, or on FAIL, the next
+# hook prints a one-line result.
 #
 #   CPATOP_SKIP_CI=1       skip this commit
 #   CPATOP_CI_ARGS="..."   flags for ci.sh (default "--mac"; "" = local only)

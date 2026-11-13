@@ -343,7 +343,8 @@ CI runs locally rather than on GitHub Actions (the workflows in
   `.git/cpatop-ci/<sha>.log` and `.status`.
 - The `post-commit` hook runs `scripts/ci.sh --mac` in the background for
   every commit on `main` and shows a desktop notification when it is done
-  (without `notify-send`, or on failure, the next hook prints the result).
+  (`notify-send` or D-Bus; if neither works, or on failure, the next hook
+  prints the result).
   `CPATOP_SKIP_CI=1` skips it; `CPATOP_CI_ARGS` overrides the flags.
 - The `pre-push` hook refuses to push `main` if its local CI failed. If CI is
   missing or still running, `CPATOP_PREPUSH=wait` (default) waits for it or
