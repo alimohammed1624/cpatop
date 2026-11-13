@@ -120,7 +120,8 @@ impl Query {
             // Everywhere credentials are named (usage tables, request log),
             // so accounts on several providers can be told apart.
             Group::Credentials => admin && !matches!(self.tab, Tab::Models | Tab::Settings),
-            Group::Quota => admin && self.tab == Tab::Quota,
+            // The Credentials tab fills plans from cached quota.
+            Group::Quota => admin && matches!(self.tab, Tab::Quota | Tab::Credentials),
             Group::Models => admin && self.tab == Tab::Models,
             Group::Settings | Group::KeyUsage => admin && self.tab == Tab::Settings,
             Group::EventFilters => admin && self.tab == Tab::Events,

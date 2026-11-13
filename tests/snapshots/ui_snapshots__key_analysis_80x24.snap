@@ -2,7 +2,7 @@
 source: tests/ui_snapshots.rs
 expression: s
 ---
- cpatop ⌂ localhost:8318 │ key #1 dem… │ ◷ today │ ↻ 0s ago │ ● ok       ? help
+ cpatop ⌂ localhost:8318 │ key #1 dem… │ ◷ today │ ⟳ 1m │ ↻ 0s │ ● ok    ? help
 ─┤ Overview ├┤ Realtime ├┤ Analysis ├───────────────────────── layout balanced ─
 ╭─¹ tokens ──────────────────────────────────────────────────── today · daily ─╮
 │ tokens 123M   requests 1,176   cost $88.79 (partial)   $/1M $0.7206          │

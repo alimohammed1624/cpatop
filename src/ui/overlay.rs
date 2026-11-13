@@ -115,6 +115,18 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
+        "credential names",
+        &[
+            ("name · cl", "one account on several providers;"),
+            ("", "the provider is abbreviated when short"),
+            ("cl cx ag", "claude  codex  antigravity"),
+            ("gm gc vx as", "gemini  gemini-cli  vertex  aistudio"),
+            ("oa oc", "openai  openai-compatibility"),
+            ("qw if km xa", "qwen  iflow  kimi  xai"),
+            ("… api  #12", "API-key credential · credential id"),
+        ],
+    ),
+    (
         "display & session",
         &[
             ("t / T", "next / previous theme"),
@@ -602,5 +614,23 @@ mod tests {
                 .all(|l| l.ends_with('/') || l.ends_with("sh") || l.ends_with("-fsSL")),
             "{w:?}"
         );
+    }
+
+    #[test]
+    fn help_lists_every_provider_abbreviation() {
+        let rows = HELP
+            .iter()
+            .find(|(n, _)| *n == "credential names")
+            .map(|(_, r)| *r)
+            .unwrap_or_default();
+        let words = |s: &str| s.split_whitespace().map(String::from).collect::<Vec<_>>();
+        for (name, abbr) in crate::app::PROVIDER_ABBREVS {
+            // In the same row and at the same position.
+            let found = rows.iter().any(|(k, d)| {
+                let (k, d) = (words(k), words(d));
+                k.len() == d.len() && k.iter().zip(&d).any(|(a, n)| a == abbr && n == name)
+            });
+            assert!(found, "{name} → {abbr}");
+        }
     }
 }

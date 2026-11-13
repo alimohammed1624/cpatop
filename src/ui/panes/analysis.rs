@@ -168,7 +168,7 @@ fn comp_items(app: &App) -> &[CompositionItem] {
     {
         Some("api keys") => &a.api_key_composition,
         Some("credentials") => &a.credentials_composition,
-        Some("providers") => &a.ai_provider_composition,
+        Some("AI providers") => &a.ai_provider_composition,
         _ => &a.model_composition,
     }
 }
@@ -220,10 +220,16 @@ pub fn composition(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused:
         .iter()
         .enumerate()
         .map(|(i, c)| {
-            let name = match dim {
-                Some("api keys") => app.key_name(&c.key, &c.label),
-                Some("credentials") => app.credential_name(&c.key, &c.label),
-                _ => app.privacy(&c.label),
+            let (name, short) = match dim {
+                Some("api keys") => {
+                    let n = app.key_name(&c.key, &c.label);
+                    (n.clone(), n)
+                }
+                Some("credentials") => app.credential_labels(&c.key, &c.label),
+                _ => {
+                    let n = app.privacy(&c.label);
+                    (n.clone(), n)
+                }
             };
             let cache = fmt::ratio_pct(c.cache_read_tokens, c.input_tokens);
             TRow::new(c.key.clone())
@@ -232,7 +238,7 @@ pub fn composition(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused:
                     Style::default().fg(t.graph_text),
                     num(i as f64),
                 )
-                .text(name.clone(), text(&name))
+                .name(name.clone(), short, Style::default(), text(&name))
                 .styled(
                     fmt::compact(c.total_tokens),
                     Style::default().fg(t.title),
@@ -280,7 +286,7 @@ pub fn composition(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused:
         focused,
         &COMP_COLS,
         rows,
-        "no data",
+        &super::empty_dim_text(app, PaneId::AnComposition, "no data"),
     );
 }
 

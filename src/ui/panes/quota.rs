@@ -205,7 +205,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
         .collect();
     creds.sort_by_key(|i| ident_name(app, i).to_lowercase());
     for i in creds {
-        let name = ident_name(app, i);
+        let (name, short) = app.ident_labels(i);
         let insp = status.and_then(|s| s.results.iter().find(|r| r.auth_index == i.identity));
         let st_text = insp.map(|r| r.status.replace('_', " ")).unwrap_or_default();
         let st_cell = status_cell(app, insp.map(|r| r.status.as_str()));
@@ -218,20 +218,9 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                 .unwrap_or_default(),
             _ => vec![],
         };
-        let plan_s = match task {
-            Some(Ok(task)) => task
-                .quota
-                .as_ref()
-                .and_then(|q| q.subscription.as_ref())
-                .map(|s| s.plan.clone())
-                .unwrap_or_else(|| plan(i)),
-            _ => plan(i),
-        };
-        let plan_s = if plan_s.is_empty() || plan_s == "unknown" {
-            "—".to_string()
-        } else {
-            plan_s
-        };
+        let plan_s = quota_plan(app, i)
+            .or_else(|| known_plan(plan(i)))
+            .unwrap_or_else(|| "—".to_string());
         let filter = format!("{name} {} {plan_s}", i.kind);
         if quota_rows.is_empty() {
             let msg = match task {
@@ -249,7 +238,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
             };
             rows.push(
                 TRow::new(i.identity.clone())
-                    .text(name.clone(), text(&name))
+                    .name(name.clone(), short.clone(), Style::default(), text(&name))
                     .text(plan_s.clone(), text(&plan_s))
                     .styled(
                         i.kind.clone(),
@@ -306,10 +295,10 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                 .and_then(|s| fmt::until(s, now))
                 .or(r.reset_after_seconds.map(|s| s as u64));
             let first = k == 0;
-            let (cell_name, cell_plan) = if first {
-                (name.clone(), plan_s.clone())
+            let (cell_name, cell_short, cell_plan) = if first {
+                (name.clone(), short.clone(), plan_s.clone())
             } else {
-                (String::new(), String::new())
+                (String::new(), String::new(), String::new())
             };
             let (tok, cost) = if r.metric.as_deref() == Some("usd_cents") {
                 (
@@ -328,7 +317,12 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
             };
             rows.push(
                 TRow::new(i.identity.clone())
-                    .styled(cell_name, Style::default().fg(t.title), text(&name))
+                    .name(
+                        cell_name,
+                        cell_short,
+                        Style::default().fg(t.title),
+                        text(&name),
+                    )
                     .text(cell_plan, text(&plan_s))
                     .text(r.display_label(), text(&r.display_label()))
                     .meter(
@@ -374,8 +368,8 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
         let all = all_requests(app, &starts)?;
         Some(RowChart {
             title: format!(
-                "{} has no requests in the last {window} · all credentials",
-                ident_name(app, i)
+                "no requests for {} in {window} — showing all credentials",
+                app.ident_labels(i).1
             ),
             labels: time_labels(&starts, false, false),
             values: all,
@@ -408,6 +402,19 @@ const HIST_COLS: [Col; 9] = [
     col("cost", 8, Align::Right, 1),
     col("tok/1%", 7, Align::Right, 2),
 ];
+
+/// A plan name, unless empty or `unknown`.
+pub(super) fn known_plan(p: String) -> Option<String> {
+    (!p.is_empty() && p != "unknown").then_some(p)
+}
+
+/// The plan the credential's cached quota reports (`pro`, `team`…), if any.
+pub(super) fn quota_plan(app: &App, i: &Identity) -> Option<String> {
+    match app.data.quota.get()?.get(&i.identity)? {
+        Ok(task) => known_plan(task.quota.as_ref()?.subscription.as_ref()?.plan.clone()),
+        Err(_) => None,
+    }
+}
 
 /// Rows of the quota table: one per window, at least one per credential.
 pub fn list_len(app: &App) -> Option<usize> {

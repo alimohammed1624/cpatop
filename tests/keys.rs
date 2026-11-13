@@ -401,3 +401,42 @@ fn help_overlay_scrolls_and_closes_only_on_esc_question_q() {
         assert!(app.overlay.is_none(), "{c:?} closes help");
     }
 }
+
+#[test]
+fn a_restored_empty_dimension_falls_back_once_data_shows_it() {
+    let mut ui = UiState::default();
+    ui.dims.insert("overview.4".into(), 3);
+    let mut app = App::new(Settings::default(), cpatop::theme::all_themes(None).0, &ui);
+    app.on_msg(Msg::Auth(AuthEvent::LoggedIn {
+        role: Role::Admin,
+        session: load("auth-session-admin.json"),
+        epoch: 1,
+    }));
+    // Still loading: the restored dimension stays.
+    assert_eq!(app.dim(PaneId::OvDist), 3);
+    data(
+        &mut app,
+        Group::Overview,
+        Payload::Overview(Ok(load("usage-overview.json"))),
+    );
+    assert_eq!(app.dim(PaneId::OvDist), 3);
+    // No AI providers on this server, models has rows: back to models.
+    data(
+        &mut app,
+        Group::Overview,
+        Payload::Comparisons(Ok(load("usage-overview-comparisons.json"))),
+    );
+    assert_eq!(app.dim(PaneId::OvDist), 0);
+    // Chosen with `d` later, it stays (only restored dimensions fall back).
+    draw(&mut app);
+    for _ in 0..3 {
+        press(&mut app, KeyCode::Char('d'));
+    }
+    assert_eq!(app.dim(PaneId::OvDist), 3);
+    data(
+        &mut app,
+        Group::Overview,
+        Payload::Comparisons(Ok(load("usage-overview-comparisons.json"))),
+    );
+    assert_eq!(app.dim(PaneId::OvDist), 3);
+}

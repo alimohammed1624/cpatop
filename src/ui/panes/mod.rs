@@ -94,7 +94,7 @@ pub fn size(app: &App, id: PaneId, w: u16) -> Size {
         AnEfficiency => table(analysis::efficiency_len(app)),
         AnHeatmap => table(analysis::heatmap_len(app)),
         EvLog => Size::at_least(8),
-        EvDetail => Size::range(6, events::detail_lines(w.saturating_sub(3)) + 2),
+        EvDetail => Size::range(6, events::detail_lines(app, w.saturating_sub(3)) + 2),
         CrList => table(app.data.identities.get().map(|p| p.identities.len())),
         CrDetail => Size::at_least(8),
         QuInspection => Size::exact(quota::inspection_lines(app, inner_w).max(1) + 2),
@@ -526,22 +526,33 @@ pub fn draw_row_chart(
         .copied()
         .filter(|v| v.is_finite())
         .fold(0.0, f64::max);
-    f.buffer_mut().set_line(
-        area.x,
-        area.y,
-        &Line::from(vec![
-            Span::styled("▸ ", Style::default().fg(t.hi)),
-            Span::styled(
-                c.title.clone(),
-                Style::default().fg(t.title).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                format!("  Σ {}  peak {}", (c.fmt)(total), (c.fmt)(peak)),
-                Style::default().fg(t.graph_text),
-            ),
-        ]),
-        area.width,
-    );
+    // Title on the left, the series' totals on the right (after the title
+    // when the line is too short to keep them apart).
+    let title = Line::from(vec![
+        Span::styled("▸ ", Style::default().fg(t.hi)),
+        Span::styled(
+            c.title.clone(),
+            Style::default().fg(t.title).add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    let stats = format!("Σ {}  peak {}", (c.fmt)(total), (c.fmt)(peak));
+    let (tw, sw) = (title.width() as u16, fmt::width(&stats) as u16);
+    let buf = f.buffer_mut();
+    buf.set_line(area.x, area.y, &title, area.width);
+    let sx = if tw + 2 + sw <= area.width {
+        area.x + area.width - sw
+    } else {
+        area.x + tw + 2
+    };
+    if sx < area.right() {
+        buf.set_stringn(
+            sx,
+            area.y,
+            &stats,
+            (area.right() - sx) as usize,
+            Style::default().fg(t.graph_text),
+        );
+    }
     let g = Rect::new(
         area.x,
         area.y + 1,
@@ -569,6 +580,26 @@ pub fn draw_row_chart(
         app.settings.graph_symbols,
         false,
     );
+}
+
+/// What an empty multi-dimension table says: for the AI-provider
+/// dimension, that the server has no API-key AI providers when the
+/// credential list shows none.
+pub fn empty_dim_text(app: &App, id: PaneId, empty: &str) -> String {
+    let dims = crate::app::dims_for(id, app.role);
+    if dims.get(app.dim(id)) != Some(&"AI providers") {
+        return empty.to_string();
+    }
+    let none = app
+        .data
+        .identities
+        .get()
+        .is_some_and(|p| !p.identities.iter().any(|i| i.auth_type == 2));
+    if none {
+        "no API-key AI providers configured".into()
+    } else {
+        format!("{empty} for API-key AI providers")
+    }
 }
 
 /// Dimension switcher spans (`models│keys│…`) for the right title.

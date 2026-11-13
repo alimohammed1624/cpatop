@@ -2,7 +2,7 @@
 source: tests/ui_snapshots.rs
 expression: s
 ---
- cpatop ⌂ localhost:8318 │ admin │ ◷ window 15m │ ↻ 0s ago │ ● ok        ? help
+ cpatop ⌂ localhost:8318 │ admin │ ◷ window 15m │ ⟳ 10s │ ↻ 0s │ ● ok    ? help
 ─ Overview  Realtime  Analysis  Requests  Credentials  Quota  Models  Keys ─────
 ╭─¹ window ────────────────────────────────────────────────────────────── 15m ─╮
 │ requests 351   failures 0 (0.0%)   tokens 25.1M   in 24.9M   out 152k        │
