@@ -566,6 +566,8 @@ pub struct RowChart {
     pub title: String,
     /// One label per bucket (time).
     pub labels: Vec<String>,
+    /// One value per bucket; trailing `NaN`s are buckets that have not
+    /// started yet (the rest of `today`), kept so the axis spans the range.
     pub values: Vec<f64>,
     pub fmt: fn(f64) -> String,
     pub color: Option<Color>,
@@ -673,7 +675,9 @@ pub fn draw_row_chart(
         widgets::message(f.buffer_mut(), g, "no activity in this range", t.graph_text);
         return;
     }
-    chart(
+    // Row-chart series use `NaN` only for buckets that have not started.
+    let now = started(&c.values);
+    chart_until(
         f,
         app,
         hit,
@@ -689,6 +693,7 @@ pub fn draw_row_chart(
         },
         app.settings.graph_symbols,
         false,
+        (now < c.values.len()).then_some(now),
     );
 }
 
@@ -768,6 +773,68 @@ pub struct Series<'a> {
 /// cursor; returns the plot area. `labels` holds one label per bucket.
 #[allow(clippy::too_many_arguments)]
 pub fn chart(
+    f: &mut Frame,
+    app: &App,
+    hit: &mut Hit,
+    id: PaneId,
+    area: Rect,
+    labels: &[String],
+    s: &Series,
+    symbols: GraphSymbols,
+    record: bool,
+) -> Rect {
+    chart_until(f, app, hit, id, area, labels, s, symbols, record, None)
+}
+
+/// [`chart`] for a range that runs past now (`today`): buckets from
+/// `future` on have not started yet. They keep their slots on the time
+/// axis (values `NaN`, drawn empty) and the axis under them is dotted, so a
+/// single bucket just after midnight is one narrow bar at 00:00, not a wall
+/// across the whole day.
+#[allow(clippy::too_many_arguments)]
+pub fn chart_until(
+    f: &mut Frame,
+    app: &App,
+    hit: &mut Hit,
+    id: PaneId,
+    area: Rect,
+    labels: &[String],
+    s: &Series,
+    symbols: GraphSymbols,
+    record: bool,
+    future: Option<usize>,
+) -> Rect {
+    let plot = chart_inner(f, app, hit, id, area, labels, s, symbols, record);
+    let n = s.values.len();
+    if let Some(from) = future.filter(|i| *i < n)
+        && plot != area
+        && plot.width > 0
+    {
+        let w = plot.width as usize;
+        let (c0, _) = widgets::bucket_cols(from, n, w);
+        let style = Style::default().fg(app.theme().border);
+        let buf = f.buffer_mut();
+        for c in c0..w {
+            let cell = &mut buf[(plot.x + c as u16, plot.bottom())];
+            if cell.symbol() == "─" {
+                cell.set_symbol("┈").set_style(style);
+            }
+        }
+    }
+    plot
+}
+
+/// Number of leading values that are not trailing `NaN`s: where a series
+/// whose not-yet-started buckets are `NaN` stops.
+pub fn started(values: &[f64]) -> usize {
+    values
+        .iter()
+        .rposition(|v| !v.is_nan())
+        .map_or(0, |i| i + 1)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn chart_inner(
     f: &mut Frame,
     app: &App,
     hit: &mut Hit,
@@ -1053,10 +1120,21 @@ pub fn chart_head(app: &App, name: &str, value: String, rest: Vec<Span<'static>>
 
 #[cfg(test)]
 mod tests {
-    use super::{hour_ticks, nice_max, offset_hours};
+    use super::{hour_ticks, nice_max, offset_hours, started};
 
     fn labels(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn started_stops_before_trailing_nans() {
+        let n = f64::NAN;
+        assert_eq!(started(&[5.0, n, n]), 1);
+        // A gap inside the series is not the future.
+        assert_eq!(started(&[5.0, n, 0.0, n]), 3);
+        assert_eq!(started(&[1.0, 2.0]), 2);
+        assert_eq!(started(&[n, n]), 0);
+        assert_eq!(started(&[]), 0);
     }
 
     #[test]

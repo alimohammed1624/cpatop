@@ -1,7 +1,7 @@
 //! Overview tab (admin and API-key viewer).
 
 use super::{
-    RowChart, Series, chart, chart_head, cursor, cursor_time, dim_key_field, dim_tabs, frame,
+    RowChart, Series, chart_head, chart_until, cursor, cursor_time, dim_key_field, dim_tabs, frame,
     placeholder, request_details, stale_marker, table_with_chart, time_labels, token_details,
 };
 use crate::api::models::ComparisonItem;
@@ -144,8 +144,9 @@ pub fn totals(f: &mut Frame, app: &App, area: Rect, focused: bool) {
     );
 }
 
-/// Bucket timestamps, tokens, requests and whether buckets are daily.
-type Trend = (Vec<String>, Vec<f64>, Vec<f64>, bool);
+/// Bucket timestamps, tokens, requests, whether buckets are daily, and how
+/// many buckets have started (the rest are `NaN`: the remainder of `today`).
+type Trend = (Vec<String>, Vec<f64>, Vec<f64>, bool, usize);
 
 /// Dense token series (from comparisons) and requests aligned to it.
 fn trend_series(app: &App) -> Option<Trend> {
@@ -178,12 +179,21 @@ fn trend_series(app: &App) -> Option<Trend> {
                 }
             }
         }
-        // The `today` axis runs to midnight; stop at the current bucket.
-        let keep = crate::series::until_now(&c.buckets, app.clock.utc()).max(1);
-        tokens.truncate(keep);
-        reqs.truncate(keep);
-        let buckets = c.buckets[..keep.min(n)].to_vec();
-        return Some((buckets, tokens, reqs, c.granularity == "daily"));
+        // The `today` axis runs to midnight: buckets after the current one
+        // keep their slots (so the day reads 00:00 → 24:00) but are blank.
+        let keep = crate::series::until_now(&c.buckets, app.server_now())
+            .max(1)
+            .min(n);
+        for v in tokens[keep..].iter_mut().chain(&mut reqs[keep..]) {
+            *v = f64::NAN;
+        }
+        return Some((
+            c.buckets.clone(),
+            tokens,
+            reqs,
+            c.granularity == "daily",
+            keep,
+        ));
     }
     ov.map(|o| {
         (
@@ -191,15 +201,21 @@ fn trend_series(app: &App) -> Option<Trend> {
             o.series.tokens.clone(),
             o.series.requests.clone(),
             app.range.is_daily(),
+            o.series.buckets.len(),
         )
     })
+}
+
+/// Sum of the started buckets.
+fn total(v: &[f64]) -> f64 {
+    v.iter().filter(|v| v.is_finite()).sum()
 }
 
 pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
     let series = trend_series(app);
     let right = match &series {
-        Some((b, tok, _, daily)) if !b.is_empty() => {
+        Some((b, tok, _, daily, _)) if !b.is_empty() => {
             let peak = tok.iter().copied().fold(0.0, f64::max);
             let unit = if *daily { "/day" } else { "/h" };
             vec![Span::styled(
@@ -207,7 +223,7 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
                     "{} · peak {}{unit} · Σ {}",
                     app.range.label(),
                     fmt::compact(peak),
-                    fmt::compact(tok.iter().sum())
+                    fmt::compact(total(tok))
                 ),
                 Style::default().fg(t.graph_text),
             )]
@@ -215,13 +231,13 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
         _ => vec![],
     };
     let inner = frame(f, app, PaneId::OvTrend, area, focused, right, None);
-    let Some((buckets, tokens, reqs, daily)) = series else {
+    let Some((buckets, tokens, reqs, daily, keep)) = series else {
         if !placeholder(f, app, inner, &app.data.comparisons) {
             widgets::message(f.buffer_mut(), inner, "no data", t.graph_text);
         }
         return;
     };
-    if tokens.iter().all(|v| *v == 0.0) && reqs.iter().all(|v| *v == 0.0) {
+    if total(&tokens) == 0.0 && total(&reqs) == 0.0 {
         widgets::message(
             f.buffer_mut(),
             inner,
@@ -232,6 +248,7 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
     }
     let labels = time_labels(&buckets, daily, false);
     let n = buckets.len();
+    let future = (keep < n).then_some(keep);
     let cur = cursor(app, PaneId::OvTrend, n);
     let label = Style::default().fg(t.graph_text);
     let at = |i: usize| {
@@ -245,7 +262,7 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
         None => chart_head(
             app,
             name,
-            f2(v.iter().sum()),
+            f2(total(v)),
             vec![Span::styled(
                 format!("  peak {}", f2(v.iter().copied().fold(0.0, f64::max))),
                 label,
@@ -258,7 +275,7 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
         let th = inner.height * 3 / 5;
         f.buffer_mut()
             .set_line(x, inner.y, &head("tokens", &tokens, fmt::compact), w);
-        chart(
+        chart_until(
             f,
             app,
             hit,
@@ -274,12 +291,13 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
             },
             app.settings.graph_symbols,
             true,
+            future,
         );
         let ry = inner.y + th;
         let rh = inner.height - th;
         f.buffer_mut()
             .set_line(x, ry, &head("requests", &reqs, fmt::int), w);
-        chart(
+        chart_until(
             f,
             app,
             hit,
@@ -295,11 +313,12 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
             },
             app.settings.graph_symbols,
             false,
+            future,
         );
     } else {
         f.buffer_mut()
             .set_line(x, inner.y, &head("tokens", &tokens, fmt::compact), w);
-        chart(
+        chart_until(
             f,
             app,
             hit,
@@ -315,6 +334,7 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
             },
             app.settings.graph_symbols,
             true,
+            future,
         );
     }
 }
@@ -362,8 +382,16 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
         .data
         .comparisons
         .get()
-        .map(|c| crate::series::until_now(&c.buckets, app.clock.utc()))
+        .map(|c| crate::series::until_now(&c.buckets, app.server_now()))
         .unwrap_or(usize::MAX);
+    // Buckets that have not started (the rest of `today`) stay on the axis,
+    // blank, so a sparkline or row chart reads as a day filling in.
+    let started = |v: &[f64]| -> Vec<f64> {
+        v.iter()
+            .enumerate()
+            .map(|(i, x)| if i < keep { *x } else { f64::NAN })
+            .collect()
+    };
     let dim = app.dim(PaneId::OvDist);
     let dim_name = crate::app::dims_for(PaneId::OvDist, app.role)
         .get(dim)
@@ -412,11 +440,7 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
                     cache.map(|c| fmt::pct(c, 1)).unwrap_or("-".into()),
                     num(cache.unwrap_or(-1.0)),
                 )
-                .spark(
-                    i.token_series[..keep.min(i.token_series.len())].to_vec(),
-                    t.accent,
-                    num(i.total_tokens),
-                )
+                .spark(started(&i.token_series), t.accent, num(i.total_tokens))
                 .filter(format!("{name} {}", i.key))
                 .details(dim_key_field(app, dim_name, &i.key))
                 .details(request_details(i.requests, i.failures))
@@ -439,7 +463,7 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
     let chart_for = |id: &str| -> Option<RowChart> {
         let c = app.data.comparisons.get()?;
         let i = items.iter().find(|i| i.key == id)?;
-        let n = keep.min(c.buckets.len()).min(i.token_series.len());
+        let n = c.buckets.len().min(i.token_series.len());
         let name = match dim {
             1 => app.key_name(&i.key, &i.label),
             2 => app.credential_name(&i.key, &i.label),
@@ -448,7 +472,7 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
         Some(RowChart {
             title: format!("{name} · tokens"),
             labels: time_labels(&c.buckets[..n], c.granularity == "daily", false),
-            values: i.token_series[..n].to_vec(),
+            values: started(&i.token_series[..n]),
             fmt: fmt::compact,
             color: None,
         })

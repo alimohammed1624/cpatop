@@ -794,9 +794,6 @@ pub fn cache(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
         .map(|(_, q)| *q)
         .collect();
     let cur = cursor(app, PaneId::RtCache, rates.len());
-    // Plot above a floor so small changes near 100% stay visible.
-    let lo = known.iter().copied().fold(100.0, f64::min);
-    let floor = ((lo - 5.0) / 10.0).floor().clamp(0.0, 9.0) * 10.0;
     let head = match cur {
         Some(i) => chart_head(
             app,
@@ -847,8 +844,10 @@ pub fn cache(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
             fmt: |v| format!("{v:.0}%"),
             // A high cache-hit rate is good: never the "hot" red end.
             color: Some(t.ok),
+            // 0–100 % like every other chart (btop-style): a cut axis made
+            // a dip from 97 % to 92 % look like a collapse.
             max: Some(100.0),
-            floor,
+            floor: 0.0,
         },
         app.settings.graph_symbols,
         true,
