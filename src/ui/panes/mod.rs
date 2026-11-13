@@ -186,7 +186,7 @@ pub fn frame(
 }
 
 /// A pane collapsed to a single title row for lack of space.
-pub fn collapsed(f: &mut Frame, app: &App, id: PaneId, area: Rect) {
+pub fn collapsed(f: &mut Frame, app: &App, hit: &Hit, id: PaneId, area: Rect) {
     let t = app.theme();
     let (_, _, def) = layout::pane_def(id);
     let num = app.pane_number(id);
@@ -204,11 +204,17 @@ pub fn collapsed(f: &mut Frame, app: &App, id: PaneId, area: Rect) {
     ];
     let used: usize = spans.iter().map(|s| s.width()).sum();
     // A one-line summary keeps the pane's key numbers visible.
-    let note = match collapsed_summary(app, id) {
-        Some(s) => format!(" ▸ {s} "),
-        None => " ▸ more rows needed ".to_string(),
+    let room = (area.width as usize).saturating_sub(used + 2);
+    let note = match collapsed_summary(app, hit, id) {
+        Some(s) => fit_clauses(&s, room.saturating_sub(4)).unwrap_or_default(),
+        None if room >= 20 => "more rows needed".to_string(),
+        None => "too short".to_string(),
     };
-    let note = fmt::trunc(&note, (area.width as usize).saturating_sub(used + 2));
+    let note = if note.is_empty() {
+        String::new()
+    } else {
+        fmt::trunc(&format!(" ▸ {note} "), room)
+    };
     let fill = (area.width as usize).saturating_sub(used + fmt::width(&note) + 1);
     spans.push(Span::styled(note, Style::default().fg(t.fg)));
     spans.push(Span::styled("─".repeat(fill), bs));
@@ -218,8 +224,23 @@ pub fn collapsed(f: &mut Frame, app: &App, id: PaneId, area: Rect) {
         .set_line(area.x, area.y, &Line::from(spans), area.width);
 }
 
+/// `s` cut to `w` columns by dropping whole ` · ` clauses from the end, so
+/// a short line keeps complete numbers; cut with `…` only when even the
+/// first clause is too long, and left out when too little of it would show.
+fn fit_clauses(s: &str, w: usize) -> Option<String> {
+    let mut out = s;
+    while fmt::width(out) > w {
+        match out.rfind(" · ") {
+            Some(i) => out = &out[..i],
+            None if w >= 12 => return Some(fmt::trunc(out, w)),
+            None => return None,
+        }
+    }
+    Some(out.to_string())
+}
+
 /// One-line summary of a pane collapsed for lack of rows.
-fn collapsed_summary(app: &App, id: PaneId) -> Option<String> {
+fn collapsed_summary(app: &App, hit: &Hit, id: PaneId) -> Option<String> {
     use PaneId::*;
     let top = |items: Vec<(String, f64)>| -> String {
         let total: f64 = items.iter().map(|i| i.1).sum();
@@ -349,8 +370,107 @@ fn collapsed_summary(app: &App, id: PaneId) -> Option<String> {
                 fmt::plural(h.models.len(), "model", "models")
             )
         }
+        OvTotals => {
+            let o = d.overview.get()?;
+            let u = &o.usage;
+            format!(
+                "requests {} · success {} · tokens {} · cost {}",
+                fmt::int(u.total_requests),
+                fmt::ratio_pct(u.success_count, u.total_requests)
+                    .map(|p| fmt::pct(p, 1))
+                    .unwrap_or("-".into()),
+                fmt::compact(u.total_tokens),
+                fmt::usd(o.summary.total_cost)
+            )
+        }
+        OvTrend => {
+            let o = d.overview.get()?;
+            let peak = o.series.tokens.iter().copied().fold(0.0, f64::max);
+            format!(
+                "tokens {} · peak {} · requests {}",
+                fmt::compact(o.usage.total_tokens),
+                fmt::compact(peak),
+                fmt::int(o.usage.total_requests)
+            )
+        }
+        RtSummary => {
+            let s = &d.realtime.get()?.insights.as_ref()?.summary;
+            format!(
+                "requests {} · failures {} · tokens {} · cost {}",
+                fmt::int(s.requests),
+                fmt::int(s.failures),
+                fmt::compact(s.total_tokens),
+                fmt::usd_opt(s.cost)
+            )
+        }
+        RtThroughput => {
+            let v: Vec<f64> = d
+                .realtime
+                .get()?
+                .token_velocity
+                .iter()
+                .map(|p| p.tokens_per_minute)
+                .collect();
+            format!(
+                "tokens/min {} now · avg {}",
+                v.last().map(|x| fmt::compact(*x)).unwrap_or("-".into()),
+                fmt::compact(v.iter().sum::<f64>() / v.len().max(1) as f64)
+            )
+        }
+        AnTokens => {
+            let a = d.analysis.get()?;
+            let total: f64 = a.token_usage.iter().map(|b| b.total_tokens).sum();
+            let peak = a
+                .token_usage
+                .iter()
+                .map(|b| b.total_tokens)
+                .fold(0.0, f64::max);
+            format!(
+                "tokens {} · peak {} per {}",
+                fmt::compact(total),
+                fmt::compact(peak),
+                a.granularity
+            )
+        }
+        QuInspection => quota::inspection_summary(app)?,
+        QuList => quota::list_summary(app)?,
+        QuHistory => quota::history_summary(app, hit)?,
+        // The table above shows the selected row; Enter shows all of it.
+        EvDetail | CrDetail => "⏎ on a row shows every field".to_string(),
+        MoCatalog => models::catalog_summary(app)?,
+        MoPricing => fmt::plural(
+            d.pricing.get()?.models.len(),
+            "priced model",
+            "priced models",
+        ),
+        CrList => fmt::plural(
+            d.identities.get()?.identities.len(),
+            "credential",
+            "credentials",
+        ),
+        StKeys => fmt::plural(d.api_keys.get()?.items.len(), "API key", "API keys"),
+        StSessions => fmt::plural(d.sessions.get()?.items.len(), "session", "sessions"),
+        EvLog => {
+            let l = &app.live;
+            let total = if l.total >= 0 {
+                fmt::int(l.total as f64)
+            } else {
+                "?".into()
+            };
+            format!(
+                "{} loaded of {total} · {}",
+                fmt::int(l.events.len() as f64),
+                app.range.label()
+            )
+        }
+        // A table drawn at least once knows its rows; one never drawn
+        // (collapsed from the start) does not, and says nothing rather
+        // than a wrong `0 rows`.
         _ if layout::pane_def(id).2.table => {
             let n = app.table(id).len.get();
+            if n == 0 {
+                return None;
+            }
             fmt::plural(n, "row", "rows")
         }
         _ => return None,

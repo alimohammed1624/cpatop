@@ -570,11 +570,26 @@ impl App {
                 return;
             }
             hidden.push(def.id);
+            if in_preset {
+                self.flash(format!("{n} {} hidden · {n} or 0 shows it", def.name));
+            }
         }
         if !in_preset {
             self.flash(format!("{} is not part of this layout — press p", def.name));
         }
         self.effects.push(Effect::SaveState);
+    }
+
+    /// Show every pane of the current tab hidden with 1-9.
+    fn show_all_panes(&mut self) {
+        match self.hidden.get_mut(&self.tab) {
+            Some(h) if !h.is_empty() => {
+                h.clear();
+                self.flash("all panes shown");
+                self.effects.push(Effect::SaveState);
+            }
+            _ => self.flash("no hidden panes on this tab"),
+        }
     }
 
     /// Cycle focus through the interactive panes (tables and graphs).
@@ -670,6 +685,7 @@ impl App {
                 self.flash(format!("admin only: {}", tab.title()));
             }
             KeyCode::Char(c @ '1'..='9') => self.toggle_pane(c as usize - '0' as usize),
+            KeyCode::Char('0') => self.show_all_panes(),
             KeyCode::Char('f') => self.cycle_focus(true),
             KeyCode::Char('F') => self.cycle_focus(false),
             KeyCode::Up | KeyCode::Char('k') => {

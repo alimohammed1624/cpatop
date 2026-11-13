@@ -69,7 +69,15 @@ fn dashboard(f: &mut Frame, app: &App, hit: &mut Hit) {
     let body = Rect::new(area.x, area.y + 2, area.width, area.height - 2);
     let hidden = app.effective_hidden(app.tab);
     let size = |id: PaneId, w: u16| panes::size(app, id, w);
-    let placed = layout::compute(app.tab, app.preset(app.tab), &hidden, body, &size);
+    let mut placed = layout::compute(app.tab, app.preset(app.tab), &hidden, body, &size);
+    // A box too short for its content (no inner row, or a summary cut
+    // short) would draw empty or half a summary: its one-line summary
+    // says more.
+    for p in &mut placed {
+        if !p.collapsed && too_short(app, p.id, p.rect) {
+            p.collapsed = true;
+        }
+    }
     let visible: Vec<PaneId> = placed
         .iter()
         .filter(|p| !p.collapsed)
@@ -83,7 +91,7 @@ fn dashboard(f: &mut Frame, app: &App, hit: &mut Hit) {
         .collect();
     for p in placed {
         if p.collapsed {
-            panes::collapsed(f, app, p.id, p.rect);
+            panes::collapsed(f, app, hit, p.id, p.rect);
         } else {
             panes::draw(f, app, hit, p.id, p.rect, focus == Some(p.id));
         }
@@ -98,6 +106,17 @@ fn dashboard(f: &mut Frame, app: &App, hit: &mut Hit) {
         Some(Overlay::Row(id)) => overlay::row_detail(f, app, hit, *id),
         None => {}
     }
+}
+
+/// Whether a placed pane is too short to show anything useful: a box with
+/// no inner row, or a summary sized exactly to its content given fewer
+/// rows than that.
+fn too_short(app: &App, id: PaneId, r: Rect) -> bool {
+    if r.height < 3 {
+        return true;
+    }
+    let s = panes::size(app, id, r.width);
+    s.max == Some(s.min) && r.height < s.min
 }
 
 /// How far the header has been squeezed to fit (see [`header_segments`]).
@@ -358,7 +377,15 @@ fn tab_bar(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect) {
         .map(|l| l.chars().count() as u16 + 2 * edge)
         .collect();
     let active = tabs.iter().position(|x| *x == app.tab).unwrap_or(0);
-    let (first, last) = tab_window(&widths, active, area.width.saturating_sub(1));
+    // Panes hidden with 1-9 stay listed on the right (`hidden ²³`, 0 shows
+    // them): the tabs scroll sooner rather than lose that.
+    let hidden = hidden_marker(app);
+    let hidden_w = if hidden.is_empty() {
+        0
+    } else {
+        fmt::width(&hidden) as u16 + 1
+    };
+    let (first, last) = tab_window(&widths, active, area.width.saturating_sub(1 + hidden_w));
     let more_style = Style::default().fg(t.hi).add_modifier(Modifier::BOLD);
     let mut x = area.x + 1;
     // Tabs scrolled off either end: `‹`/`›` mark them, and a click on the
@@ -388,18 +415,55 @@ fn tab_bar(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect) {
         hit.tabs.push((tabs[last + 1], Rect::new(x, area.y, 1, 1)));
         x += 1;
     }
-    // Right side: layout preset name.
+    // Right side: layout preset name, then the hidden panes.
     let preset = layout::presets(app.tab)[app.preset(app.tab)].name;
     let info = format!(" layout {preset} ");
-    let iw = info.chars().count() as u16;
-    if x + iw + 2 < area.right() {
-        buf.set_string(
-            area.right() - iw - 1,
-            area.y,
-            info,
-            Style::default().fg(t.graph_text),
-        );
+    let iw = fmt::width(&info) as u16;
+    let mut right = area.right() - 1;
+    if !hidden.is_empty() {
+        let hw = fmt::width(&hidden) as u16;
+        if x + hw < area.right() {
+            right -= hw;
+            buf.set_string(
+                right,
+                area.y,
+                &hidden,
+                Style::default().fg(t.hi).add_modifier(Modifier::BOLD),
+            );
+        }
     }
+    if x + iw + 2 < right {
+        let info = if hidden.is_empty() {
+            info
+        } else {
+            format!(" layout {preset} ·")
+        };
+        let iw = fmt::width(&info) as u16;
+        buf.set_string(right - iw, area.y, info, Style::default().fg(t.graph_text));
+    }
+}
+
+/// `hidden ²³ `: the current layout's panes hidden with 1-9, by number, or
+/// empty when none is.
+fn hidden_marker(app: &App) -> String {
+    let preset = layout::presets(app.tab)[app.preset(app.tab)];
+    let mut nums: Vec<usize> = app
+        .hidden(app.tab)
+        .iter()
+        .filter(|id| {
+            preset
+                .rows
+                .iter()
+                .any(|r| r.panes.iter().any(|(p, _)| p == *id))
+        })
+        .map(|id| app.pane_number(*id))
+        .collect();
+    if nums.is_empty() {
+        return String::new();
+    }
+    nums.sort_unstable();
+    let sup: String = nums.into_iter().map(fmt::superscript).collect();
+    format!(" hidden {sup} ")
 }
 
 /// The tabs to show (`first..=last`) when they are `widths` wide and `avail`

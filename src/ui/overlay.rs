@@ -71,6 +71,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("F2…F9", "jump to a tab"),
             ("f / F", "focus next / previous table or graph"),
             ("1-9", "hide / show pane by number"),
+            ("0", "show every hidden pane"),
             ("p l / P", "next / previous layout"),
             ("Esc", "close / clear the innermost thing"),
             (QUIT_KEYS, "quit (the server session is kept)"),
@@ -101,7 +102,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
         &[
             ("r", "range picker: presets, custom ranges"),
             ("[ ]", "previous / next preset range"),
-            ("a", "API-key filter picker (admin)"),
+            ("a", "API-key filter picker"),
             ("w", "realtime window 15m / 30m / 60m"),
             ("R", "refresh now"),
             ("+ / -", "slower / faster overview refresh"),
@@ -140,11 +141,37 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
+/// Help sections the role can use. An API-key session has three tabs, no
+/// API-key filter, no dimension switch (its tables have one dimension), no
+/// requests tab and no credential names, so none of that is listed.
+fn help_for(admin: bool, ntabs: usize) -> Vec<(&'static str, Vec<(String, &'static str)>)> {
+    const ADMIN_SECTIONS: [&str; 2] = ["requests tab", "credential names"];
+    const ADMIN_KEYS: [&str; 2] = ["a", "d"];
+    HELP.iter()
+        .filter(|(name, _)| admin || !ADMIN_SECTIONS.contains(name))
+        .map(|(name, rows)| {
+            let rows = rows
+                .iter()
+                .filter(|(k, _)| admin || !ADMIN_KEYS.contains(k))
+                .map(|(k, d)| {
+                    let k = if *k == "F2…F9" {
+                        format!("F2…F{}", ntabs + 1)
+                    } else {
+                        k.to_string()
+                    };
+                    (k, *d)
+                })
+                .collect();
+            (*name, rows)
+        })
+        .collect()
+}
+
 /// Lines of one help section.
 fn help_section(
     t: &Theme,
     name: &str,
-    rows: &[(&str, &str)],
+    rows: &[(String, &str)],
     logout_on_exit: bool,
 ) -> Vec<Line<'static>> {
     let mut v = vec![Line::from(Span::styled(
@@ -152,7 +179,7 @@ fn help_section(
         Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
     ))];
     for (k, d) in rows {
-        let d = if *k == QUIT_KEYS {
+        let d = if k == QUIT_KEYS {
             quit_text(logout_on_exit)
         } else {
             d
@@ -231,11 +258,18 @@ fn update_section(t: &Theme, tag: &str, width: usize) -> Vec<Line<'static>> {
 
 /// Help columns: sections in order, each column filled until it is as tall
 /// as an even split, so nothing is clipped at any width.
-fn help_columns(t: &Theme, ncols: usize, logout_on_exit: bool) -> Vec<Vec<Line<'static>>> {
-    let total: usize = HELP.iter().map(|(_, r)| r.len() + 2).sum();
+fn help_columns(
+    t: &Theme,
+    ncols: usize,
+    logout_on_exit: bool,
+    admin: bool,
+    ntabs: usize,
+) -> Vec<Vec<Line<'static>>> {
+    let help = help_for(admin, ntabs);
+    let total: usize = help.iter().map(|(_, r)| r.len() + 2).sum();
     let target = total.div_ceil(ncols);
     let mut cols: Vec<Vec<Line<'static>>> = vec![Vec::new()];
-    for (name, rows) in HELP {
+    for (name, rows) in &help {
         let cur = cols.last_mut().expect("one column");
         if !cur.is_empty() && cur.len() + rows.len() + 1 > target && cols.len() < ncols {
             cols.push(Vec::new());
@@ -258,7 +292,14 @@ pub fn help(f: &mut Frame, app: &App) {
     let area = f.area();
     let col_w = 54u16;
     let ncols = (((area.width.saturating_sub(4)) / (col_w + 2)) as usize).clamp(1, 3);
-    let cols = help_columns(t, ncols, app.settings.logout_on_exit);
+    let admin = app.role == Some(crate::api::Role::Admin);
+    let cols = help_columns(
+        t,
+        ncols,
+        app.settings.logout_on_exit,
+        admin,
+        app.tabs().len(),
+    );
     let ncols = cols.len() as u16;
     let w = col_w * ncols + 2 * (ncols - 1) + 3;
     let text_w = w.min(area.width.saturating_sub(2)).saturating_sub(3);
@@ -623,9 +664,9 @@ mod tests {
     #[test]
     fn help_describes_what_quitting_does_to_the_session() {
         let t = &crate::theme::all_themes(None).0[0];
-        let kept = text(&help_columns(t, 1, false));
+        let kept = text(&help_columns(t, 1, false, true, 8));
         assert!(kept.contains("quit (the server session is kept)"));
-        let out = text(&help_columns(t, 1, true));
+        let out = text(&help_columns(t, 1, true, true, 8));
         assert!(out.contains("quit and log out on the server"));
         assert!(!out.contains("session is kept"));
     }
@@ -659,6 +700,34 @@ mod tests {
                 .all(|l| l.ends_with('/') || l.ends_with("sh") || l.ends_with("-fsSL")),
             "{w:?}"
         );
+    }
+
+    #[test]
+    fn api_key_help_lists_only_keys_that_work_for_it() {
+        let t = &crate::theme::all_themes(None).0[0];
+        let key = text(&help_columns(t, 1, false, false, 3));
+        assert!(key.contains("F2…F4"), "{key}");
+        for admin_only in [
+            "F2…F9",
+            "API-key filter",
+            "requests tab",
+            "model / source",
+            "credential names",
+            "switch dimension",
+        ] {
+            assert!(!key.contains(admin_only), "{admin_only} in:\n{key}");
+        }
+        assert!(key.contains("show every hidden pane"));
+        let admin = text(&help_columns(t, 1, false, true, 8));
+        for k in [
+            "F2…F9",
+            "API-key filter",
+            "requests tab",
+            "credential names",
+            "switch dimension",
+        ] {
+            assert!(admin.contains(k), "{k}");
+        }
     }
 
     #[test]

@@ -632,6 +632,76 @@ pub fn list_len(app: &App) -> Option<usize> {
     )
 }
 
+/// One-line summary of the quota table when it is collapsed: how many
+/// credentials and the window with the least quota left.
+pub fn list_summary(app: &App) -> Option<String> {
+    let tasks = app.data.quota.get()?;
+    let ids = app.data.identities.get()?;
+    let creds: Vec<&Identity> = ids
+        .identities
+        .iter()
+        .filter(|i| i.auth_type == 1 && !i.is_deleted)
+        .collect();
+    let n = fmt::plural(creds.len(), "credential", "credentials");
+    let lowest = creds
+        .iter()
+        .filter_map(|i| match tasks.get(&i.identity) {
+            Some(Ok(t)) => Some((i, t.quota.as_ref()?)),
+            _ => None,
+        })
+        .flat_map(|(i, q)| {
+            q.quota
+                .iter()
+                .filter_map(move |r| Some((i, r, 100.0 - r.used_pct()?)))
+        })
+        .min_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+    Some(match lowest {
+        Some((i, r, left)) => format!(
+            "{n} · least left {} {} {}",
+            ident_name(app, i),
+            app.privacy(&r.display_label()),
+            fmt::pct(left, 0)
+        ),
+        None => n,
+    })
+}
+
+/// One-line summary of the history pane when it is collapsed: the
+/// selected credential's windows, or why it has none.
+pub fn history_summary(app: &App, hit: &Hit) -> Option<String> {
+    let sel = hit.selected.get(&PaneId::QuList)?;
+    let i = app
+        .data
+        .identities
+        .get()?
+        .identities
+        .iter()
+        .find(|i| &i.identity == sel)?;
+    if i.kind != "codex" && i.kind != "claude" {
+        return Some("codex and claude credentials only".into());
+    }
+    let (idx, l) = app.data.quota_history.as_ref()?;
+    let n = l.get().filter(|_| idx == sel)?.cycles.len();
+    Some(format!(
+        "{} · {}",
+        fmt::plural(n, "window", "windows"),
+        ident_name(app, i)
+    ))
+}
+
+/// One-line summary of the inspection when it is collapsed.
+pub fn inspection_summary(app: &App) -> Option<String> {
+    let q = app.data.inspection.get()?;
+    let bad = q.unauthorized_401 + q.payment_required_402 + q.other_failed;
+    Some(format!(
+        "{} accounts · {} normal · {} limited · {} failed",
+        fmt::int(q.total),
+        fmt::int(q.normal),
+        fmt::int(q.limit_reached),
+        fmt::int(bad)
+    ))
+}
+
 /// Requests per health bucket summed over every quota credential, on the
 /// given bucket starts; `None` when there were none.
 fn all_requests(app: &App, starts: &[String]) -> Option<Vec<f64>> {

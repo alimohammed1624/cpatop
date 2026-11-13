@@ -238,6 +238,26 @@ pub fn catalog(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
     );
 }
 
+/// One-line summary of the catalog when it is collapsed.
+pub fn catalog_summary(app: &App) -> Option<String> {
+    let c = app.data.catalog.get()?;
+    let mut ids: Vec<&str> = c.data.iter().map(|m| m.id.as_str()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let mut providers: Vec<String> = c
+        .data
+        .iter()
+        .map(|m| provider_of(&m.id, m.owned_by.as_deref()))
+        .collect();
+    providers.sort_unstable();
+    providers.dedup();
+    Some(format!(
+        "{} · {}",
+        fmt::plural(ids.len(), "model", "models"),
+        fmt::plural(providers.len(), "provider", "providers")
+    ))
+}
+
 pub fn recalc(f: &mut Frame, app: &App, area: Rect, focused: bool) {
     let inner = frame(f, app, PaneId::MoRecalc, area, focused, vec![], None);
     if placeholder(f, app, inner, &app.data.recalc) {

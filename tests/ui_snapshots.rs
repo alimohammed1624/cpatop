@@ -1227,3 +1227,73 @@ fn narrow_tab_bar_keeps_the_active_tab() {
     let wide = s.lines().nth(1).unwrap();
     assert!(!wide.contains('‹') && !wide.contains('›'), "{wide}");
 }
+
+/// Boxes drawn in `buf` (top-left `╭` to bottom-left `╰`) that have no
+/// inner row or only blank inner rows, as `(x, y, title)`.
+fn empty_boxes(buf: &ratatui::buffer::Buffer) -> Vec<(u16, u16, String)> {
+    let a = buf.area;
+    let mut out = vec![];
+    for y in 0..a.height {
+        for x in 0..a.width {
+            if buf[(x, y)].symbol() != "╭" {
+                continue;
+            }
+            let Some(right) = (x + 1..a.width).find(|c| buf[(*c, y)].symbol() == "╮") else {
+                continue;
+            };
+            let Some(bottom) = (y + 1..a.height).find(|r| buf[(x, *r)].symbol() != "│") else {
+                continue;
+            };
+            if buf[(x, bottom)].symbol() != "╰" {
+                continue;
+            }
+            let blank = (y + 1..bottom)
+                .all(|r| (x + 1..right).all(|c| buf[(c, r)].symbol().trim().is_empty()));
+            if bottom == y + 1 || blank {
+                let title: String = (x..right).map(|c| buf[(c, y)].symbol()).collect();
+                out.push((x, y, title));
+            }
+        }
+    }
+    out
+}
+
+/// A pane too short for its content shows its one-line summary, never an
+/// empty box (e.g. the `graphs` layout's totals at 120x30), in every layout
+/// preset of every tab at small and medium sizes, in both roles.
+#[test]
+fn short_panes_collapse_instead_of_drawing_empty_boxes() {
+    // The detector itself: a box with a blank inner row, and one with none.
+    let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 10, 5));
+    b.set_string(0, 0, "╭─ a ─╮", ratatui::style::Style::default());
+    b.set_string(0, 1, "│     │", ratatui::style::Style::default());
+    b.set_string(0, 2, "╰─────╯", ratatui::style::Style::default());
+    b.set_string(0, 3, "╭─ b ─╮", ratatui::style::Style::default());
+    b.set_string(0, 4, "╰─────╯", ratatui::style::Style::default());
+    assert_eq!(empty_boxes(&b).len(), 2);
+    for role in [Role::Admin, Role::KeyViewer] {
+        let mut app = populated(role);
+        let tabs: Vec<Tab> = match role {
+            Role::Admin => cpatop::layout::ALL_TABS.to_vec(),
+            Role::KeyViewer => vec![Tab::Overview, Tab::Realtime, Tab::Analysis],
+        };
+        for tab in tabs {
+            for preset in 0..cpatop::layout::presets(tab).len() {
+                app.layout_idx.insert(tab, preset);
+                for (w, h) in [(50, 12), (80, 24), (120, 30)] {
+                    render_tab(&mut app, tab, w, h);
+                    let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+                    term.draw(|f| cpatop::ui::draw(f, &mut app)).unwrap();
+                    let empty = empty_boxes(term.backend().buffer());
+                    let name = cpatop::layout::presets(tab)[preset].name;
+                    assert!(
+                        empty.is_empty(),
+                        "{role:?} {} layout {name} at {w}x{h}: empty boxes {empty:?}\n{}",
+                        tab.key(),
+                        render(&mut app, w, h)
+                    );
+                }
+            }
+        }
+    }
+}
