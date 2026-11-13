@@ -705,7 +705,8 @@ pub fn cache(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
         &Series {
             values: &rates,
             fmt: |v| format!("{v:.0}%"),
-            color: None,
+            // A high cache-hit rate is good: never the "hot" red end.
+            color: Some(t.ok),
             max: Some(100.0),
             floor,
         },

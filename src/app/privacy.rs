@@ -47,7 +47,10 @@ impl App {
                 return;
             }
             let core = word.trim_end_matches(['.', ',', ':', ';', '!']);
-            if is_identifier(core) {
+            // IPs were masked above, in context; words are checked for
+            // e-mails and keys only.
+            let c = core.trim();
+            if c.contains('@') || c.contains('*') || c.contains('…') || looks_like_key(c) {
                 let tail = &word[core.len()..];
                 out.push_str(&self.alias_of(core));
                 out.push_str(tail);
@@ -376,11 +379,26 @@ fn ip_spans(s: &str) -> Vec<(usize, usize)> {
             i = f.1;
             continue;
         }
-        // IPv4: four dotted decimal groups not glued to other digits.
+        // IPv4: four dotted decimal groups not glued to other digits, and
+        // not a product version (`Chrome/142.0.0.0`: `name/` before it).
+        // Product tokens are capitalised words (`Chrome/`, `Safari/`), so
+        // `proxy/10.0.0.5` is still masked.
+        let version = |k: usize| {
+            if k < 2 || b[k - 1] != b'/' {
+                return false;
+            }
+            let mut w = k - 1;
+            while w > 0 && b[w - 1].is_ascii_alphabetic() {
+                w -= 1;
+            }
+            w < k - 1 && b[w].is_ascii_uppercase()
+        };
         let mut k = i;
         let mut v4 = None;
         while k < j {
-            if b[k].is_ascii_digit() && (k == 0 || !(b[k - 1].is_ascii_digit() || b[k - 1] == b'.'))
+            if b[k].is_ascii_digit()
+                && (k == 0 || !(b[k - 1].is_ascii_digit() || b[k - 1] == b'.'))
+                && !version(k)
             {
                 let mut e = k;
                 while e < b.len() && (b[e].is_ascii_digit() || b[e] == b'.') {
@@ -470,6 +488,7 @@ mod privacy_tests {
     const LEAKS: &[(&str, &[&str])] = &[
         ("http://10.0.0.5:8080/x", &["10.0.0.5"]),
         ("https://192.168.1.20/keeper", &["192.168"]),
+        ("via proxy/10.9.8.7 failed", &["10.9.8.7"]),
         ("http://[::1]:8318/api", &["::1"]),
         ("[fe80::1%eth0]:443", &["fe80"]),
         (
@@ -532,6 +551,7 @@ mod privacy_tests {
             "v2.1.0 at 18:00:25",
             "2026-11-13T18:00:25+05:30",
             "claude-cli/2.1.280 (external, cli)",
+            "Mozilla/5.0 AppleWebKit/537.36 Chrome/142.0.0.0 Safari/537.36",
         ] {
             assert_eq!(a.privacy_text(s), s, "{s:?} changed");
         }

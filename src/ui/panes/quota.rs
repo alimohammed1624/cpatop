@@ -451,8 +451,9 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         fmt: fmt::compact,
         color: None,
     };
+    // One or two windows make a meaningless chart.
     let chart_for = |_: &str| -> Option<RowChart> {
-        Some(RowChart {
+        (per_window.values.len() >= 3).then(|| RowChart {
             title: per_window.title.clone(),
             labels: per_window.labels.clone(),
             values: per_window.values.clone(),

@@ -384,12 +384,22 @@ fn allocate(cols: &[Col], content: &[usize], width: u16, keep: &[usize]) -> Vec<
         .filter(|k| cols[keep[*k]].grow && !cols[keep[*k]].spark)
         .collect();
     let sparks: Vec<usize> = (0..keep.len()).filter(|k| cols[keep[*k]].spark).collect();
+    // A sparkline stretches to at most three characters per bucket; wider
+    // it turns into blocks that no longer read as a trend.
+    let cap_of = |k: usize, cap: u16| -> u16 {
+        if cols[keep[k]].spark {
+            let n = content.get(keep[k]).copied().unwrap_or(0) as u16;
+            cap.min(n.saturating_mul(3)).max(cols[keep[k]].width)
+        } else {
+            cap
+        }
+    };
     let mut grow = |set: &[usize], cap: u16, spare: &mut u16| {
         let mut gave = true;
         while *spare > 0 && gave {
             gave = false;
             for &k in set {
-                if *spare > 0 && widths[k] < cap {
+                if *spare > 0 && widths[k] < cap_of(k, cap) {
                     widths[k] += 1;
                     *spare -= 1;
                     gave = true;

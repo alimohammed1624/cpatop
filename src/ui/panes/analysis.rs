@@ -363,7 +363,7 @@ const SPEED_COLS: [Col; 5] = [
     flex("model", 12),
     col("mean", 10, Align::Right, 0),
     col("samples", 7, Align::Right, 2),
-    spark("per bucket", 10, 1),
+    col("per bucket", 10, Align::Left, 1),
     col("range", 15, Align::Right, 3),
 ];
 
