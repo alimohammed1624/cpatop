@@ -449,6 +449,12 @@ impl App {
     }
 
     fn cycle_theme(&mut self, forward: bool) {
+        // Without colour every theme looks the same: say so instead of
+        // silently switching to a theme that cannot be seen.
+        if self.settings.no_color {
+            self.flash("themes disabled (NO_COLOR)");
+            return;
+        }
         let n = self.themes.len();
         self.theme_idx = if forward {
             (self.theme_idx + 1) % n
@@ -646,6 +652,11 @@ impl App {
             KeyCode::BackTab | KeyCode::Left => self.step_tab(false),
             KeyCode::F(n) if (n as usize) >= 2 && (n as usize) <= self.tabs().len() + 1 => {
                 self.set_tab(self.tabs()[n as usize - 2])
+            }
+            // The admin tabs' keys say why nothing happens for a key viewer.
+            KeyCode::F(n) if !admin && (2..=layout::ALL_TABS.len() as u8 + 1).contains(&n) => {
+                let tab = layout::ALL_TABS[n as usize - 2];
+                self.flash(format!("{} tab: admin only", tab.title()));
             }
             KeyCode::Char(c @ '1'..='9') => self.toggle_pane(c as usize - '0' as usize),
             KeyCode::Char('f') => self.cycle_focus(true),

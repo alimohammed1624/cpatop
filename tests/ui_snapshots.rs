@@ -1065,3 +1065,103 @@ fn row_popup_respects_privacy() {
         assert!(opened > 20, "{role:?}: only {opened} popups");
     }
 }
+
+/// The update badge survives every width: in full when there is room,
+/// as `↑` when there is not; lower-value header fields go first.
+#[test]
+fn update_badge_never_disappears() {
+    for role in [Role::Admin, Role::KeyViewer] {
+        let mut app = populated(role);
+        app.update_available = Some("v9.9.9".into());
+        for (w, h, full) in [(50, 12, false), (80, 24, true), (160, 48, true)] {
+            let s = render_tab(&mut app, Tab::Overview, w, h);
+            let head = s.lines().next().unwrap();
+            assert!(head.contains('↑'), "{role:?} {w}: {head}");
+            if full {
+                assert!(head.contains("↑ v9.9.9"), "{role:?} {w}: {head}");
+            }
+            assert!(head.contains("● ok"), "{head}");
+            // A toast does not push it off either.
+            app.flash("a fairly long message about something that just happened");
+            let s = render(&mut app, w, h);
+            let head = s.lines().next().unwrap();
+            assert!(head.contains('↑'), "{role:?} {w} with toast: {head}");
+            app.flash = None;
+        }
+        // At 160 columns everything fits, the cadence included.
+        let s = render(&mut app, 160, 48);
+        let head = s.lines().next().unwrap();
+        assert!(head.contains('⟳') && head.contains("ago"), "{head}");
+    }
+}
+
+/// A key viewer pressing an admin tab's key is told why nothing happens,
+/// and the header keeps its refresh age.
+#[test]
+fn admin_tabs_say_admin_only() {
+    use crossterm::event::KeyCode;
+    let mut app = populated(Role::KeyViewer);
+    render_tab(&mut app, Tab::Overview, 80, 24);
+    for n in 5..=9 {
+        press(&mut app, KeyCode::F(n));
+        assert_eq!(app.tab, Tab::Overview);
+        let msg = app.flash.as_ref().map(|f| f.0.clone()).unwrap_or_default();
+        assert!(msg.ends_with("admin only"), "F{n}: {msg}");
+        let s = render(&mut app, 80, 24);
+        let head = s.lines().next().unwrap();
+        assert!(head.contains("admin only"), "{head}");
+        assert!(head.contains('↻'), "F{n}: {head}");
+    }
+    press(&mut app, KeyCode::F(4));
+    assert_eq!(app.tab, Tab::Analysis);
+}
+
+/// Without colour, `t` says themes are off instead of silently switching.
+#[test]
+fn no_color_theme_key_explains() {
+    use crossterm::event::KeyCode;
+    let mut app = populated(Role::Admin);
+    app.settings.no_color = true;
+    let before = app.theme_idx;
+    for c in ['t', 'T'] {
+        press(&mut app, KeyCode::Char(c));
+        assert_eq!(app.theme_idx, before);
+        let msg = app.flash.as_ref().map(|f| f.0.clone()).unwrap_or_default();
+        assert_eq!(msg, "themes disabled (NO_COLOR)");
+    }
+    app.settings.no_color = false;
+    press(&mut app, KeyCode::Char('t'));
+    assert_ne!(app.theme_idx, before);
+}
+
+/// A narrow tab bar scrolls to keep the active tab, with `‹` `›` marking
+/// the tabs off either end.
+#[test]
+fn narrow_tab_bar_keeps_the_active_tab() {
+    let mut app = populated(Role::Admin);
+    let bar = |app: &mut App, tab| {
+        render_tab(app, tab, 50, 12)
+            .lines()
+            .nth(1)
+            .unwrap()
+            .to_string()
+    };
+    let first = bar(&mut app, Tab::Overview);
+    assert!(
+        first.contains("Ovw") && first.contains('›') && !first.contains('‹'),
+        "{first}"
+    );
+    let last = bar(&mut app, Tab::Settings);
+    assert!(
+        last.contains("Keys") && last.contains('‹') && !last.contains('›'),
+        "{last}"
+    );
+    for t in cpatop::layout::ALL_TABS {
+        let s = bar(&mut app, t);
+        assert!(s.contains(t.short_title()), "{t:?}: {s}");
+    }
+    // Wide enough: no markers.
+    let s = render_tab(&mut app, Tab::Settings, 160, 48);
+    let wide = s.lines().nth(1).unwrap();
+    assert!(!wide.contains('‹') && !wide.contains('›'), "{wide}");
+}
