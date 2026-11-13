@@ -232,9 +232,11 @@ mac_build() {
             out/aarch64-apple-darwin/cpatop out/x86_64-apple-darwin/cpatop
         lipo -info out/universal-apple-darwin/cpatop
         for t in aarch64-apple-darwin x86_64-apple-darwin; do
-            printf "%s: " "$t"; vtool -show-build "out/$t/cpatop" 2>/dev/null | awk "/minos/ {print \"minos \" \$2}"
+            printf "%s: macOS >= " "$t"
+            vtool -show-build "out/$t/cpatop" 2>/dev/null | awk "\$1 == \"minos\" || \$1 == \"version\" { print \$2; exit }"
         done' &&
-        mac_ssh "tar -C \"\$HOME/$rdir/out\" -cf - ." | tar -x -C "$work/bin"
+        mac_ssh "COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs -C \"\$HOME/$rdir/out\" -cf - ." |
+        tar -x -C "$work/bin"
     local rc=$?
     mac_cleanup "$rdir"
     return "$rc"
