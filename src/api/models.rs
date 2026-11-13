@@ -37,6 +37,51 @@ where
     Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
 }
 
+/// A model name (`null` → empty). Registered as a safe name for privacy
+/// mode, which masks long tokens unless the server reported them as models.
+pub fn de_model<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    let s = Option::<String>::deserialize(d)?.unwrap_or_default();
+    crate::app::register_safe_name(&s);
+    Ok(s)
+}
+
+/// An optional model name, registered like [`de_model`].
+pub fn de_model_opt<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    let s = Option::<String>::deserialize(d)?;
+    if let Some(s) = &s {
+        crate::app::register_safe_name(s);
+    }
+    Ok(s)
+}
+
+/// A list of model names, registered like [`de_model`].
+pub fn de_models<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    let v = Option::<Vec<String>>::deserialize(d)?.unwrap_or_default();
+    for s in &v {
+        crate::app::register_safe_name(s);
+    }
+    Ok(v)
+}
+
+/// Items with a display label.
+pub trait Labelled {
+    fn label(&self) -> &str;
+}
+
+/// Per-model items (`models` of a comparison or ranking): their labels
+/// are registered like [`de_model`].
+pub fn de_model_items<'de, D, T>(d: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Labelled + Deserialize<'de>,
+{
+    let v = Option::<Vec<T>>::deserialize(d)?.unwrap_or_default();
+    for i in &v {
+        crate::app::register_safe_name(i.label());
+    }
+    Ok(v)
+}
+
 // ---------------------------------------------------------------- auth/status
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
@@ -190,7 +235,7 @@ pub struct Comparisons {
     pub granularity: String,
     #[serde(deserialize_with = "nd")]
     pub timezone: String,
-    #[serde(deserialize_with = "nd")]
+    #[serde(deserialize_with = "de_model_items")]
     pub models: Vec<ComparisonItem>,
     #[serde(deserialize_with = "nd")]
     pub api_keys: Vec<ComparisonItem>,
@@ -336,6 +381,7 @@ pub struct RtModelSpeed {
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct RtSpeedSeries {
+    #[serde(deserialize_with = "de_model")]
     pub model: String,
     pub total_tokens: f64,
     pub speed_sample_count: f64,
@@ -354,7 +400,7 @@ pub struct SpeedSample {
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct CurrentUsage {
-    #[serde(deserialize_with = "nd")]
+    #[serde(deserialize_with = "de_model_items")]
     pub models: Vec<TopItem>,
     #[serde(deserialize_with = "nd")]
     pub api_keys: Vec<TopItem>,
@@ -442,7 +488,7 @@ pub struct Analysis {
     pub model_usage: ModelUsage,
     #[serde(deserialize_with = "nd")]
     pub api_key_composition: Vec<CompositionItem>,
-    #[serde(deserialize_with = "nd")]
+    #[serde(deserialize_with = "de_model_items")]
     pub model_composition: Vec<CompositionItem>,
     #[serde(deserialize_with = "nd")]
     pub credentials_composition: Vec<CompositionItem>,
@@ -490,6 +536,7 @@ pub struct SpeedBucket {
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct AnSpeedSeries {
+    #[serde(deserialize_with = "de_model")]
     pub model: String,
     pub total_tokens: f64,
     pub speed_sample_count: f64,
@@ -509,6 +556,7 @@ pub struct ModelUsage {
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ModelUsageSeries {
+    #[serde(deserialize_with = "de_model")]
     pub model: String,
     #[serde(deserialize_with = "nd")]
     pub total_tokens: Vec<f64>,
@@ -542,7 +590,7 @@ pub struct Heatmap {
     pub api_keys: Vec<String>,
     #[serde(deserialize_with = "nd")]
     pub api_key_labels: HashMap<String, String>,
-    #[serde(deserialize_with = "nd")]
+    #[serde(deserialize_with = "de_models")]
     pub models: Vec<String>,
     #[serde(deserialize_with = "nd")]
     pub cells: Vec<HeatmapCell>,
@@ -553,6 +601,7 @@ pub struct Heatmap {
 pub struct HeatmapCell {
     #[serde(deserialize_with = "de_id")]
     pub api_key: String,
+    #[serde(deserialize_with = "de_model")]
     pub model: String,
     pub input_tokens: f64,
     pub output_tokens: f64,
@@ -576,6 +625,7 @@ pub struct CostSummary {
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ModelEfficiency {
+    #[serde(deserialize_with = "de_model")]
     pub model: String,
     pub requests: f64,
     pub input_tokens: f64,
@@ -664,6 +714,7 @@ pub struct ModelCatalog {
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct CatalogModel {
+    #[serde(deserialize_with = "de_model")]
     pub id: String,
     pub object: Option<String>,
     pub created: Option<i64>,
@@ -692,9 +743,11 @@ pub struct UsageEvent {
     pub id: String,
     pub timestamp: String,
     pub api_key: Option<String>,
-    #[serde(deserialize_with = "nd")]
+    #[serde(deserialize_with = "de_model")]
     pub model: String,
+    #[serde(deserialize_with = "de_model_opt")]
     pub model_alias: Option<String>,
+    #[serde(deserialize_with = "de_model_opt")]
     pub response_model: Option<String>,
     pub reasoning_effort: Option<String>,
     pub service_tier: Option<String>,
@@ -738,7 +791,7 @@ pub struct EventTokens {
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct EventModelFilters {
-    #[serde(deserialize_with = "nd")]
+    #[serde(deserialize_with = "de_models")]
     pub models: Vec<String>,
 }
 
@@ -773,6 +826,7 @@ pub struct ExportRow {
     #[serde(deserialize_with = "de_id")]
     pub id: String,
     pub timestamp: String,
+    #[serde(deserialize_with = "de_model")]
     pub model: String,
     pub result: String,
     pub latency_ms: f64,
@@ -990,6 +1044,7 @@ pub struct ErrorEvent {
     pub id: String,
     pub timestamp: String,
     pub provider: Option<String>,
+    #[serde(deserialize_with = "de_model_opt")]
     pub model: Option<String>,
     pub status_code: i64,
     #[serde(deserialize_with = "nd")]
@@ -1316,6 +1371,7 @@ pub struct PricingModels {
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ModelPricing {
+    #[serde(deserialize_with = "de_model")]
     pub model: String,
     pub pricing_style: String,
     pub base_prices: BasePrices,
@@ -1424,4 +1480,22 @@ pub struct AuthSessionItem {
     pub api_key_id: String,
     pub label: Option<String>,
     pub display_key: Option<String>,
+}
+
+impl Labelled for ComparisonItem {
+    fn label(&self) -> &str {
+        &self.label
+    }
+}
+
+impl Labelled for TopItem {
+    fn label(&self) -> &str {
+        &self.label
+    }
+}
+
+impl Labelled for CompositionItem {
+    fn label(&self) -> &str {
+        &self.label
+    }
 }

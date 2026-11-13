@@ -12,9 +12,10 @@ pub mod server_edit;
 pub use live::{EventFilters, LiveState, LiveStatus, ResultFilter, match_error};
 pub use overlay::{Overlay, PickItem, PickKind, Picker, RangeEditor, Unit};
 pub use privacy::{
-    HIDDEN, IP_MASK, PROVIDER_ABBREVS, Sensitive, contains_ip, guard_buffer, ident_kind,
-    ident_kind_short, is_identifier, is_ip, is_sensitive, looks_like_key, mask_ips,
-    provider_abbrev, raw_ident_name, scrub, sensitive_spans,
+    HIDDEN, IP_MASK, PATH_MASK, PROVIDER_ABBREVS, Sensitive, contains_ip, guard_buffer, ident_kind,
+    ident_kind_short, is_identifier, is_ip, is_sensitive, looks_like_key, mask_ips, output_privacy,
+    provider_abbrev, raw_ident_name, register_safe_name, scrub, scrub_output, sensitive_spans,
+    set_output_privacy, shown_path, strip_ansi,
 };
 pub use server_edit::ServerEdit;
 

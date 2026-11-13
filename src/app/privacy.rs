@@ -179,21 +179,26 @@ impl App {
     }
 
     /// A request endpoint (`POST /v1/messages`). In privacy mode only
-    /// well-known API routes are shown; anything else is hidden.
+    /// well-known API routes are shown, never with their query string or
+    /// fragment (`/v1/messages?…`); anything else is hidden.
     pub fn endpoint(&self, s: &str) -> String {
         if !self.settings.privacy || s.is_empty() || s == "-" {
             return s.to_string();
         }
-        let (method, path) = match s.split_once(' ') {
+        let (method, target) = match s.trim().split_once(' ') {
             Some((m, p)) if m.chars().all(|c| c.is_ascii_uppercase()) => (Some(m), p.trim()),
             _ => (None, s.trim()),
+        };
+        let (path, rest) = match target.find(['?', '#']) {
+            Some(i) => (&target[..i], "?…"),
+            None => (target, ""),
         };
         if !known_route(path) {
             return HIDDEN.into();
         }
         match method {
-            Some(m) => format!("{m} {path}"),
-            None => path.to_string(),
+            Some(m) => format!("{m} {path}{rest}"),
+            None => format!("{path}{rest}"),
         }
     }
 
@@ -443,6 +448,8 @@ pub enum Sensitive {
     Ip,
     Email,
     Key,
+    /// The part of a URL after `?` or `#`.
+    Query,
 }
 
 impl Sensitive {
@@ -451,6 +458,7 @@ impl Sensitive {
             Sensitive::Ip => IP_MASK,
             Sensitive::Email => "‹email›",
             Sensitive::Key => "‹key›",
+            Sensitive::Query => "…",
         }
     }
 }
@@ -509,7 +517,6 @@ fn known_route(path: &str) -> bool {
         "/api/provider/anthropic/v1/messages",
         "/v1/images/generations",
     ];
-    let path = path.split('?').next().unwrap_or("");
     if ROUTES.contains(&path) {
         return true;
     }
@@ -646,21 +653,34 @@ const KEY_PREFIXES: [&str; 16] = [
     "ya29.",
 ];
 
-/// Characters of an opaque token.
+/// Characters of an opaque token: everything base64, base64url, hex and
+/// most key formats are made of.
 fn token_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')
+    c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '+' | '/' | '=')
 }
 
-/// Characters that can be part of an e-mail address (or its truncation).
+/// Characters that can belong to an e-mail address as typed or shown:
+/// anything but whitespace and the drawing characters the UI puts around
+/// text (box lines, `·`, `‹›`). Over-long runs are masked whole, so every
+/// RFC 5322 local-part character (`!#$%&'*+/=?^_\`{|}~-.`) and quoted
+/// local parts are covered.
 fn email_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '%' | '+' | '-' | '\'' | '…' | '*')
+    if c.is_whitespace() {
+        return false;
+    }
+    if c.is_ascii() {
+        return !c.is_ascii_control();
+    }
+    c == '…' || c.is_alphanumeric()
 }
 
-/// Whether a long token reads like a model name or version rather than a
+/// Whether a token reads like a model name or version rather than a
 /// secret: every `-`/`.`/`_` segment is a number (≤ 8 digits), a short mix
 /// of letters and digits (≤ 8: `4o`, `480B`, `A35B`) or a word (≤ 20
 /// letters; from 12 letters on it must read as words — `generateContent`,
-/// `DeepSeekCoder` — not random case like `XpEldHTvjaRE`).
+/// `DeepSeekCoder` — not random case like `XpEldHTvjaRE`). Only used to
+/// decide which server-reported model names are registered as safe (see
+/// [`register_safe_name`]) and for API routes; it never exempts free text.
 fn model_shaped(tok: &str) -> bool {
     tok.split(['-', '.', '_']).all(|seg| {
         let n = seg.len();
@@ -700,28 +720,212 @@ fn word_shaped(seg: &str) -> bool {
     true
 }
 
+/// Model names the server reported in a model field (lower-cased). Long
+/// tokens are masked unless they are one of these (or another known-safe
+/// shape, see [`safe_token`]).
+static SAFE_NAMES: std::sync::LazyLock<std::sync::RwLock<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// Record a model name the server reported (catalog, pricing, usage
+/// series, request events…) so that privacy mode shows it. Names that
+/// carry anything identifying, or are not shaped like a model id, are
+/// ignored and stay masked.
+pub fn register_safe_name(name: &str) {
+    let name = name.trim();
+    let tok = name.trim_start_matches("models/");
+    if tok.len() < 2
+        || tok.len() > 96
+        || !tok.chars().all(token_char)
+        || tok.contains('/')
+        || !model_shaped(tok)
+        || !sensitive_spans_with(tok, false).is_empty()
+    {
+        return;
+    }
+    let lower = tok.to_ascii_lowercase();
+    if SAFE_NAMES.read().is_ok_and(|s| s.contains(&lower)) {
+        return;
+    }
+    if let Ok(mut s) = SAFE_NAMES.write() {
+        s.insert(lower);
+    }
+}
+
+/// Long UI strings that are never identifiers.
+const SAFE_UI: &[&str] = &[
+    "yyyy-mm-dd..yyyy-mm-dd",
+    "cpatop_no_update_check=1",
+    "update_check",
+    "logout_on_exit",
+    "slow_refresh_secs",
+    "invalid_request_error",
+    "authentication_error",
+    "context_length_exceeded",
+    "migration_in_progress",
+    "rate_limit_exceeded",
+    "insufficient_quota",
+    "server_is_overloaded",
+];
+
+/// Path segments of API routes and project URLs (`/v1/chat/completions`,
+/// `github.com/alimohammed1624/cpatop/releases`).
+const ROUTE_WORDS: &[&str] = &[
+    "api",
+    "v1",
+    "v1beta",
+    "v1alpha",
+    "v1beta1",
+    "v2",
+    "messages",
+    "count_tokens",
+    "chat",
+    "completions",
+    "responses",
+    "compact",
+    "embeddings",
+    "models",
+    "backend-api",
+    "codex",
+    "provider",
+    "openai",
+    "anthropic",
+    "gemini",
+    "images",
+    "generations",
+    "usage",
+    "events",
+    "filters",
+    "auth",
+    "session",
+    "startup",
+    "status",
+    "keeper",
+    "health",
+    "version",
+    "quota",
+    "alimohammed1624",
+    "cpatop",
+    "releases",
+    "latest",
+    "download",
+    "main",
+    "install.sh",
+];
+
+/// Top-level domains accepted in host names inside long tokens.
+const TLDS: &[&str] = &[
+    "com", "org", "net", "io", "dev", "ai", "app", "co", "cloud", "sh", "so",
+];
+
+/// A dated or timed value (`2026-11-13T18:00:25.123+05`).
+fn timestamp_shaped(t: &str) -> bool {
+    let b = t.as_bytes();
+    b.len() >= 10
+        && b[..4].iter().all(u8::is_ascii_digit)
+        && b[4] == b'-'
+        && b[5..7].iter().all(u8::is_ascii_digit)
+        && b[7] == b'-'
+        && b[8..10].iter().all(u8::is_ascii_digit)
+        && t[10..]
+            .chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, 'T' | 'Z' | '.' | '+' | '-'))
+}
+
+/// A host name with a common top-level domain (`api.anthropic.com`).
+fn host_shaped(t: &str) -> bool {
+    let labels: Vec<&str> = t.split('.').collect();
+    labels.len() >= 2
+        && TLDS.contains(&labels[labels.len() - 1].to_ascii_lowercase().as_str())
+        && labels.iter().all(|l| {
+            !l.is_empty()
+                && l.len() <= 24
+                && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        })
+}
+
+/// A product token `name/1.2.3` of a user agent.
+fn product_shaped(t: &str) -> bool {
+    let Some((name, ver)) = t.split_once('/') else {
+        return false;
+    };
+    !name.is_empty()
+        && name
+            .split('-')
+            .all(|w| !w.is_empty() && w.len() <= 12 && w.chars().all(|c| c.is_ascii_alphabetic()))
+        && !ver.is_empty()
+        && ver.len() <= 16
+        && ver.chars().all(|c| c.is_ascii_digit() || c == '.')
+}
+
+/// Whether a long token is a known-safe shape: a model name the server
+/// reported (or the start of one, when `cut` by an ellipsis), a known UI
+/// string, a timestamp, an API route or project URL path, a host name or a
+/// user-agent product. Everything else of 20+ characters is masked.
+fn safe_token(tok: &str, cut: bool) -> bool {
+    let lower = tok.to_ascii_lowercase();
+    if SAFE_UI.contains(&lower.as_str()) || timestamp_shaped(tok) || product_shaped(tok) {
+        return true;
+    }
+    let known = |w: &str| {
+        let Ok(set) = SAFE_NAMES.read() else {
+            return false;
+        };
+        set.contains(w) || (cut && w.len() >= 8 && set.iter().any(|n| n.starts_with(w)))
+    };
+    if !lower.contains('/') {
+        return known(&lower) || host_shaped(tok);
+    }
+    let segs: Vec<&str> = lower.split('/').filter(|s| !s.is_empty()).collect();
+    let last = segs.len().saturating_sub(1);
+    !segs.is_empty()
+        && segs.iter().enumerate().all(|(i, seg)| {
+            ROUTE_WORDS.contains(seg)
+                || seg.len() <= 4 && seg.chars().all(|c| c.is_ascii_digit() || c == '.')
+                || host_shaped(seg)
+                || SAFE_NAMES.read().is_ok_and(|s| s.contains(*seg))
+                || (i == last && cut && known(seg))
+        })
+}
+
 /// Byte ranges of every identifier in `s`, sorted and non-overlapping:
 ///
 /// - IPv4 and IPv6 addresses anywhere, in any case and context (URLs,
 ///   `host:port`, `[v6]`, `proxy/10.0.0.1`, versions that are valid
 ///   addresses), and dotted/coloned fragments cut by an ellipsis;
-/// - e-mail addresses (anything around an `@`), including in URL paths;
+/// - e-mail addresses: the whole non-blank run around any `@` (every RFC
+///   local-part character and quoted local parts included);
+/// - URL query strings and fragments (the part after `?`/`#` of a run
+///   with a path), which carry keys as often as not;
 /// - masked keys (`abc***def`), keys with a known prefix (`sk-…`), and
-///   any token of 20+ `[A-Za-z0-9_.-]` characters that is not shaped like
-///   a model name or version — over-masking is preferred to leaking.
+///   any token of 20+ `[A-Za-z0-9_.+/=-]` characters that is not a
+///   known-safe shape (see [`safe_token`]) — over-masking is preferred to
+///   leaking.
 pub fn sensitive_spans(s: &str) -> Vec<(usize, usize, Sensitive)> {
+    sensitive_spans_with(s, true)
+}
+
+fn sensitive_spans_with(s: &str, long_tokens: bool) -> Vec<(usize, usize, Sensitive)> {
     let mut spans: Vec<(usize, usize, Sensitive)> = ip_spans(s)
         .into_iter()
         .map(|(a, b)| (a, b, Sensitive::Ip))
         .collect();
     let chars: Vec<(usize, char)> = s.char_indices().collect();
     let end_of = |i: usize| chars.get(i).map(|c| c.0).unwrap_or(s.len());
-    // E-mail addresses (and `@handles`): expand around each `@`.
-    for (i, &(_, c)) in chars.iter().enumerate() {
-        if c != '@' {
+    // E-mail addresses (and `@handles`): the whole run around each `@`.
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].1 != '@' {
+            i += 1;
             continue;
         }
         let mut a = i;
+        // A quoted local part may contain spaces: `"alice smith"@x.org`.
+        if a > 0
+            && chars[a - 1].1 == '"'
+            && let Some(q) = chars[..a - 1].iter().rposition(|c| c.1 == '"')
+        {
+            a = q;
+        }
         while a > 0 && email_char(chars[a - 1].1) {
             a -= 1;
         }
@@ -729,8 +933,50 @@ pub fn sensitive_spans(s: &str) -> Vec<(usize, usize, Sensitive)> {
         while b < chars.len() && email_char(chars[b].1) {
             b += 1;
         }
+        // Brackets and quotes around the address are not part of it.
+        while a < i && matches!(chars[a].1, '<' | '(' | '[' | '{') {
+            a += 1;
+        }
+        while b > i + 1
+            && matches!(
+                chars[b - 1].1,
+                '>' | ')' | ']' | '}' | ',' | ';' | ':' | '.'
+            )
+        {
+            b -= 1;
+        }
         if b - a > 1 {
             spans.push((end_of(a), end_of(b), Sensitive::Email));
+        }
+        i = b.max(i + 1);
+    }
+    // Query strings and fragments of URLs and paths.
+    for (i, &(_, c)) in chars.iter().enumerate() {
+        if c != '?' && c != '#' {
+            continue;
+        }
+        let mut a = i;
+        while a > 0 && !chars[a - 1].1.is_whitespace() && chars[a - 1].1 != '"' {
+            a -= 1;
+        }
+        let head: String = chars[a..i].iter().map(|c| c.1).collect();
+        let pathish = if c == '?' {
+            head.contains('/')
+        } else {
+            head.contains("://")
+        };
+        let mut b = i + 1;
+        while b < chars.len()
+            && !chars[b].1.is_whitespace()
+            && !matches!(chars[b].1, '"' | '\'' | ')' | ']' | '>' | '│')
+        {
+            b += 1;
+        }
+        while b > i + 1 && matches!(chars[b - 1].1, ',' | ';' | ':' | '.') {
+            b -= 1;
+        }
+        if pathish && b > i + 1 {
+            spans.push((end_of(i + 1), end_of(b), Sensitive::Query));
         }
     }
     // Masked keys: runs of `*` inside a token.
@@ -759,7 +1005,7 @@ pub fn sensitive_spans(s: &str) -> Vec<(usize, usize, Sensitive)> {
             j += 1;
         }
         let (a, b) = (end_of(i), end_of(j));
-        let tok = s[a..b].trim_end_matches('.');
+        let tok = s[a..b].trim_end_matches(['.', '/']);
         let lower = tok.to_ascii_lowercase();
         let cut = chars.get(j).is_some_and(|c| matches!(c.1, '…' | '*'));
         let prefixed = KEY_PREFIXES.iter().any(|p| {
@@ -774,7 +1020,8 @@ pub fn sensitive_spans(s: &str) -> Vec<(usize, usize, Sensitive)> {
                         || rest.len() >= 16))
                     || (cut && !rest.is_empty()))
         });
-        if prefixed || (tok.len() >= 20 && !model_shaped(tok)) {
+        let long = long_tokens && tok.len() >= 20 && !safe_token(tok, cut && tok.len() == b - a);
+        if prefixed || long {
             spans.push((a, a + tok.len(), Sensitive::Key));
         }
         i = j;
@@ -890,6 +1137,86 @@ fn ip_spans(s: &str) -> Vec<(usize, usize)> {
     out
 }
 
+// ---------------------------------------------------------------- terminal output
+
+/// Whether privacy mode applies to what cpatop prints outside the UI
+/// (errors, hints, warnings, reports, panics, subcommand output).
+static OUTPUT_PRIVACY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What a file path is replaced with in privacy-mode messages.
+pub const PATH_MASK: &str = "‹path›";
+
+/// Turn privacy for printed output on or off (main sets it as soon as the
+/// arguments, config and UI state are known; `x` in the app follows it).
+pub fn set_output_privacy(on: bool) {
+    OUTPUT_PRIVACY.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether printed output is scrubbed.
+pub fn output_privacy() -> bool {
+    OUTPUT_PRIVACY.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// A file path for a message: `(‹path›)` in privacy mode — paths name
+/// users, hosts and sometimes e-mail addresses.
+pub fn shown_path(p: &std::path::Path) -> String {
+    if output_privacy() {
+        format!("({PATH_MASK})")
+    } else {
+        p.display().to_string()
+    }
+}
+
+/// Text about to be printed: in privacy mode without terminal escape
+/// sequences and with every identifier masked (see [`sensitive_spans`]).
+pub fn scrub_output(s: &str) -> String {
+    if output_privacy() {
+        scrub(&strip_ansi(s))
+    } else {
+        s.to_string()
+    }
+}
+
+/// Remove ANSI escape sequences (colour codes would split tokens).
+pub fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        match it.peek() {
+            // CSI: parameters and intermediates up to a final byte.
+            Some('[') => {
+                it.next();
+                for c in it.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            // OSC: up to BEL or ST.
+            Some(']') => {
+                it.next();
+                while let Some(c) = it.next() {
+                    if c == '\u{7}' || (c == '\u{1b}' && it.peek() == Some(&'\\')) {
+                        if c == '\u{1b}' {
+                            it.next();
+                        }
+                        break;
+                    }
+                }
+            }
+            Some(_) => {
+                it.next();
+            }
+            None => {}
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------- the guard
 
 /// Scan every row of a rendered frame and overwrite any e-mail, IP address
@@ -952,8 +1279,22 @@ mod privacy_tests {
         App::new(settings, vec![], &UiState::default())
     }
 
+    /// Model names the tests treat as reported by the server.
+    fn register_models() {
+        for m in [
+            "claude-opus-4-1-20250805",
+            "gemini-2.5-pro",
+            "gemini-2.5-pro-preview-06-05",
+            "Qwen3-Coder-480B-A35B-Instruct",
+            "DeepSeekCoder-v2-Instruct",
+        ] {
+            register_safe_name(m);
+        }
+    }
+
     #[test]
     fn free_text_loses_emails_keys_and_ips() {
+        register_models();
         let a = app();
         let s = a.privacy_text(
             "read tcp [2406:b400:d13::74d]:37854->[2607:6bc0::10]:443: for bob@x.io, key sk-***abc 10.0.0.7:80 down",
@@ -1031,6 +1372,32 @@ mod privacy_tests {
         ("account dave@x.io: limit", &["dave"]),
         ("Dave.Smith@Example.ORG", &["Dave", "Example"]),
         ("cut eve@exam…", &["eve", "exam"]),
+        // Query strings and fragments.
+        (
+            "POST /v1/messages?api_key=abcdef-ghijkl-mnopqr-stuvwx",
+            &["abcdef", "stuvwx"],
+        ),
+        (
+            "GET https://h.example/cb?code=Zq1&state=xY2",
+            &["Zq1", "xY2"],
+        ),
+        ("see https://h.example/p#access_token=Qz9", &["Qz9"]),
+        ("\"/v1/models?key=AIzaQwErTy\": 403", &["QwErTy"]),
+        // E-mail local parts with RFC special characters.
+        ("filter alice/bob@example.org", &["alice", "bob", "example"]),
+        ("to: o'brien@example.org", &["brien", "example"]),
+        ("x{carol}y@example.org", &["carol", "example"]),
+        (
+            "\"carol smith\"@example.org",
+            &["carol", "smith", "example"],
+        ),
+        ("a|b=c?d^e`f~g@example.org", &["a|b", "f~g", "example"]),
+        ("path /tmp/dave@x.io/missing", &["dave", "x.io", "missing"]),
+        // Long tokens of any case and base64.
+        ("lower abcdefghijklmnopqrst end", &["abcdefghijklmnopqrst"]),
+        ("dashed abcdef-ghijkl-mnopqr-stuvwx", &["ghijkl"]),
+        ("b64 ab+cd/ef+gh/ij+kl/mn+op== end", &["ef+gh", "mn+op"]),
+        ("words_only_lowercase_token_here", &["lowercase_token"]),
     ];
 
     #[test]
@@ -1038,14 +1405,99 @@ mod privacy_tests {
         let a = app();
         for (input, bad) in LEAKS {
             let out = a.privacy_text(input);
+            let plain = scrub(input);
+            let mut buf = Buffer::empty(ratatui::layout::Rect::new(0, 0, 100, 1));
+            buf.set_string(0, 0, input, ratatui::style::Style::default());
+            guard_buffer(&mut buf);
+            let row: String = (0..100).map(|x| buf[(x, 0)].symbol().to_string()).collect();
             for frag in *bad {
                 assert!(!out.contains(frag), "{input:?} -> {out:?} leaks {frag:?}");
+                assert!(!plain.contains(frag), "scrub {input:?} -> {plain:?}");
+                assert!(!row.contains(frag), "guard {input:?} -> {row:?}");
             }
         }
     }
 
     #[test]
+    fn endpoints_never_keep_queries() {
+        let a = app();
+        for (input, want) in [
+            (
+                "POST /v1/messages?api_key=abcdef-ghijkl-mnopqr-stuvwx",
+                "POST /v1/messages?…",
+            ),
+            ("POST /v1/messages#Zx9", "POST /v1/messages?…"),
+            ("/v1/chat/completions?k=1", "/v1/chat/completions?…"),
+            ("GET /v1/models", "GET /v1/models"),
+            ("POST /x/v1/messages?k=1", HIDDEN),
+        ] {
+            let out = a.endpoint(input);
+            assert_eq!(out, want, "{input}");
+            assert_eq!(scrub(&out), out, "{input}");
+        }
+    }
+
+    #[test]
+    fn every_rfc_local_part_character_is_masked() {
+        let a = app();
+        for c in "!#$%&'*+/=?^_`{|}~-.".chars() {
+            for local in [
+                format!("alpha{c}bravo"),
+                format!("{c}alphabravo"),
+                format!("alphabravo{c}"),
+            ] {
+                for text in [
+                    format!("{local}@charlie.example"),
+                    format!("user {local}@charlie.example, retry"),
+                    format!("<{local}@charlie.example>"),
+                    format!("/tmp/{local}@charlie.example/x"),
+                    format!("filter: {local}@charlie.example│"),
+                ] {
+                    for out in [a.privacy_text(&text), scrub(&text)] {
+                        for frag in ["alpha", "bravo", "charlie"] {
+                            assert!(!out.contains(frag), "{text:?} -> {out:?}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn long_tokens_need_a_known_safe_shape() {
+        let a = app();
+        // Never reported by the server: masked, whatever the case.
+        for t in [
+            "abcdefghijklmnopqrst",
+            "abcdefghijklmnopqrstuvwxyz",
+            "qwerty-uiopas-dfghjk-lzxcvb",
+            "zz-unlisted-model-name-0001",
+            "ABCDEFGHIJKLMNOPQRST",
+        ] {
+            assert_eq!(a.privacy_text(t), "‹key›", "{t}");
+        }
+        // Known-safe shapes stay.
+        register_safe_name("zz-listed-model-name-20260101");
+        for t in [
+            "zz-listed-model-name-20260101",
+            "zz-listed-model-name…",
+            "2026-11-13T18:00:25.123456Z",
+            "2026-11-08..2026-11-13",
+            "POST /api/provider/anthropic/v1/messages",
+            "api.anthropic.com/v1/messages",
+            "python-requests/2.31.0",
+        ] {
+            assert_eq!(a.privacy_text(t), t, "{t}");
+        }
+        // A name with an identifier in it is never registered.
+        register_safe_name("zz-model-alice@example.org-0000");
+        register_safe_name("sk-proj-0123456789abcdefABCD");
+        assert_eq!(a.privacy_text("sk-proj-0123456789abcdefABCD"), "‹key›");
+    }
+
+    #[test]
     fn harmless_text_is_kept() {
+        register_models();
         let a = app();
         for s in [
             "claude-opus-4-1-20250805",
@@ -1056,7 +1508,7 @@ mod privacy_tests {
             "DeepSeekCoder-v2-Instruct",
             "context canceled",
             "HTTP 503 credential validation failed",
-            "Post \"https://api.anthropic.com/v1/messages?beta=true\": EOF",
+            "Post \"https://api.anthropic.com/v1/messages\": EOF",
             "localhost:8318",
             "v2.1.0 at 18:00:25",
             "2026-11-13T18:00:25+05:30",
@@ -1107,7 +1559,43 @@ mod privacy_tests {
     fn secret(r: &mut Rng) -> (String, Vec<String>) {
         const LOWER: &str = "abcdefghijklmnopqrstuvwxyz";
         const ALNUM: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        match r.below(6) {
+        match r.below(10) {
+            6 => {
+                // An e-mail address with RFC special characters.
+                let specials: Vec<char> = "!#$%&'*+/=?^_`{|}~-.".chars().collect();
+                let a = r.word(LOWER, 4, 8);
+                let b = r.word(LOWER, 4, 8);
+                let c = specials[r.below(specials.len() as u64) as usize];
+                let dom = format!("{}.{}", r.word(LOWER, 4, 9), r.pick(&["com", "org"]));
+                let e = format!("{a}{c}{b}@{dom}");
+                (e, vec![a, b, dom])
+            }
+            7 => {
+                // A long token of lower-case words (once exempt).
+                let sep = r.pick(&["-", "_", "", "."]);
+                let mut parts: Vec<String> = (0..3).map(|_| r.word(LOWER, 5, 8)).collect();
+                while parts.join(sep).len() < 20 {
+                    parts.push(r.word(LOWER, 5, 8));
+                }
+                let t = parts.join(sep);
+                (t, vec![parts[1].clone()])
+            }
+            8 => {
+                // A key in a URL query string or fragment.
+                let k = r.word(ALNUM, 6, 12);
+                let u = format!(
+                    "https://host.example/v1/messages{}{}={k}",
+                    r.pick(&["?", "?a=1&", "#"]),
+                    r.pick(&["key", "api_key", "token", "x"])
+                );
+                (u, vec![k])
+            }
+            9 => {
+                // Base64 with `+`, `/` and padding.
+                let body: Vec<String> = (0..4).map(|_| r.word(ALNUM, 5, 7)).collect();
+                let t = format!("{}+{}/{}+{}==", body[0], body[1], body[2], body[3]);
+                (t, vec![format!("{}+{}", body[0], body[1])])
+            }
             0 => {
                 let user = r.word(LOWER, 3, 10);
                 let user = format!("{user}.{}", r.word(LOWER, 2, 6));
@@ -1306,6 +1794,7 @@ mod privacy_tests {
 
     #[test]
     fn guard_masks_in_place() {
+        register_models();
         let mut buf = Buffer::empty(ratatui::layout::Rect::new(0, 0, 60, 2));
         buf.set_string(
             0,
