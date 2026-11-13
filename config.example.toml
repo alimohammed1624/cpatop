@@ -49,3 +49,8 @@ logout_on_exit = false
 
 # Enable mouse support (click tabs/panes, scroll lists).
 mouse = true
+
+# Check GitHub for a newer cpatop release on start (at most once a day, in the
+# background; sends only a "cpatop/<version>" User-Agent). Also turned off by
+# --no-update-check, CPATOP_NO_UPDATE_CHECK=1 or a set CI variable.
+update_check = true

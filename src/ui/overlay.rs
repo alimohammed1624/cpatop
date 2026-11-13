@@ -154,6 +154,67 @@ fn help_section(
     v
 }
 
+/// Wrap a shell command to `w` columns at spaces; a word longer than a line
+/// (a URL) breaks after a `/` where possible.
+fn wrap_command(cmd: &str, w: usize) -> Vec<String> {
+    let w = w.max(10);
+    let mut pieces: Vec<String> = Vec::new();
+    for word in cmd.split(' ') {
+        let mut rest = word;
+        while fmt::width(rest) > w {
+            let head: String = rest.chars().take(w).collect();
+            let cut = head.rfind('/').map(|i| i + 1).unwrap_or(head.len());
+            pieces.push(rest[..cut].to_string());
+            rest = &rest[cut..];
+        }
+        pieces.push(rest.to_string());
+    }
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for p in pieces {
+        if !cur.is_empty() && fmt::width(&cur) + 1 + fmt::width(&p) > w {
+            out.push(std::mem::take(&mut cur));
+        }
+        if !cur.is_empty() && !cur.ends_with('/') {
+            cur.push(' ');
+        }
+        cur.push_str(&p);
+    }
+    out.push(cur);
+    out
+}
+
+/// "update available": current -> latest and how to upgrade, across the
+/// whole help box (`width` columns of text), then a blank line.
+fn update_section(t: &Theme, tag: &str, width: usize) -> Vec<Line<'static>> {
+    use crate::update::{CARGO_CMD, CURRENT, UPGRADE_CMD, display_version};
+    let mut v = vec![Line::from(vec![
+        Span::styled(
+            "update available  ",
+            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("cpatop {CURRENT} → {}", display_version(tag)),
+            Style::default().fg(t.ok).add_modifier(Modifier::BOLD),
+        ),
+    ])];
+    let w = width.saturating_sub(1);
+    for l in wrap_command(UPGRADE_CMD, w) {
+        v.push(Line::from(Span::styled(
+            format!(" {l}"),
+            Style::default().fg(t.hi),
+        )));
+    }
+    for l in wrap_command(&format!("or {CARGO_CMD}"), w) {
+        v.push(Line::from(Span::styled(
+            format!(" {l}"),
+            Style::default().fg(t.graph_text),
+        )));
+    }
+    v.push(Line::from(""));
+    v
+}
+
 /// Help columns: sections in order, each column filled until it is as tall
 /// as an even split, so nothing is clipped at any width.
 fn help_columns(t: &Theme, ncols: usize, logout_on_exit: bool) -> Vec<Vec<Line<'static>>> {
@@ -174,7 +235,8 @@ fn help_columns(t: &Theme, ncols: usize, logout_on_exit: bool) -> Vec<Vec<Line<'
     cols
 }
 
-/// The help overlay: one to three columns depending on the width; when the
+/// The help overlay: one to three columns depending on the width, under a
+/// full-width "update available" block when a newer release exists; when the
 /// content is taller than the screen it scrolls (↑↓ j k PgUp PgDn g G or the
 /// mouse wheel) and the bottom border shows the position.
 pub fn help(f: &mut Frame, app: &App) {
@@ -184,21 +246,28 @@ pub fn help(f: &mut Frame, app: &App) {
     let ncols = (((area.width.saturating_sub(4)) / (col_w + 2)) as usize).clamp(1, 3);
     let cols = help_columns(t, ncols, app.settings.logout_on_exit);
     let ncols = cols.len() as u16;
-    let content_h = cols.iter().map(Vec::len).max().unwrap_or(0) as u16;
     let w = col_w * ncols + 2 * (ncols - 1) + 3;
+    let text_w = w.min(area.width.saturating_sub(2)).saturating_sub(3);
+    let head = app
+        .update_available
+        .as_deref()
+        .map(|tag| update_section(t, tag, text_w as usize))
+        .unwrap_or_default();
+    let head_h = head.len() as u16;
+    let content_h = head_h + cols.iter().map(Vec::len).max().unwrap_or(0) as u16;
     let r = centered(area, w, content_h + 2);
     let inner_h = r.height.saturating_sub(2);
     let max = content_h.saturating_sub(inner_h) as usize;
     app.help_max.set(max);
     app.help_page.set(inner_h.saturating_sub(1).max(1) as usize);
-    let off = app.help_scroll.min(max);
+    let off = app.help_scroll.min(max) as u16;
     let version = format!("cpatop {}", env!("CARGO_PKG_VERSION"));
     let bottom = if max > 0 {
-        let last = (off + inner_h as usize).min(content_h as usize);
+        let last = (off + inner_h).min(content_h);
         format!(
             "{}{} {}-{}/{} · ↑↓ PgUp PgDn scroll · Esc ? q close",
             if off > 0 { "▲" } else { " " },
-            if off < max { "▼" } else { " " },
+            if (off as usize) < max { "▼" } else { " " },
             off + 1,
             last,
             content_h
@@ -207,13 +276,31 @@ pub fn help(f: &mut Frame, app: &App) {
         format!("{version} · Esc ? q close")
     };
     let inner = boxed(f, t, r, "help", &bottom);
+    if inner.width < 2 {
+        return;
+    }
+    // The update block scrolls away first, then the columns.
+    let shown_head = head_h.saturating_sub(off).min(inner.height);
+    if shown_head > 0 {
+        Paragraph::new(head).scroll((off, 0)).render(
+            Rect::new(inner.x + 1, inner.y, inner.width - 1, shown_head),
+            f.buffer_mut(),
+        );
+    }
+    let body = Rect::new(
+        inner.x,
+        inner.y + shown_head,
+        inner.width,
+        inner.height - shown_head,
+    );
+    let col_off = off.saturating_sub(head_h);
     for (i, lines) in cols.into_iter().enumerate() {
-        let x = inner.x + 1 + i as u16 * (col_w + 2);
-        if x >= inner.right() {
+        let x = body.x + 1 + i as u16 * (col_w + 2);
+        if x >= body.right() {
             break;
         }
-        Paragraph::new(lines).scroll((off as u16, 0)).render(
-            Rect::new(x, inner.y, col_w.min(inner.right() - x), inner.height),
+        Paragraph::new(lines).scroll((col_off, 0)).render(
+            Rect::new(x, body.y, col_w.min(body.right() - x), body.height),
             f.buffer_mut(),
         );
     }
@@ -484,5 +571,36 @@ mod tests {
         let out = text(&help_columns(t, 1, true));
         assert!(out.contains("quit and log out on the server"));
         assert!(!out.contains("session is kept"));
+    }
+
+    #[test]
+    fn help_shows_a_newer_release_and_how_to_upgrade() {
+        use crate::update::{CARGO_CMD, CURRENT, UPGRADE_CMD};
+        let t = &crate::theme::all_themes(None).0[0];
+        for width in [53, 80, 110, 166] {
+            let lines = update_section(t, "v9.9.9", width);
+            let s = text(std::slice::from_ref(&lines));
+            assert!(s.starts_with(&format!("update available  cpatop {CURRENT} → 9.9.9")));
+            // Complete, and on one line when there is room.
+            let squash = |s: &str| s.replace([' ', '\n'], "");
+            assert!(squash(&s).contains(&squash(UPGRADE_CMD)), "{s}");
+            assert!(squash(&s).contains(&squash(CARGO_CMD)), "{s}");
+            if width > UPGRADE_CMD.len() + 1 {
+                assert!(s.contains(UPGRADE_CMD), "{s}");
+            }
+            for l in &lines {
+                assert!(l.width() <= width, "{width}: {l:?}");
+                // The privacy guard leaves it alone.
+                let txt: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+                assert!(crate::app::sensitive_spans(&txt).is_empty(), "{txt}");
+            }
+        }
+        // A URL longer than the line breaks after a `/`.
+        let w = wrap_command(UPGRADE_CMD, 52);
+        assert!(
+            w.iter()
+                .all(|l| l.ends_with('/') || l.ends_with("sh") || l.ends_with("-fsSL")),
+            "{w:?}"
+        );
     }
 }

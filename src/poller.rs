@@ -212,6 +212,8 @@ pub enum Msg {
     },
     Live(LiveEvent),
     Auth(AuthEvent),
+    /// A newer cpatop release (its tag) was found.
+    UpdateAvailable(String),
 }
 
 impl From<LiveEvent> for Msg {

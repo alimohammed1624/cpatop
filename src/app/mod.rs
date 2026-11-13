@@ -261,6 +261,8 @@ pub struct App {
     /// Privacy mode: spans the render guard masked in the last frame
     /// (should stay 0 — panes replace identifiers themselves).
     pub privacy_guard_hits: Cell<usize>,
+    /// Tag of a newer cpatop release, from the background update check.
+    pub update_available: Option<String>,
 }
 
 /// Dimensions of multi-dimension tables (`d` cycles them).
@@ -340,6 +342,7 @@ impl App {
                 .privacy_salt
                 .unwrap_or_else(|| fastrand::u64(1..=i64::MAX as u64)),
             privacy_guard_hits: Cell::new(0),
+            update_available: None,
         };
         app.restore_ui(ui);
         app

@@ -20,6 +20,9 @@ pub struct RunArgs {
     pub creds: Credentials,
     pub store: SessionStore,
     pub ui_state_path: Option<PathBuf>,
+    /// Run the background release check (see `crate::update`).
+    pub update_check: bool,
+    pub update_cache_path: Option<PathBuf>,
 }
 
 pub async fn run(args: RunArgs) -> Result<()> {
@@ -28,6 +31,8 @@ pub async fn run(args: RunArgs) -> Result<()> {
         creds,
         store,
         ui_state_path,
+        update_check,
+        update_cache_path,
     } = args;
     let client = Client::new(&app.settings.base_url).map_err(|e| eyre!(e))?;
 
@@ -41,6 +46,7 @@ pub async fn run(args: RunArgs) -> Result<()> {
     tokio::spawn(sse::run_live(client.clone(), live_rx, tx.clone()));
     tokio::spawn(poller::run_commands(client.clone(), cmd_rx, tx.clone()));
     tokio::spawn(AuthManager::new(client.clone(), store, creds, tx.clone(), auth_rx).run());
+    let update_tx = update_check.then(|| tx.clone());
     drop(tx);
 
     let mouse = app.settings.mouse;
@@ -52,6 +58,13 @@ pub async fn run(args: RunArgs) -> Result<()> {
     let mut terminal = ratatui::init();
     if mouse {
         crossterm::execute!(std::io::stdout(), EnableMouseCapture)?;
+    }
+    // After the UI is up and never awaited: a slow or failing check only
+    // means no badge.
+    if let Some(tx) = update_tx {
+        tokio::spawn(crate::update::background(update_cache_path, move |tag| {
+            let _ = tx.send(Msg::UpdateAvailable(tag));
+        }));
     }
 
     let save = |app: &App| {
