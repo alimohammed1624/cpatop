@@ -1,0 +1,9 @@
+{
+  "authenticated": true,
+  "role": "api_key_viewer",
+  "api_key": {
+    "id": "1",
+    "display_key": "dem***…"
+  },
+  "oidc_login_enabled": false
+}

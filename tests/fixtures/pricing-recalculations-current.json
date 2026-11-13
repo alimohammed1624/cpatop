@@ -1,0 +1,12 @@
+{
+  "task_id": "6a0addd442ec2a8a90e3e146004b3e38",
+  "status": "completed",
+  "stage": "finalizing",
+  "start_at": "2026-11-12T23:30:00+05:30",
+  "end_at": "2026-11-13T12:50:47.548594373+05:30",
+  "config_revision": 2,
+  "processed_count": 226,
+  "total_count": 226,
+  "updated_at": "2026-11-13T12:50:47.565097309+05:30",
+  "error": null
+}

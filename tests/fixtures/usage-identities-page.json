@@ -1,0 +1,167 @@
+{
+  "identities": [
+    {
+      "id": "4",
+      "name": "user1@example.com",
+      "alias": null,
+      "displayName": "user1@example.com",
+      "auth_type": 1,
+      "auth_type_name": "oauth",
+      "identity": "6d78555c26de98aa",
+      "type": "claude",
+      "provider": "claude",
+      "prefix": "",
+      "file_name": "user2@example.com.json",
+      "file_path": "/home/user/.cli-proxy-api/user2@example.com.json",
+      "priority": 0,
+      "disabled": false,
+      "total_requests": 1152,
+      "success_count": 1132,
+      "failure_count": 20,
+      "input_tokens": 128531304,
+      "output_tokens": 840444,
+      "reasoning_tokens": 271945,
+      "cache_read_tokens": 123353992,
+      "total_tokens": 129371748,
+      "last_aggregated_usage_event_id": "1415",
+      "first_used_at": "2026-11-13T03:22:45.078764852+05:30",
+      "last_used_at": "2026-11-13T16:42:35.674977488+05:30",
+      "stats_updated_at": "2026-11-13T16:42:40.191559767+05:30",
+      "period_stats": {
+        "total_requests": 1152,
+        "success_count": 1132,
+        "failure_count": 20,
+        "input_tokens": 128531304,
+        "cache_read_tokens": 123353992,
+        "total_tokens": 129371748
+      },
+      "is_deleted": false,
+      "created_at": "2026-11-12T18:21:41.385382889+05:30",
+      "updated_at": "2026-11-13T16:42:40.192042942+05:30",
+      "credential_health": {
+        "window_seconds": 18000,
+        "bucket_seconds": 600,
+        "window_start": "2026-11-13T11:50:00+05:30",
+        "window_end": "2026-11-13T16:50:00+05:30",
+        "total_success": 952,
+        "total_failure": 20,
+        "success_rate": 97.94238683127571,
+        "input_tokens": 102657512,
+        "cache_read_tokens": 98125376,
+        "buckets": [
+          {
+            "start_time": "2026-11-13T11:50:00+05:30",
+            "end_time": "2026-11-13T12:00:00+05:30",
+            "success": 0,
+            "failure": 0,
+            "rate": 0
+          },
+          {
+            "start_time": "2026-11-13T12:00:00+05:30",
+            "end_time": "2026-11-13T12:10:00+05:30",
+            "success": 0,
+            "failure": 0,
+            "rate": 0
+          },
+          {
+            "start_time": "2026-11-13T12:10:00+05:30",
+            "end_time": "2026-11-13T12:20:00+05:30",
+            "success": 0,
+            "failure": 0,
+            "rate": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "3",
+      "name": "user3@example.com",
+      "alias": null,
+      "displayName": "user3@example.com",
+      "auth_type": 1,
+      "auth_type_name": "oauth",
+      "identity": "92799d3c51327a24",
+      "type": "claude",
+      "provider": "claude",
+      "prefix": "",
+      "file_name": "user11@example.com.json",
+      "file_path": "/home/user/.cli-proxy-api/user11@example.com.json",
+      "disabled": false,
+      "total_requests": 112,
+      "success_count": 93,
+      "failure_count": 19,
+      "input_tokens": 10962300,
+      "output_tokens": 83656,
+      "reasoning_tokens": 43249,
+      "cache_read_tokens": 8907399,
+      "total_tokens": 11045956,
+      "last_aggregated_usage_event_id": "716",
+      "first_used_at": "2026-11-13T03:22:50.61260078+05:30",
+      "last_used_at": "2026-11-13T15:56:00.365119676+05:30",
+      "stats_updated_at": "2026-11-13T15:56:02.881674135+05:30",
+      "period_stats": {
+        "total_requests": 112,
+        "success_count": 93,
+        "failure_count": 19,
+        "input_tokens": 10962300,
+        "cache_read_tokens": 8907399,
+        "total_tokens": 11045956
+      },
+      "is_deleted": false,
+      "created_at": "2026-11-12T18:21:41.385382889+05:30",
+      "updated_at": "2026-11-13T15:56:02.881989945+05:30",
+      "credential_health": {
+        "window_seconds": 18000,
+        "bucket_seconds": 600,
+        "window_start": "2026-11-13T11:50:00+05:30",
+        "window_end": "2026-11-13T16:50:00+05:30",
+        "total_success": 67,
+        "total_failure": 19,
+        "success_rate": 77.90697674418605,
+        "input_tokens": 9222962,
+        "cache_read_tokens": 7300361,
+        "buckets": [
+          {
+            "start_time": "2026-11-13T11:50:00+05:30",
+            "end_time": "2026-11-13T12:00:00+05:30",
+            "success": 0,
+            "failure": 0,
+            "rate": 0
+          },
+          {
+            "start_time": "2026-11-13T12:00:00+05:30",
+            "end_time": "2026-11-13T12:10:00+05:30",
+            "success": 0,
+            "failure": 0,
+            "rate": 0
+          },
+          {
+            "start_time": "2026-11-13T12:10:00+05:30",
+            "end_time": "2026-11-13T12:20:00+05:30",
+            "success": 0,
+            "failure": 0,
+            "rate": 0
+          }
+        ]
+      }
+    }
+  ],
+  "total_count": 7,
+  "page": 1,
+  "page_size": 2,
+  "total_pages": 4,
+  "type_counts": [
+    {
+      "type": "antigravity",
+      "count": 2
+    },
+    {
+      "type": "claude",
+      "count": 2
+    },
+    {
+      "type": "codex",
+      "count": 3
+    }
+  ]
+}

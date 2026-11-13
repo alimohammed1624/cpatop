@@ -1,0 +1,45 @@
+{
+  "authIndex": "92799d3c51327a24",
+  "status": {
+    "eligible": true,
+    "atLimit": true,
+    "grants": [
+      {
+        "id": "launch-2610-fable-week",
+        "label": "New model launch: one Fable reset for Pro and Team Standard, launch week only",
+        "resetsTotal": 1,
+        "resetsLeft": 1,
+        "startsAt": "2026-11-09T18:00:00+00:00",
+        "endsAt": "2026-11-17T07:59:00+00:00",
+        "clears": [
+          "five_hour",
+          "seven_day_overage_included"
+        ],
+        "paused": false,
+        "usableNow": true,
+        "useRequiresLimit": false
+      },
+      {
+        "id": "full-reset-2611",
+        "label": "One full limit reset (November 2026)",
+        "resetsTotal": 1,
+        "resetsLeft": 1,
+        "startsAt": "2026-11-10T21:30:00+00:00",
+        "endsAt": "2026-12-10T22:00:00+00:00",
+        "clears": [
+          "five_hour",
+          "seven_day",
+          "seven_day_overage_included"
+        ],
+        "paused": false,
+        "usableNow": true,
+        "useRequiresLimit": false
+      }
+    ],
+    "nextGrantId": "launch-2610-fable-week",
+    "weeklyResetsAt": "2026-11-17T16:00:00+00:00",
+    "availableCount": 2
+  },
+  "selectedGrantId": "launch-2610-fable-week",
+  "organizationId": "b3cf5a…"
+}

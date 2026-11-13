@@ -1,0 +1,47 @@
+# cpatop configuration example.
+#
+# Copy to $XDG_CONFIG_HOME/cpatop/config.toml (usually ~/.config/cpatop/config.toml).
+# Every key is optional. Command-line flags and environment variables win over
+# this file; UI choices you make at runtime (theme, range, layout, …) are saved
+# separately in ui-state.toml next to it and win over the values below.
+#
+# Never put secrets in this file. Point at files instead, or use the
+# environment / OS keyring (see README "Security").
+
+# Keeper base URL. A sub-path deployment works too: "https://host.example/keeper"
+base_url = "http://localhost:8318"
+
+# Preferred login when both an admin password and an API key are available:
+# "admin" or "api-key".
+# auth = "admin"
+
+# Files containing the admin password / a CPA API key (first line is used).
+# Keep them chmod 600.
+# password_file = "/home/me/.config/cpatop/admin.pw"
+# api_key_file  = "/home/me/.config/cpatop/api.key"
+
+# Look up credentials in the OS keyring (macOS Keychain / Secret Service).
+# Store them with:  cpatop keyring set admin   |   cpatop keyring set api-key
+keyring = true
+
+# Poll interval for overview/realtime data, seconds (+/- at runtime).
+refresh_secs = 10
+
+# Poll interval for credentials, quota and settings, seconds.
+slow_refresh_secs = 60
+
+# default | light | gruvbox | nord | tokyo-night | dracula | monochrome
+# or the file name (without .toml) of a theme in $XDG_CONFIG_HOME/cpatop/themes/
+theme = "default"
+
+# today | yesterday | 5h..24h | 1d..30d
+range = "today"
+
+# braille | block | ascii
+graph_symbols = "braille"
+
+# Mask e-mail addresses in the UI (useful for screenshots).
+privacy = false
+
+# Enable mouse support (click tabs/panes, scroll lists).
+mouse = true

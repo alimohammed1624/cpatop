@@ -1,0 +1,930 @@
+{
+  "insights": {
+    "summary": {
+      "requests": 354,
+      "failures": 0,
+      "token_requests": 354,
+      "cached_requests": 350,
+      "total_tokens": 25434028,
+      "input_tokens": 25281736,
+      "output_tokens": 152292,
+      "reasoning_tokens": 36089,
+      "cache_read_tokens": 23831541,
+      "cache_creation_tokens": 1438504,
+      "cost": 15.4107372
+    },
+    "outcomes": [
+      {
+        "bucket": "2026-11-13T16:23:25.651080652+05:30",
+        "requests": 4,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:23:55.651080652+05:30",
+        "requests": 1,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:24:25.651080652+05:30",
+        "requests": 4,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:24:55.651080652+05:30",
+        "requests": 4,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:25:25.651080652+05:30",
+        "requests": 1,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:25:55.651080652+05:30",
+        "requests": 2,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:26:25.651080652+05:30",
+        "requests": 4,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:26:55.651080652+05:30",
+        "requests": 0,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:27:25.651080652+05:30",
+        "requests": 0,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:27:55.651080652+05:30",
+        "requests": 3,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:28:25.651080652+05:30",
+        "requests": 0,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:28:55.651080652+05:30",
+        "requests": 2,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:29:25.651080652+05:30",
+        "requests": 4,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:29:55.651080652+05:30",
+        "requests": 2,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:30:25.651080652+05:30",
+        "requests": 0,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:30:55.651080652+05:30",
+        "requests": 1,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:31:25.651080652+05:30",
+        "requests": 0,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:31:55.651080652+05:30",
+        "requests": 2,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:32:25.651080652+05:30",
+        "requests": 3,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:32:55.651080652+05:30",
+        "requests": 6,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:33:25.651080652+05:30",
+        "requests": 21,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:33:55.651080652+05:30",
+        "requests": 16,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:34:25.651080652+05:30",
+        "requests": 11,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:34:55.651080652+05:30",
+        "requests": 11,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:35:25.651080652+05:30",
+        "requests": 28,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:35:55.651080652+05:30",
+        "requests": 46,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:36:25.651080652+05:30",
+        "requests": 47,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:36:55.651080652+05:30",
+        "requests": 52,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:37:25.651080652+05:30",
+        "requests": 45,
+        "failures": 0
+      },
+      {
+        "bucket": "2026-11-13T16:37:55.651080652+05:30",
+        "requests": 34,
+        "failures": 0
+      }
+    ]
+  },
+  "window": "15m",
+  "timezone": "Asia/Kolkata",
+  "bucket_seconds": 30,
+  "window_start": "2026-11-13T16:23:25.651080652+05:30",
+  "window_end": "2026-11-13T16:38:25.651080652+05:30",
+  "token_velocity": [
+    {
+      "bucket": "2026-11-13T16:23:25.651080652+05:30",
+      "tokens_per_minute": 329898.6666666667,
+      "tokens": 989696,
+      "cost": 0.7988232
+    },
+    {
+      "bucket": "2026-11-13T16:23:55.651080652+05:30",
+      "tokens_per_minute": 358965.3333333333,
+      "tokens": 1076896,
+      "cost": 0.8199125999999999
+    },
+    {
+      "bucket": "2026-11-13T16:24:25.651080652+05:30",
+      "tokens_per_minute": 473996,
+      "tokens": 1421988,
+      "cost": 0.8846234000000001
+    },
+    {
+      "bucket": "2026-11-13T16:24:55.651080652+05:30",
+      "tokens_per_minute": 517645.3333333333,
+      "tokens": 1552936,
+      "cost": 0.8211807999999999
+    },
+    {
+      "bucket": "2026-11-13T16:25:25.651080652+05:30",
+      "tokens_per_minute": 451757,
+      "tokens": 1355271,
+      "cost": 0.642481
+    },
+    {
+      "bucket": "2026-11-13T16:25:55.651080652+05:30",
+      "tokens_per_minute": 460856,
+      "tokens": 1382568,
+      "cost": 0.6568624
+    },
+    {
+      "bucket": "2026-11-13T16:26:25.651080652+05:30",
+      "tokens_per_minute": 573994.3333333334,
+      "tokens": 1721983,
+      "cost": 0.7795683999999999
+    },
+    {
+      "bucket": "2026-11-13T16:26:55.651080652+05:30",
+      "tokens_per_minute": 493998.3333333333,
+      "tokens": 1481995,
+      "cost": 0.6703998
+    },
+    {
+      "bucket": "2026-11-13T16:27:25.651080652+05:30",
+      "tokens_per_minute": 299676,
+      "tokens": 899028,
+      "cost": 0.419382
+    },
+    {
+      "bucket": "2026-11-13T16:27:55.651080652+05:30",
+      "tokens_per_minute": 326760.6666666667,
+      "tokens": 980282,
+      "cost": 0.5432216
+    },
+    {
+      "bucket": "2026-11-13T16:28:25.651080652+05:30",
+      "tokens_per_minute": 308553.3333333333,
+      "tokens": 925660,
+      "cost": 0.5217818000000001
+    },
+    {
+      "bucket": "2026-11-13T16:28:55.651080652+05:30",
+      "tokens_per_minute": 438267.3333333333,
+      "tokens": 1314802,
+      "cost": 0.667054
+    },
+    {
+      "bucket": "2026-11-13T16:29:25.651080652+05:30",
+      "tokens_per_minute": 369448.3333333333,
+      "tokens": 1108345,
+      "cost": 0.7511137999999999
+    },
+    {
+      "bucket": "2026-11-13T16:29:55.651080652+05:30",
+      "tokens_per_minute": 388009.6666666667,
+      "tokens": 1164029,
+      "cost": 0.7922663999999999
+    },
+    {
+      "bucket": "2026-11-13T16:30:25.651080652+05:30",
+      "tokens_per_minute": 388009.6666666667,
+      "tokens": 1164029,
+      "cost": 0.7922663999999999
+    },
+    {
+      "bucket": "2026-11-13T16:30:55.651080652+05:30",
+      "tokens_per_minute": 375492,
+      "tokens": 1126476,
+      "cost": 0.6778447999999999
+    },
+    {
+      "bucket": "2026-11-13T16:31:25.651080652+05:30",
+      "tokens_per_minute": 375492,
+      "tokens": 1126476,
+      "cost": 0.6778447999999999
+    },
+    {
+      "bucket": "2026-11-13T16:31:55.651080652+05:30",
+      "tokens_per_minute": 228372,
+      "tokens": 685116,
+      "cost": 0.5101276
+    },
+    {
+      "bucket": "2026-11-13T16:32:25.651080652+05:30",
+      "tokens_per_minute": 234230,
+      "tokens": 702690,
+      "cost": 0.425743
+    },
+    {
+      "bucket": "2026-11-13T16:32:55.651080652+05:30",
+      "tokens_per_minute": 355075.6666666667,
+      "tokens": 1065227,
+      "cost": 0.7187084
+    },
+    {
+      "bucket": "2026-11-13T16:33:25.651080652+05:30",
+      "tokens_per_minute": 526895,
+      "tokens": 1580685,
+      "cost": 1.5098066
+    },
+    {
+      "bucket": "2026-11-13T16:33:55.651080652+05:30",
+      "tokens_per_minute": 686386.3333333334,
+      "tokens": 2059159,
+      "cost": 1.8929676
+    },
+    {
+      "bucket": "2026-11-13T16:34:25.651080652+05:30",
+      "tokens_per_minute": 895377.3333333334,
+      "tokens": 2686132,
+      "cost": 2.2672496
+    },
+    {
+      "bucket": "2026-11-13T16:34:55.651080652+05:30",
+      "tokens_per_minute": 1078458.6666666667,
+      "tokens": 3235376,
+      "cost": 2.8996014
+    },
+    {
+      "bucket": "2026-11-13T16:35:25.651080652+05:30",
+      "tokens_per_minute": 1291608.3333333333,
+      "tokens": 3874825,
+      "cost": 3.7624508000000003
+    },
+    {
+      "bucket": "2026-11-13T16:35:55.651080652+05:30",
+      "tokens_per_minute": 1975263.3333333333,
+      "tokens": 5925790,
+      "cost": 5.1620464
+    },
+    {
+      "bucket": "2026-11-13T16:36:25.651080652+05:30",
+      "tokens_per_minute": 2949867,
+      "tokens": 8849601,
+      "cost": 6.499698
+    },
+    {
+      "bucket": "2026-11-13T16:36:55.651080652+05:30",
+      "tokens_per_minute": 3993992,
+      "tokens": 11981976,
+      "cost": 8.175219599999998
+    },
+    {
+      "bucket": "2026-11-13T16:37:25.651080652+05:30",
+      "tokens_per_minute": 5193856,
+      "tokens": 15581568,
+      "cost": 9.9419002
+    },
+    {
+      "bucket": "2026-11-13T16:37:55.651080652+05:30",
+      "tokens_per_minute": 6272055.333333333,
+      "tokens": 18816166,
+      "cost": 10.6770918
+    }
+  ],
+  "model_speed": {
+    "available": true,
+    "start": "2026-11-13T16:23:25.651080652+05:30",
+    "mid": "2026-11-13T16:30:55.651080652+05:30",
+    "end": "2026-11-13T16:38:25.651080652+05:30",
+    "series": [
+      {
+        "model": "claude-opus-5-5",
+        "total_tokens": 22439872,
+        "speed_sample_count": 341,
+        "first_half": {
+          "speed_tps_sum": 2030.2287164010636,
+          "speed_sample_count": 21,
+          "mean_tps": 96.67755792386018
+        },
+        "second_half": {
+          "speed_tps_sum": 25676.00138265043,
+          "speed_sample_count": 320,
+          "mean_tps": 80.23750432078259
+        }
+      },
+      {
+        "model": "claude-fable-5-2",
+        "total_tokens": 2983164,
+        "speed_sample_count": 12,
+        "first_half": {
+          "speed_tps_sum": 832.6651184941842,
+          "speed_sample_count": 9,
+          "mean_tps": 92.5183464993538
+        },
+        "second_half": {
+          "speed_tps_sum": 256.51826606629226,
+          "speed_sample_count": 3,
+          "mean_tps": 85.50608868876408
+        }
+      },
+      {
+        "model": "gpt-6-luna",
+        "total_tokens": 10992,
+        "speed_sample_count": 1,
+        "first_half": {
+          "speed_tps_sum": 9.691313711414214,
+          "speed_sample_count": 1,
+          "mean_tps": 9.691313711414214
+        },
+        "second_half": {
+          "speed_tps_sum": 0,
+          "speed_sample_count": 0,
+          "mean_tps": null
+        }
+      }
+    ]
+  },
+  "latency_scatter": {
+    "points": [
+      {
+        "ttft_ms": 794,
+        "latency_ms": 6925
+      },
+      {
+        "ttft_ms": 686,
+        "latency_ms": 3601
+      },
+      {
+        "ttft_ms": 963,
+        "latency_ms": 3668
+      },
+      {
+        "ttft_ms": 898,
+        "latency_ms": 14393
+      },
+      {
+        "ttft_ms": 1076,
+        "latency_ms": 5765
+      },
+      {
+        "ttft_ms": 1270,
+        "latency_ms": 16568
+      },
+      {
+        "ttft_ms": 2961,
+        "latency_ms": 2992
+      },
+      {
+        "ttft_ms": 929,
+        "latency_ms": 9014
+      },
+      {
+        "ttft_ms": 1155,
+        "latency_ms": 4246
+      },
+      {
+        "ttft_ms": 1050,
+        "latency_ms": 4426
+      },
+      {
+        "ttft_ms": 1183,
+        "latency_ms": 3969
+      },
+      {
+        "ttft_ms": 861,
+        "latency_ms": 11141
+      },
+      {
+        "ttft_ms": 866,
+        "latency_ms": 2120
+      },
+      {
+        "ttft_ms": 1312,
+        "latency_ms": 4101
+      },
+      {
+        "ttft_ms": 802,
+        "latency_ms": 4149
+      },
+      {
+        "ttft_ms": 7934,
+        "latency_ms": 10793
+      },
+      {
+        "ttft_ms": 1184,
+        "latency_ms": 6166
+      },
+      {
+        "ttft_ms": 1343,
+        "latency_ms": 5889
+      },
+      {
+        "ttft_ms": 1176,
+        "latency_ms": 2307
+      },
+      {
+        "ttft_ms": 872,
+        "latency_ms": 2428
+      },
+      {
+        "ttft_ms": 973,
+        "latency_ms": 2920
+      },
+      {
+        "ttft_ms": 3986,
+        "latency_ms": 3996
+      },
+      {
+        "ttft_ms": 1166,
+        "latency_ms": 27813
+      },
+      {
+        "ttft_ms": 1525,
+        "latency_ms": 5425
+      },
+      {
+        "ttft_ms": 1407,
+        "latency_ms": 11029
+      },
+      {
+        "ttft_ms": 2276,
+        "latency_ms": 2786
+      },
+      {
+        "ttft_ms": 975,
+        "latency_ms": 5881
+      },
+      {
+        "ttft_ms": 1178,
+        "latency_ms": 3577
+      },
+      {
+        "ttft_ms": 7563,
+        "latency_ms": 10057
+      },
+      {
+        "ttft_ms": 1321,
+        "latency_ms": 2719
+      }
+    ],
+    "total_points": 354,
+    "p95_ttft_ms": 2388,
+    "p95_latency_ms": 11141,
+    "max_ttft_ms": 7934,
+    "max_latency_ms": 38638
+  },
+  "current_usage": {
+    "models": [
+      {
+        "key": "claude…",
+        "label": "claude-opus-5-5",
+        "tokens": 22439872,
+        "requests": 341,
+        "cost": 14.014917799999997,
+        "share": 88.22775535200323
+      },
+      {
+        "key": "claude…",
+        "label": "claude-fable-5-2",
+        "tokens": 2983164,
+        "requests": 12,
+        "cost": 1.3947094,
+        "share": 11.729026955541608
+      },
+      {
+        "key": "gpt-6-…",
+        "label": "gpt-6-luna",
+        "tokens": 10992,
+        "requests": 1,
+        "cost": 0.00111,
+        "share": 0.043217692455162826
+      }
+    ]
+  },
+  "request_level": [
+    {
+      "bucket": "2026-11-13T16:23:25.651080652+05:30",
+      "requests_per_minute": 7.666666666666667,
+      "requests": 23
+    },
+    {
+      "bucket": "2026-11-13T16:23:55.651080652+05:30",
+      "requests_per_minute": 6.333333333333333,
+      "requests": 19
+    },
+    {
+      "bucket": "2026-11-13T16:24:25.651080652+05:30",
+      "requests_per_minute": 7.333333333333333,
+      "requests": 22
+    },
+    {
+      "bucket": "2026-11-13T16:24:55.651080652+05:30",
+      "requests_per_minute": 7.333333333333333,
+      "requests": 22
+    },
+    {
+      "bucket": "2026-11-13T16:25:25.651080652+05:30",
+      "requests_per_minute": 5.333333333333333,
+      "requests": 16
+    },
+    {
+      "bucket": "2026-11-13T16:25:55.651080652+05:30",
+      "requests_per_minute": 5.333333333333333,
+      "requests": 16
+    },
+    {
+      "bucket": "2026-11-13T16:26:25.651080652+05:30",
+      "requests_per_minute": 5.333333333333333,
+      "requests": 16
+    },
+    {
+      "bucket": "2026-11-13T16:26:55.651080652+05:30",
+      "requests_per_minute": 5,
+      "requests": 15
+    },
+    {
+      "bucket": "2026-11-13T16:27:25.651080652+05:30",
+      "requests_per_minute": 3.6666666666666665,
+      "requests": 11
+    },
+    {
+      "bucket": "2026-11-13T16:27:55.651080652+05:30",
+      "requests_per_minute": 3.3333333333333335,
+      "requests": 10
+    },
+    {
+      "bucket": "2026-11-13T16:28:25.651080652+05:30",
+      "requests_per_minute": 3,
+      "requests": 9
+    },
+    {
+      "bucket": "2026-11-13T16:28:55.651080652+05:30",
+      "requests_per_minute": 3,
+      "requests": 9
+    },
+    {
+      "bucket": "2026-11-13T16:29:25.651080652+05:30",
+      "requests_per_minute": 3,
+      "requests": 9
+    },
+    {
+      "bucket": "2026-11-13T16:29:55.651080652+05:30",
+      "requests_per_minute": 3.6666666666666665,
+      "requests": 11
+    },
+    {
+      "bucket": "2026-11-13T16:30:25.651080652+05:30",
+      "requests_per_minute": 3.6666666666666665,
+      "requests": 11
+    },
+    {
+      "bucket": "2026-11-13T16:30:55.651080652+05:30",
+      "requests_per_minute": 3,
+      "requests": 9
+    },
+    {
+      "bucket": "2026-11-13T16:31:25.651080652+05:30",
+      "requests_per_minute": 3,
+      "requests": 9
+    },
+    {
+      "bucket": "2026-11-13T16:31:55.651080652+05:30",
+      "requests_per_minute": 3,
+      "requests": 9
+    },
+    {
+      "bucket": "2026-11-13T16:32:25.651080652+05:30",
+      "requests_per_minute": 2.6666666666666665,
+      "requests": 8
+    },
+    {
+      "bucket": "2026-11-13T16:32:55.651080652+05:30",
+      "requests_per_minute": 4,
+      "requests": 12
+    },
+    {
+      "bucket": "2026-11-13T16:33:25.651080652+05:30",
+      "requests_per_minute": 11,
+      "requests": 33
+    },
+    {
+      "bucket": "2026-11-13T16:33:55.651080652+05:30",
+      "requests_per_minute": 16,
+      "requests": 48
+    },
+    {
+      "bucket": "2026-11-13T16:34:25.651080652+05:30",
+      "requests_per_minute": 19.666666666666668,
+      "requests": 59
+    },
+    {
+      "bucket": "2026-11-13T16:34:55.651080652+05:30",
+      "requests_per_minute": 22.666666666666668,
+      "requests": 68
+    },
+    {
+      "bucket": "2026-11-13T16:35:25.651080652+05:30",
+      "requests_per_minute": 31,
+      "requests": 93
+    },
+    {
+      "bucket": "2026-11-13T16:35:55.651080652+05:30",
+      "requests_per_minute": 44.333333333333336,
+      "requests": 133
+    },
+    {
+      "bucket": "2026-11-13T16:36:25.651080652+05:30",
+      "requests_per_minute": 53,
+      "requests": 159
+    },
+    {
+      "bucket": "2026-11-13T16:36:55.651080652+05:30",
+      "requests_per_minute": 65,
+      "requests": 195
+    },
+    {
+      "bucket": "2026-11-13T16:37:25.651080652+05:30",
+      "requests_per_minute": 76.33333333333333,
+      "requests": 229
+    },
+    {
+      "bucket": "2026-11-13T16:37:55.651080652+05:30",
+      "requests_per_minute": 84,
+      "requests": 252
+    }
+  ],
+  "cache_level": [
+    {
+      "bucket": "2026-11-13T16:23:25.651080652+05:30",
+      "cache_read_rate": 94.18955641701429,
+      "cache_read_tokens": 919891,
+      "cache_creation_tokens": 56699,
+      "input_tokens": 976638
+    },
+    {
+      "bucket": "2026-11-13T16:23:55.651080652+05:30",
+      "cache_read_rate": 94.5483450768994,
+      "cache_read_tokens": 1007458,
+      "cache_creation_tokens": 58050,
+      "input_tokens": 1065548
+    },
+    {
+      "bucket": "2026-11-13T16:24:25.651080652+05:30",
+      "cache_read_rate": 95.70673477839108,
+      "cache_read_tokens": 1349687,
+      "cache_creation_tokens": 60497,
+      "input_tokens": 1410232
+    },
+    {
+      "bucket": "2026-11-13T16:24:55.651080652+05:30",
+      "cache_read_rate": 97.62296716091858,
+      "cache_read_tokens": 1503299,
+      "cache_creation_tokens": 36556,
+      "input_tokens": 1539903
+    },
+    {
+      "bucket": "2026-11-13T16:25:25.651080652+05:30",
+      "cache_read_rate": 98.43144978483996,
+      "cache_read_tokens": 1324405,
+      "cache_creation_tokens": 21071,
+      "input_tokens": 1345510
+    },
+    {
+      "bucket": "2026-11-13T16:25:55.651080652+05:30",
+      "cache_read_rate": 98.61892810568051,
+      "cache_read_tokens": 1352887,
+      "cache_creation_tokens": 18912,
+      "input_tokens": 1371833
+    },
+    {
+      "bucket": "2026-11-13T16:26:25.651080652+05:30",
+      "cache_read_rate": 98.37136023245927,
+      "cache_read_tokens": 1684582,
+      "cache_creation_tokens": 27854,
+      "input_tokens": 1712472
+    },
+    {
+      "bucket": "2026-11-13T16:26:55.651080652+05:30",
+      "cache_read_rate": 98.38920132844896,
+      "cache_read_tokens": 1449269,
+      "cache_creation_tokens": 23693,
+      "input_tokens": 1472996
+    },
+    {
+      "bucket": "2026-11-13T16:27:25.651080652+05:30",
+      "cache_read_rate": 98.03896317680798,
+      "cache_read_tokens": 875485,
+      "cache_creation_tokens": 17488,
+      "input_tokens": 892997
+    },
+    {
+      "bucket": "2026-11-13T16:27:55.651080652+05:30",
+      "cache_read_rate": 98.02577886503099,
+      "cache_read_tokens": 953683,
+      "cache_creation_tokens": 19185,
+      "input_tokens": 972890
+    },
+    {
+      "bucket": "2026-11-13T16:28:25.651080652+05:30",
+      "cache_read_rate": 97.97843563073874,
+      "cache_read_tokens": 900074,
+      "cache_creation_tokens": 18551,
+      "input_tokens": 918645
+    },
+    {
+      "bucket": "2026-11-13T16:28:55.651080652+05:30",
+      "cache_read_rate": 98.3417839700686,
+      "cache_read_tokens": 1286105,
+      "cache_creation_tokens": 21666,
+      "input_tokens": 1307791
+    },
+    {
+      "bucket": "2026-11-13T16:29:25.651080652+05:30",
+      "cache_read_rate": 94.50698456321163,
+      "cache_read_tokens": 1040589,
+      "cache_creation_tokens": 49501,
+      "input_tokens": 1101071
+    },
+    {
+      "bucket": "2026-11-13T16:29:55.651080652+05:30",
+      "cache_read_rate": 94.62528793718427,
+      "cache_read_tokens": 1093522,
+      "cache_creation_tokens": 51127,
+      "input_tokens": 1155634
+    },
+    {
+      "bucket": "2026-11-13T16:30:25.651080652+05:30",
+      "cache_read_rate": 94.62528793718427,
+      "cache_read_tokens": 1093522,
+      "cache_creation_tokens": 51127,
+      "input_tokens": 1155634
+    },
+    {
+      "bucket": "2026-11-13T16:30:55.651080652+05:30",
+      "cache_read_rate": 94.86119515142428,
+      "cache_read_tokens": 1062914,
+      "cache_creation_tokens": 46597,
+      "input_tokens": 1120494
+    },
+    {
+      "bucket": "2026-11-13T16:31:25.651080652+05:30",
+      "cache_read_rate": 94.86119515142428,
+      "cache_read_tokens": 1062914,
+      "cache_creation_tokens": 46597,
+      "input_tokens": 1120494
+    },
+    {
+      "bucket": "2026-11-13T16:31:55.651080652+05:30",
+      "cache_read_rate": 91.86777598512803,
+      "cache_read_tokens": 624643,
+      "cache_creation_tokens": 44309,
+      "input_tokens": 679937
+    },
+    {
+      "bucket": "2026-11-13T16:32:25.651080652+05:30",
+      "cache_read_rate": 97.85072911428777,
+      "cache_read_tokens": 681090,
+      "cache_creation_tokens": 14938,
+      "input_tokens": 696050
+    },
+    {
+      "bucket": "2026-11-13T16:32:55.651080652+05:30",
+      "cache_read_rate": 97.309517482252,
+      "cache_read_tokens": 1025292,
+      "cache_creation_tokens": 28318,
+      "input_tokens": 1053640
+    },
+    {
+      "bucket": "2026-11-13T16:33:25.651080652+05:30",
+      "cache_read_rate": 91.53417066318859,
+      "cache_read_tokens": 1427458,
+      "cache_creation_tokens": 131943,
+      "input_tokens": 1559481
+    },
+    {
+      "bucket": "2026-11-13T16:33:55.651080652+05:30",
+      "cache_read_rate": 91.3994575848797,
+      "cache_read_tokens": 1857258,
+      "cache_creation_tokens": 174657,
+      "input_tokens": 2032023
+    },
+    {
+      "bucket": "2026-11-13T16:34:25.651080652+05:30",
+      "cache_read_rate": 92.73557298549574,
+      "cache_read_tokens": 2458178,
+      "cache_creation_tokens": 192431,
+      "input_tokens": 2650739
+    },
+    {
+      "bucket": "2026-11-13T16:34:55.651080652+05:30",
+      "cache_read_rate": 91.82605953495255,
+      "cache_read_tokens": 2929367,
+      "cache_creation_tokens": 260613,
+      "input_tokens": 3190126
+    },
+    {
+      "bucket": "2026-11-13T16:35:25.651080652+05:30",
+      "cache_read_rate": 89.48432511837908,
+      "cache_read_tokens": 3422209,
+      "cache_creation_tokens": 401964,
+      "input_tokens": 3824367
+    },
+    {
+      "bucket": "2026-11-13T16:35:55.651080652+05:30",
+      "cache_read_rate": 90.09135286317732,
+      "cache_read_tokens": 5284602,
+      "cache_creation_tokens": 580950,
+      "input_tokens": 5865826
+    },
+    {
+      "bucket": "2026-11-13T16:36:25.651080652+05:30",
+      "cache_read_rate": 91.91238255028972,
+      "cache_read_tokens": 8072580,
+      "cache_creation_tokens": 710010,
+      "input_tokens": 8782908
+    },
+    {
+      "bucket": "2026-11-13T16:36:55.651080652+05:30",
+      "cache_read_rate": 92.47482221020347,
+      "cache_read_tokens": 11011273,
+      "cache_creation_tokens": 895657,
+      "input_tokens": 11907320
+    },
+    {
+      "bucket": "2026-11-13T16:37:25.651080652+05:30",
+      "cache_read_rate": 93.01703088450722,
+      "cache_read_tokens": 14416891,
+      "cache_creation_tokens": 1081846,
+      "input_tokens": 15499195
+    },
+    {
+      "bucket": "2026-11-13T16:37:55.651080652+05:30",
+      "cache_read_rate": 94.16235778584607,
+      "cache_read_tokens": 17638539,
+      "cache_creation_tokens": 1093004,
+      "input_tokens": 18732049
+    }
+  ]
+}

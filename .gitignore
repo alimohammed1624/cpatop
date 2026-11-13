@@ -1,0 +1,29 @@
+# Build output
+/target/
+**/*.rs.bk
+
+# Secrets and local credentials — never commit these
+.env
+.env.*
+*.cookies
+*.pw
+*.key
+*.pem
+secrets/
+config.local.toml
+session.json
+*.secret
+admin.pw
+api.key
+
+# Local test runs and scratch output
+/run-*/
+/captures-local/
+*.snap.new
+*.pending-snap
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

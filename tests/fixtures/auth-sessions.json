@@ -1,0 +1,59 @@
+{
+  "items": [
+    {
+      "id": "671151…",
+      "kind": "admin",
+      "role": "admin",
+      "source": "standard",
+      "current": true,
+      "loginAt": "2026-11-13 16:33:07",
+      "lastSeenAt": "2026-11-13 16:39:06",
+      "expiresAt": "2026-11-20 16:33:07",
+      "loginIp": "::1",
+      "lastSeenIp": "::1",
+      "userAgent": "curl/8.23.0",
+      "alias": ""
+    },
+    {
+      "id": "3dc230…",
+      "kind": "api_key",
+      "role": "api_key_viewer",
+      "source": "standard",
+      "loginAt": "2026-11-13 16:33:07",
+      "lastSeenAt": "2026-11-13 16:39:06",
+      "expiresAt": "2026-11-20 16:33:07",
+      "loginIp": "::1",
+      "lastSeenIp": "::1",
+      "userAgent": "curl/8.23.0",
+      "apiKeyId": "1",
+      "label": "dem…",
+      "displayKey": "dem***…"
+    },
+    {
+      "id": "ff8eac…",
+      "kind": "admin",
+      "role": "admin",
+      "source": "standard",
+      "loginAt": "2026-11-12 18:22:38",
+      "lastSeenAt": "2026-11-13 16:38:41",
+      "expiresAt": "2026-11-19 18:22:38",
+      "loginIp": "::1",
+      "lastSeenIp": "::1",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWeb…",
+      "alias": ""
+    },
+    {
+      "id": "b890e7…",
+      "kind": "admin",
+      "role": "admin",
+      "source": "standard",
+      "loginAt": "2026-11-13 03:18:49",
+      "lastSeenAt": "2026-11-13 11:22:09",
+      "expiresAt": "2026-11-20 03:18:49",
+      "loginIp": "fd00::2",
+      "lastSeenIp": "fd00::2",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 1…",
+      "alias": ""
+    }
+  ]
+}

@@ -1,0 +1,123 @@
+{
+  "generated_at": "2026-11-13T16:39:10.247794815+05:30",
+  "range_start": "2026-10-14T16:39:10.247794815+05:30",
+  "windows": [
+    {
+      "window_role": "primary",
+      "window_kind": "monthly",
+      "window_seconds": 2592000,
+      "has_current_cycle": true,
+      "last_observed_at": "2026-11-13T16:29:47.582975234+05:30"
+    }
+  ],
+  "selected_window": {
+    "window_role": "primary",
+    "window_kind": "monthly",
+    "window_seconds": 2592000,
+    "has_current_cycle": true,
+    "last_observed_at": "2026-11-13T16:29:47.582975234+05:30"
+  },
+  "cycles": [
+    {
+      "id": 4,
+      "status": "current",
+      "window_seconds": 2592000,
+      "window_started_at": "2026-11-08T19:43:05+05:30",
+      "reset_at": "2026-12-08T19:43:05+05:30",
+      "effective_started_at": "2026-11-08T19:43:05+05:30",
+      "effective_ended_at": "2026-12-08T19:43:05+05:30",
+      "first_observed_at": "2026-11-13T03:19:25.033813227+05:30",
+      "last_observed_at": "2026-11-13T16:29:47.582975234+05:30",
+      "first_remaining_percent": 99,
+      "last_remaining_percent": 95,
+      "observation_count": 34,
+      "usage": {
+        "requests": 32,
+        "successful_requests": 32,
+        "failed_requests": 0,
+        "input_tokens": 2512417,
+        "output_tokens": 31391,
+        "reasoning_tokens": 10389,
+        "cache_read_tokens": 2406912,
+        "cache_creation_tokens": 0,
+        "total_tokens": 2543808,
+        "total_cost_usd": 0.050315120000000005,
+        "cost_available": true
+      },
+      "transitions": [
+        {
+          "from_remaining_percent": 99,
+          "to_remaining_percent": 98,
+          "percentage_points": 1,
+          "is_direct": true,
+          "interval_started_at": "2026-11-13T03:19:25.033813227+05:30",
+          "interval_ended_at": "2026-11-13T15:57:24.103869761+05:30",
+          "usage": {
+            "requests": 3,
+            "successful_requests": 3,
+            "failed_requests": 0,
+            "input_tokens": 101766,
+            "output_tokens": 18026,
+            "reasoning_tokens": 1971,
+            "cache_read_tokens": 67712,
+            "cache_creation_tokens": 0,
+            "total_tokens": 119792,
+            "total_cost_usd": 0.01309552,
+            "cost_available": true
+          },
+          "tokens_per_point": 119792,
+          "cost_per_point": 0.01309552,
+          "cost_per_point_available": true
+        },
+        {
+          "from_remaining_percent": 98,
+          "to_remaining_percent": 97,
+          "percentage_points": 1,
+          "is_direct": true,
+          "interval_started_at": "2026-11-13T15:57:24.103869761+05:30",
+          "interval_ended_at": "2026-11-13T16:01:28.96559105+05:30",
+          "usage": {
+            "requests": 8,
+            "successful_requests": 8,
+            "failed_requests": 0,
+            "input_tokens": 499810,
+            "output_tokens": 4884,
+            "reasoning_tokens": 2828,
+            "cache_read_tokens": 476160,
+            "cache_creation_tokens": 0,
+            "total_tokens": 504694,
+            "total_cost_usd": 0.0095686,
+            "cost_available": true
+          },
+          "tokens_per_point": 504694,
+          "cost_per_point": 0.0095686,
+          "cost_per_point_available": true
+        },
+        {
+          "from_remaining_percent": 97,
+          "to_remaining_percent": 96,
+          "percentage_points": 1,
+          "is_direct": true,
+          "interval_started_at": "2026-11-13T16:01:28.96559105+05:30",
+          "interval_ended_at": "2026-11-13T16:08:24.666156663+05:30",
+          "usage": {
+            "requests": 11,
+            "successful_requests": 11,
+            "failed_requests": 0,
+            "input_tokens": 962305,
+            "output_tokens": 4057,
+            "reasoning_tokens": 2284,
+            "cache_read_tokens": 938112,
+            "cache_creation_tokens": 0,
+            "total_tokens": 966362,
+            "total_cost_usd": 0.013828920000000001,
+            "cost_available": true
+          },
+          "tokens_per_point": 966362,
+          "cost_per_point": 0.013828920000000001,
+          "cost_per_point_available": true
+        }
+      ]
+    }
+  ]
+}

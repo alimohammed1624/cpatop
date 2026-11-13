@@ -1,0 +1,72 @@
+{
+  "source": "litellm",
+  "matches": [
+    {
+      "model": "claude-3-5-haiku-20241022",
+      "matched_model": "vertex_ai/claude-3-5-haiku@20241022",
+      "provider": "google-vertex-anthropic",
+      "pricing_style": "claude",
+      "base_prices": {
+        "input": 1,
+        "output": 5,
+        "cache_read": 0,
+        "cache_write": 0
+      }
+    },
+    {
+      "model": "claude-fable-5",
+      "matched_model": "claude-fable-5",
+      "provider": "anthropic",
+      "pricing_style": "claude",
+      "base_prices": {
+        "input": 10,
+        "output": 50,
+        "cache_read": 1,
+        "cache_write": 12.5
+      }
+    },
+    {
+      "model": "claude-fable-5-1",
+      "matched_model": "claude-fable-5-1",
+      "provider": "anthropic",
+      "pricing_style": "claude",
+      "base_prices": {
+        "input": 10,
+        "output": 50,
+        "cache_read": 0.25,
+        "cache_write": 12.5
+      }
+    },
+    {
+      "model": "claude-fable-5-2",
+      "matched_model": "claude-fable-5-2",
+      "provider": "anthropic",
+      "pricing_style": "claude",
+      "base_prices": {
+        "input": 8,
+        "output": 40,
+        "cache_read": 0.19999999999999998,
+        "cache_write": 10
+      }
+    },
+    {
+      "model": "claude-haiku-4-5-20251001",
+      "matched_model": "claude-haiku-4-5-20251001",
+      "provider": "anthropic",
+      "pricing_style": "claude",
+      "base_prices": {
+        "input": 1,
+        "output": 5,
+        "cache_read": 0.09999999999999999,
+        "cache_write": 1.25
+      }
+    }
+  ],
+  "unmatched_models": [
+    "bonsai-2:4b",
+    "claude-3-7-sonnet-20250219",
+    "claude-opus-4-1-20250805",
+    "claude-opus-4-20250514",
+    "claude-opus-4-6-thinking"
+  ]
+}

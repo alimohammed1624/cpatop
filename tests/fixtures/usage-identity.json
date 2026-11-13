@@ -1,0 +1,80 @@
+{
+  "id": "4",
+  "name": "user1@example.com",
+  "alias": null,
+  "displayName": "user1@example.com",
+  "auth_type": 1,
+  "auth_type_name": "oauth",
+  "identity": "6d78555c26de98aa",
+  "type": "claude",
+  "provider": "claude",
+  "prefix": "",
+  "file_name": "user2@example.com.json",
+  "file_path": "/home/user/.cli-proxy-api/user2@example.com.json",
+  "priority": 0,
+  "disabled": false,
+  "total_requests": 1129,
+  "success_count": 1109,
+  "failure_count": 20,
+  "input_tokens": 124420267,
+  "output_tokens": 813688,
+  "reasoning_tokens": 266968,
+  "cache_read_tokens": 119291341,
+  "total_tokens": 125233955,
+  "last_aggregated_usage_event_id": "1392",
+  "first_used_at": "2026-11-13T03:22:45.078764852+05:30",
+  "last_used_at": "2026-11-13T16:41:46.453939072+05:30",
+  "stats_updated_at": "2026-11-13T16:41:51.097972582+05:30",
+  "period_stats": {
+    "total_requests": 1129,
+    "success_count": 1109,
+    "failure_count": 20,
+    "input_tokens": 124420267,
+    "cache_read_tokens": 119291341,
+    "total_tokens": 125233955
+  },
+  "is_deleted": false,
+  "created_at": "2026-11-12T18:21:41.385382889+05:30",
+  "updated_at": "2026-11-13T16:41:51.09834951+05:30",
+  "credential_health": {
+    "window_seconds": 18000,
+    "bucket_seconds": 600,
+    "window_start": "2026-11-13T11:50:00+05:30",
+    "window_end": "2026-11-13T16:50:00+05:30",
+    "total_success": 929,
+    "total_failure": 20,
+    "success_rate": 97.89251844046365,
+    "input_tokens": 98546475,
+    "cache_read_tokens": 94062725,
+    "buckets": [
+      {
+        "start_time": "2026-11-13T11:50:00+05:30",
+        "end_time": "2026-11-13T12:00:00+05:30",
+        "success": 0,
+        "failure": 0,
+        "rate": 0
+      },
+      {
+        "start_time": "2026-11-13T12:00:00+05:30",
+        "end_time": "2026-11-13T12:10:00+05:30",
+        "success": 0,
+        "failure": 0,
+        "rate": 0
+      },
+      {
+        "start_time": "2026-11-13T12:10:00+05:30",
+        "end_time": "2026-11-13T12:20:00+05:30",
+        "success": 0,
+        "failure": 0,
+        "rate": 0
+      },
+      {
+        "start_time": "2026-11-13T12:20:00+05:30",
+        "end_time": "2026-11-13T12:30:00+05:30",
+        "success": 10,
+        "failure": 0,
+        "rate": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "codex-auto-review",
+      "object": "model",
+      "created": 1776902400,
+      "owned_by": "openai"
+    },
+    {
+      "id": "gpt-image-2",
+      "object": "model",
+      "created": 1704067200,
+      "owned_by": "openai"
+    },
+    {
+      "id": "gpt-image-2.6",
+      "object": "model",
+      "created": 1704067200,
+      "owned_by": "openai"
+    },
+    {
+      "id": "claude-sonnet-4-5-20250929",
+      "object": "model",
+      "created": 1759104000,
+      "owned_by": "anthropic"
+    },
+    {
+      "id": "claude-fable-5",
+      "object": "model",
+      "created": 1781049600,
+      "owned_by": "anthropic"
+    }
+  ]
+}

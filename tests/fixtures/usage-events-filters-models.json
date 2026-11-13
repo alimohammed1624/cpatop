@@ -1,0 +1,9 @@
+{
+  "models": [
+    "claude-fable-5-2",
+    "claude-opus-5-5",
+    "gpt-6-astra",
+    "gpt-6-luna",
+    "gpt-6.1-sol"
+  ]
+}

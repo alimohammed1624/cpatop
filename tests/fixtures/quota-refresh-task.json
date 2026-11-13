@@ -1,0 +1,31 @@
+{
+  "authIndex": "b68cdef0f52c761a",
+  "file_name": "user4@example.com.json",
+  "status": "completed",
+  "quota": {
+    "id": "b68cdef0f52c761a",
+    "quota": [
+      {
+        "key": "rate_limit.primary_window",
+        "label": "Monthly",
+        "scope": "window",
+        "usedPercent": 5,
+        "allowed": true,
+        "limitReached": false,
+        "window": {
+          "seconds": 2592000
+        },
+        "resetAt": "2026-12-08T19:43:05+05:30",
+        "resetAfterSeconds": 2171597,
+        "window_usage_tokens": 2532816,
+        "window_usage_cost": 0.04920512
+      }
+    ],
+    "subscription": {
+      "provider": "codex",
+      "plan": "free"
+    },
+    "rateLimitResetCreditsAvailableCount": 0
+  },
+  "refreshed_at": "2026-11-13T16:29:47.582975234+05:30"
+}

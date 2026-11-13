@@ -1,0 +1,31 @@
+# GET /api/v1/usage/events/live?range=today&page_size=20  (admin, curl -sN --max-time 34)
+# Response headers: HTTP/1.1 200, Content-Type: text/event-stream; charset=utf-8, Cache-Control: no-cache, no-transform, X-Accel-Buffering: no, Transfer-Encoding: chunked
+# Redacted (events lists trimmed to 1 element); 11 append frames total in capture, only first 2 kept. Stream ended by client timeout.
+
+event: snapshot
+data: {"end_exclusive":false,"events":[{"id":"1353","timestamp":"2026-11-13T16:40:11.529197926+05:30","api_key":"dem***…","model":"claude-opus-5-5","model_alias":"claude-opus-5-5","response_model":"claude-opus-5-5","reasoning_effort":"high","service_tier":"auto","response_service_tier":"standard","client_ip":"127.0.0.1","x_forwarded_for":"","user_agent":"claude-cli/2.1.323 (external, example, agent-sdk/0.3.321)","executor_type":"ClaudeExecutor","endpoint":"POST /v1/messages","source":"user1@example.com","source_type":"claude","auth_index":"6d78555c26de98aa","request_id":"01a1d499-cc47-7710-82a8-a0c747c75625","failed":false,"status_code":200,"stream":true,"latency_ms":4629,"ttft_ms":1655,"speed_tps":69.77748973860446,"tokens":{"input_tokens":131958,"output_tokens":323,"reasoning_tokens":92,"cache_read_tokens":130323,"cache_creation_tokens":1633,"total_tokens":132281},"cost_usd":0.0406976,"cost_available":true,"pricing_style":"claude"}],"has_more":true,"next_cursor":"MjAyNi0xMS0xM1QxNjozOTozMy40ODk5Nzg4ODYrMDU6MzB8MTMzNg","page":1,"page_size":20,"range_end":"2026-11-13T23:59:59.999999999+05:30","range_start":"2026-11-13T00:00:00+05:30","snapshot_at":"2026-11-13T16:40:20.138251751+05:30","total_count":1347,"total_pages":68}
+
+event: append
+data: {"end_exclusive":false,"events":[{"id":"1354","timestamp":"2026-11-13T16:40:15.643778771+05:30","api_key":"dem***…","model":"claude-opus-5-5","model_alias":"claude-opus-5-5","response_model":"claude-opus-5-5","reasoning_effort":"high","service_tier":"auto","response_service_tier":"standard","client_ip":"127.0.0.1","x_forwarded_for":"","user_agent":"claude-cli/2.1.323 (external, example, agent-sdk/0.3.321)","executor_type":"ClaudeExecutor","endpoint":"POST /v1/messages","source":"user1@example.com","source_type":"claude","auth_index":"6d78555c26de98aa","request_id":"01a1d499-dc5a-79a6-a08c-607d1cdaea33","failed":false,"status_code":200,"stream":true,"latency_ms":4426,"ttft_ms":917,"speed_tps":102.34975146859466,"tokens":{"input_tokens":131625,"output_tokens":453,"reasoning_tokens":139,"cache_read_tokens":130923,"cache_creation_tokens":700,"total_tokens":132078},"cost_usd":0.038752600000000005,"cost_available":true,"pricing_style":"claude"}],"range_end":"2026-11-13T23:59:59.999999999+05:30","range_start":"2026-11-13T00:00:00+05:30"}
+
+event: append
+data: {"end_exclusive":false,"events":[{"id":"1355","timestamp":"2026-11-13T16:39:17.173974102+05:30","api_key":"dem***…","model":"claude-opus-5-5","model_alias":"claude-opus-5-5","response_model":"claude-opus-5-5","reasoning_effort":"high","service_tier":"auto","response_service_tier":"standard","client_ip":"127.0.0.1","x_forwarded_for":"","user_agent":"claude-cli/2.1.323 (external, example, agent-sdk/0.3.321)","executor_type":"ClaudeExecutor","endpoint":"POST /v1/messages","source":"user1@example.com","source_type":"claude","auth_index":"6d78555c26de98aa","request_id":"01a1d498-f7f4-7990-9831-542be0709a41","failed":false,"status_code":200,"stream":true,"latency_ms":67089,"ttft_ms":1209,"speed_tps":114.47480212851586,"tokens":{"input_tokens":148867,"output_tokens":7680,"reasoning_tokens":301,"cache_read_tokens":148471,"cache_creation_tokens":394,"total_tokens":156547},"cost_usd":0.18527220000000003,"cost_available":true,"pricing_style":"claude"}],"range_end":"2026-11-13T23:59:59.999999999+05:30","range_start":"2026-11-13T00:00:00+05:30"}
+
+event: heartbeat
+data: {"busy":false,"end_exclusive":false,"range_end":"2026-11-13T23:59:59.999999999+05:30","range_start":"2026-11-13T00:00:00+05:30","total_count":1353}
+
+event: heartbeat
+data: {"busy":false,"end_exclusive":false,"range_end":"2026-11-13T23:59:59.999999999+05:30","range_start":"2026-11-13T00:00:00+05:30","total_count":1360}
+
+# --- Second capture: GET /api/v1/usage/events/live?range=5h&page_size=20 (rolling range) — frame order observed:
+# snapshot (20 events, range_start/range_end = now-5h .. now, snapshot_at = now), then:
+event: checkpoint
+data: {"range_start":"2026-11-13T11:41:18.867389408+05:30","range_end":"2026-11-13T16:41:18.867389408+05:30","end_exclusive":false}
+
+# event: append  {"events":[...1 event...],"range_start":...,"range_end":...,"end_exclusive":false}
+event: checkpoint
+data: {"range_start":"2026-11-13T11:41:21.048733744+05:30","range_end":"2026-11-13T16:41:21.048733744+05:30","end_exclusive":false}
+
+# --- 4th concurrent connection from the same session:
+# HTTP/1.1 429 Too Many Requests / Retry-After: 5 / Content-Type: application/json
+# {"code":"live_capacity"}

@@ -1,0 +1,70 @@
+{
+  "models": [
+    {
+      "model": "claude-3-7-sonnet-20250219",
+      "pricing_style": "claude",
+      "base_prices": {
+        "input": 3,
+        "output": 15,
+        "cache_read": 0,
+        "cache_write": 0
+      },
+      "model_multiplier": 1,
+      "conditional_multipliers": [],
+      "branches": []
+    },
+    {
+      "model": "claude-fable-5",
+      "pricing_style": "claude",
+      "base_prices": {
+        "input": 10,
+        "output": 50,
+        "cache_read": 1,
+        "cache_write": 12.5
+      },
+      "model_multiplier": 1,
+      "conditional_multipliers": [],
+      "branches": []
+    },
+    {
+      "model": "claude-fable-5-1",
+      "pricing_style": "claude",
+      "base_prices": {
+        "input": 10,
+        "output": 50,
+        "cache_read": 0.25,
+        "cache_write": 12.5
+      },
+      "model_multiplier": 1,
+      "conditional_multipliers": [],
+      "branches": []
+    },
+    {
+      "model": "claude-fable-5-2",
+      "pricing_style": "claude",
+      "base_prices": {
+        "input": 8,
+        "output": 40,
+        "cache_read": 0.2,
+        "cache_write": 10
+      },
+      "model_multiplier": 1,
+      "conditional_multipliers": [],
+      "branches": []
+    },
+    {
+      "model": "claude-haiku-4-5-20251001",
+      "pricing_style": "claude",
+      "base_prices": {
+        "input": 1,
+        "output": 5,
+        "cache_read": 0.1,
+        "cache_write": 1.25
+      },
+      "model_multiplier": 1,
+      "conditional_multipliers": [],
+      "branches": []
+    }
+  ],
+  "config_revision": 2
+}

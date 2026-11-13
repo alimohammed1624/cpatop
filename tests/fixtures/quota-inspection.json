@@ -1,0 +1,71 @@
+{
+  "total": 7,
+  "cached": 7,
+  "running": false,
+  "completed": false,
+  "normal": 6,
+  "limit_reached": 1,
+  "unauthorized_401": 0,
+  "payment_required_402": 0,
+  "unauthorized_401_402": 0,
+  "other_failed": 0,
+  "unknown": 0,
+  "results": [
+    {
+      "auth_index": "6d78555c26de98aa",
+      "name": "user1@example.com",
+      "type": "claude",
+      "file_name": "user2@example.com.json",
+      "status": "normal",
+      "refreshed_at": "2026-11-13T16:38:52.8134479+05:30"
+    },
+    {
+      "auth_index": "b68cdef0f52c761a",
+      "name": "user3@example.com",
+      "type": "codex",
+      "file_name": "user4@example.com.json",
+      "status": "normal",
+      "refreshed_at": "2026-11-13T16:29:47.582975234+05:30"
+    },
+    {
+      "auth_index": "6b42be921715d22e",
+      "name": "user5@example.com",
+      "type": "codex",
+      "file_name": "user6@example.com.json",
+      "status": "normal",
+      "refreshed_at": "2026-11-13T16:17:49.430223512+05:30"
+    },
+    {
+      "auth_index": "fdcf5f224424f6e4",
+      "name": "user3@example.com",
+      "type": "antigravity",
+      "file_name": "user7@example.com.json",
+      "status": "normal",
+      "refreshed_at": "2026-11-13T16:15:33.33227876+05:30"
+    },
+    {
+      "auth_index": "4ed658b84e762e2e",
+      "name": "user8@example.com",
+      "type": "antigravity",
+      "file_name": "user7@example.com.json",
+      "status": "normal",
+      "refreshed_at": "2026-11-13T16:15:33.026694376+05:30"
+    },
+    {
+      "auth_index": "8e5990af723e2e49",
+      "name": "user9@example.com",
+      "type": "codex",
+      "file_name": "user10@example.com.json",
+      "status": "normal",
+      "refreshed_at": "2026-11-13T16:15:32.030995533+05:30"
+    },
+    {
+      "auth_index": "92799d3c51327a24",
+      "name": "user3@example.com",
+      "type": "claude",
+      "file_name": "user11@example.com.json",
+      "status": "limit_reached",
+      "refreshed_at": "2026-11-13T16:15:31.950495751+05:30"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "items": [
+    {
+      "id": "1",
+      "keyAlias": "",
+      "displayKey": "dem***…",
+      "label": "dem*********…",
+      "lastSyncedAt": "2026-11-12T18:21:41.385382889+05:30",
+      "sourceType": "native",
+      "accessProvider": ""
+    },
+    {
+      "id": "2",
+      "keyAlias": "",
+      "displayKey": "dem***…",
+      "label": "dem*********…",
+      "lastSyncedAt": "2026-11-12T18:21:41.385382889+05:30",
+      "sourceType": "native",
+      "accessProvider": ""
+    },
+    {
+      "id": "3",
+      "keyAlias": "",
+      "displayKey": "tst***…",
+      "label": "tst*********…",
+      "lastSyncedAt": "2026-11-12T18:21:41.385382889+05:30",
+      "sourceType": "native",
+      "accessProvider": ""
+    }
+  ]
+}

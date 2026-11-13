@@ -1,0 +1,29 @@
+{
+  "sources": [
+    {
+      "value": "92799d3c51327a24",
+      "label": "user3@example.com",
+      "displayName": "user3@example.com"
+    },
+    {
+      "value": "b68cdef0f52c761a",
+      "label": "user3@example.com",
+      "displayName": "user3@example.com"
+    },
+    {
+      "value": "8e5990af723e2e49",
+      "label": "user9@example.com",
+      "displayName": "user9@example.com"
+    },
+    {
+      "value": "6d78555c26de98aa",
+      "label": "user1@example.com",
+      "displayName": "user1@example.com"
+    },
+    {
+      "value": "6b42be921715d22e",
+      "label": "user5@example.com",
+      "displayName": "user5@example.com"
+    }
+  ]
+}
