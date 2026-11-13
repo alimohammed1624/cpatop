@@ -10,7 +10,7 @@ use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
 use crate::series::Window;
-use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, spark, text};
+use crate::ui::table::{self, Align, Col, TRow, col, flex, grow, num, spark, text};
 use crate::ui::widgets::{self, flow, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -380,19 +380,39 @@ const SPEED_COLS: [Col; 5] = [
     flex("model", 12),
     col("mean", 10, Align::Right, 0),
     col("samples", 7, Align::Right, 2),
-    col("per bucket", 10, Align::Left, 1),
+    spark("per bucket", 10, 1),
     col("range", 15, Align::Right, 3),
 ];
 
+/// Outer width the speed table reads well at (see [`table::natural_width`]).
+pub fn speed_width(app: &App) -> Option<u16> {
+    let rows = speed_rows(app, an(app)?);
+    (!rows.is_empty()).then(|| table::natural_width(&SPEED_COLS, &rows) + 2)
+}
+
 pub fn speed(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
-    let t = app.theme();
     let inner = frame(f, app, PaneId::AnSpeed, area, focused, vec![], None);
     if placeholder(f, app, inner, &app.data.analysis) {
         return;
     }
     let Some(a) = an(app) else { return };
-    let rows = a
-        .model_speed
+    let rows = speed_rows(app, a);
+    table_in(
+        f,
+        app,
+        hit,
+        PaneId::AnSpeed,
+        inner,
+        focused,
+        &SPEED_COLS,
+        rows,
+        "no speed samples",
+    );
+}
+
+fn speed_rows(app: &App, a: &Analysis) -> Vec<TRow> {
+    let t = app.theme();
+    a.model_speed
         .series
         .iter()
         .map(|s| {
@@ -429,18 +449,7 @@ pub fn speed(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
                 .text(range, num(known.len() as f64))
                 .filter(s.model.clone())
         })
-        .collect();
-    table_in(
-        f,
-        app,
-        hit,
-        PaneId::AnSpeed,
-        inner,
-        focused,
-        &SPEED_COLS,
-        rows,
-        "no speed samples",
-    );
+        .collect()
 }
 
 const EFF_COLS: [Col; 8] = [
@@ -526,6 +535,29 @@ pub fn heatmap(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         return;
     }
     let Some(a) = an(app) else { return };
+    let (cols, rows) = heatmap_table(app, a);
+    table_in(
+        f,
+        app,
+        hit,
+        PaneId::AnHeatmap,
+        inner,
+        focused,
+        &cols,
+        rows,
+        "no data",
+    );
+}
+
+/// Outer width the key × model table reads well at: a key or two and a few
+/// models leave the rest of the row to the efficiency table.
+pub fn heatmap_width(app: &App) -> Option<u16> {
+    let (cols, rows) = heatmap_table(app, an(app)?);
+    (!rows.is_empty()).then(|| table::natural_width(&cols, &rows) + 2)
+}
+
+fn heatmap_table(app: &App, a: &Analysis) -> (Vec<Col>, Vec<TRow>) {
+    let t = app.theme();
     let h = &a.heatmap;
     let max = h.cells.iter().map(|c| c.total_tokens).fold(0.0, f64::max);
     // Model columns ranked by total tokens: the busiest models are shown
@@ -586,15 +618,5 @@ pub fn heatmap(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
                 .filter(label)
         })
         .collect();
-    table_in(
-        f,
-        app,
-        hit,
-        PaneId::AnHeatmap,
-        inner,
-        focused,
-        &cols,
-        rows,
-        "no data",
-    );
+    (cols, rows)
 }

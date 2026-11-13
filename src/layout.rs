@@ -461,6 +461,9 @@ pub struct Size {
     /// what is left once every row has its maximum, before anything else
     /// grows past its maximum into blank space.
     pub soak: bool,
+    /// Widest the content can use (outer columns, e.g. a table with few
+    /// columns): a wider share of the row goes to its neighbours.
+    pub max_w: Option<u16>,
 }
 
 impl Size {
@@ -469,6 +472,7 @@ impl Size {
             min,
             max: None,
             soak: false,
+            max_w: None,
         }
     }
     pub fn exact(h: u16) -> Size {
@@ -476,6 +480,7 @@ impl Size {
             min: h,
             max: Some(h),
             soak: false,
+            max_w: None,
         }
     }
     pub fn range(min: u16, max: u16) -> Size {
@@ -483,13 +488,25 @@ impl Size {
             min,
             max: Some(max.max(min)),
             soak: false,
+            max_w: None,
         }
     }
     /// See [`Size::soak`].
     pub fn soaking(self) -> Size {
         Size { soak: true, ..self }
     }
+    /// See [`Size::max_w`].
+    pub fn max_width(self, w: u16) -> Size {
+        Size {
+            max_w: Some(w),
+            ..self
+        }
+    }
 }
+
+/// Rows past its maximum a soaking pane needs before the extra rows show
+/// anything (a separator, a title line and a readable chart).
+const SOAK_MIN: u16 = 8;
 
 /// A placed pane. `collapsed` panes get one row: a title bar only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -504,9 +521,52 @@ struct RowPlan {
     panes: Vec<(PaneDef, Rect)>,
     min: u16,
     max: Option<u16>,
+    /// Where the row's shortest pane is complete: rows past it are blank in
+    /// that pane, so other rows that can use them come first (never below
+    /// two thirds of the tallest pane's needs, so a graph stays readable).
+    fit: Option<u16>,
     weight: u16,
     soak: bool,
     collapsed: bool,
+}
+
+/// Narrow panes whose content is narrower than their share of the row
+/// ([`Size::max_w`]) and hand the columns to the other panes of the row, by
+/// weight. Returns whether anything moved.
+fn give_to_neighbours(placed: &mut [(PaneDef, Rect)], sizes: &[Size], weights: &[u16]) -> bool {
+    let capped: Vec<Option<u16>> = placed
+        .iter()
+        .zip(sizes)
+        .map(|((d, r), s)| s.max_w.map(|m| m.max(d.min_w)).filter(|m| *m < r.width))
+        .collect();
+    let takers: Vec<usize> = (0..placed.len()).filter(|i| capped[*i].is_none()).collect();
+    if takers.is_empty() || capped.iter().all(Option::is_none) {
+        return false;
+    }
+    let mut freed = 0u16;
+    for (i, c) in capped.iter().enumerate() {
+        if let Some(m) = c {
+            freed += placed[i].1.width - m;
+            placed[i].1.width = *m;
+        }
+    }
+    let tw: u32 = takers.iter().map(|i| weights[*i].max(1) as u32).sum();
+    let mut left = freed;
+    for (j, i) in takers.iter().enumerate() {
+        let add = if j + 1 == takers.len() {
+            left
+        } else {
+            (freed as u32 * weights[*i].max(1) as u32 / tw) as u16
+        };
+        placed[*i].1.width += add;
+        left -= add;
+    }
+    let mut x = placed.first().map(|(_, r)| r.x).unwrap_or(0);
+    for (_, r) in placed.iter_mut() {
+        r.x = x;
+        x += r.width;
+    }
+    true
 }
 
 /// Compute pane rectangles for a tab. `size` reports each pane's height
@@ -540,6 +600,7 @@ pub fn compute(
             while ps.len() > 1 && ps.iter().map(|(d, _)| d.min_w).sum::<u16>() > area.width {
                 ps.pop();
             }
+            let weights: Vec<u16> = ps.iter().map(|(_, w)| *w).collect();
             let total_w: u32 = ps.iter().map(|(_, w)| *w as u32).sum::<u32>().max(1);
             let mut x = area.x;
             let n = ps.len();
@@ -553,13 +614,20 @@ pub fn compute(
                 placed.push((d, Rect::new(x, 0, width, 0)));
                 x += width;
             }
-            let sizes: Vec<Size> = placed.iter().map(|(d, r)| size(d.id, r.width)).collect();
+            let mut sizes: Vec<Size> = placed.iter().map(|(d, r)| size(d.id, r.width)).collect();
+            if give_to_neighbours(&mut placed, &sizes, &weights) {
+                sizes = placed.iter().map(|(d, r)| size(d.id, r.width)).collect();
+            }
             let min = sizes.iter().map(|s| s.min).max().unwrap_or(3).max(3);
             let max = sizes
                 .iter()
                 .map(|s| s.max)
                 .collect::<Option<Vec<u16>>>()
                 .map(|v| v.into_iter().max().unwrap_or(min).max(min));
+            let fit = max.map(|m| {
+                let shortest = sizes.iter().filter_map(|s| s.max).min().unwrap_or(m);
+                shortest.max(m * 2 / 3).clamp(min, m)
+            });
             let soak = sizes.iter().any(|s| s.soak);
             let weight = match r.height {
                 Height::Fill(w) => w.max(1),
@@ -570,6 +638,7 @@ pub fn compute(
                 panes: placed,
                 min,
                 max,
+                fit,
                 weight,
                 soak,
                 collapsed: false,
@@ -614,36 +683,40 @@ pub fn compute(
     }
     let mut spare = area.height.saturating_sub(heights.iter().sum());
     let any_weighted = rows.iter().any(|r| !r.collapsed && r.weight > 0);
-    let grow_pass =
-        |heights: &mut Vec<u16>, spare: &mut u16, respect_max: bool, soak_only: bool| {
-            while *spare > 0 {
-                let pick = rows
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, r)| {
-                        !r.collapsed
-                            && (!soak_only || r.soak)
-                            && (r.weight > 0 || (!respect_max && !any_weighted))
-                            && (!respect_max || r.max.is_none_or(|m| heights[*i] < m))
-                    })
-                    .min_by(|(i, a), (j, b)| {
-                        // Least served relative to weight first.
-                        let wa = a.weight.max(1) as u32;
-                        let wb = b.weight.max(1) as u32;
-                        let fa = heights[*i].saturating_sub(a.min) as u32 * wb;
-                        let fb = heights[*j].saturating_sub(b.min) as u32 * wa;
-                        fa.cmp(&fb)
-                    })
-                    .map(|(i, _)| i);
-                match pick {
-                    Some(i) => {
-                        heights[i] += 1;
-                        *spare -= 1;
-                    }
-                    None => break,
+    let grow_pass = |heights: &mut Vec<u16>,
+                     spare: &mut u16,
+                     respect_max: bool,
+                     fit_only: bool,
+                     soak_only: bool| {
+        while *spare > 0 {
+            let pick = rows
+                .iter()
+                .enumerate()
+                .filter(|(i, r)| {
+                    !r.collapsed
+                        && (!soak_only || r.soak)
+                        && (r.weight > 0 || (!respect_max && !any_weighted))
+                        && (!respect_max || r.max.is_none_or(|m| heights[*i] < m))
+                        && (!fit_only || r.fit.is_none_or(|m| heights[*i] < m))
+                })
+                .min_by(|(i, a), (j, b)| {
+                    // Least served relative to weight first.
+                    let wa = a.weight.max(1) as u32;
+                    let wb = b.weight.max(1) as u32;
+                    let fa = heights[*i].saturating_sub(a.min) as u32 * wb;
+                    let fb = heights[*j].saturating_sub(b.min) as u32 * wa;
+                    fa.cmp(&fb)
+                })
+                .map(|(i, _)| i);
+            match pick {
+                Some(i) => {
+                    heights[i] += 1;
+                    *spare -= 1;
                 }
+                None => break,
             }
-        };
+        }
+    };
     // Content-sized (fixed) rows get up to their maximum first; then the
     // weighted rows share the rest.
     for (i, r) in rows.iter().enumerate() {
@@ -656,10 +729,18 @@ pub fn compute(
             spare -= add;
         }
     }
-    grow_pass(&mut heights, &mut spare, true, false);
-    // Rows that put extra height to use (charts under tables) next, then
-    // everything else.
-    grow_pass(&mut heights, &mut spare, false, true);
+    // Rows grow until their shortest pane is complete…
+    grow_pass(&mut heights, &mut spare, true, true, false);
+    // …then rows that put extra height to use (charts under tables), when
+    // there are enough rows for a chart…
+    let chart_fits = rows.iter().enumerate().any(|(i, r)| {
+        r.soak && !r.collapsed && r.max.is_none_or(|m| heights[i] + spare >= m + SOAK_MIN)
+    });
+    if chart_fits {
+        grow_pass(&mut heights, &mut spare, false, false, true);
+    }
+    // …then up to the tallest pane's needs, then everything else.
+    grow_pass(&mut heights, &mut spare, true, false, false);
     // Rows sized exactly to their content (a one-line message) stay as
     // they are while any other row can take the rest.
     let rigid: Vec<bool> = rows.iter().map(|r| r.max == Some(r.min)).collect();
@@ -692,7 +773,7 @@ pub fn compute(
         }
         heights = h2;
     }
-    grow_pass(&mut heights, &mut spare, false, false);
+    grow_pass(&mut heights, &mut spare, false, false, false);
     if spare > 0
         && let Some(last) = heights.last_mut()
     {
@@ -823,6 +904,64 @@ mod tests {
         assert_eq!(h(PaneId::OvTotals), 4);
         assert_eq!(h(PaneId::OvDist), 9);
         assert_eq!(h(PaneId::OvTrend), 46 - 4 - 9);
+    }
+
+    #[test]
+    fn rows_stop_where_a_pane_runs_out_of_content() {
+        // The activity map needs 26 rows; the trend beside it could use 32.
+        // The 6 rows in between would be blank under the map, so the
+        // distribution's chart below gets them.
+        let size = |id: PaneId, _w: u16| match id {
+            PaneId::OvTotals => Size::exact(5),
+            PaneId::OvTrend => Size::range(9, 32),
+            PaneId::OvActivity => Size::range(10, 26),
+            _ => Size::range(5, 9).soaking(),
+        };
+        let area = Rect::new(0, 0, 220, 58);
+        let rects = compute(Tab::Overview, 0, &[], area, &size);
+        let h = |id| rects.iter().find(|p| p.id == id).unwrap().rect.height;
+        assert_eq!(h(PaneId::OvActivity), 26);
+        assert_eq!(h(PaneId::OvTrend), 26);
+        assert_eq!(h(PaneId::OvDist), 58 - 5 - 26);
+        // Four rows are too few for the chart under the table: the graph
+        // row keeps them.
+        let rects = compute(Tab::Overview, 0, &[], Rect::new(0, 0, 220, 44), &size);
+        let h = |id| rects.iter().find(|p| p.id == id).unwrap().rect.height;
+        assert_eq!(h(PaneId::OvDist), 9);
+        assert_eq!(h(PaneId::OvTrend), 30);
+        // A much shorter map does not squash the graph below two thirds of
+        // its height.
+        let size = |id: PaneId, w: u16| match id {
+            PaneId::OvActivity => Size::range(6, 12),
+            id => size(id, w),
+        };
+        let rects = compute(Tab::Overview, 0, &[], area, &size);
+        let h = |id| rects.iter().find(|p| p.id == id).unwrap().rect.height;
+        assert_eq!(h(PaneId::OvTrend), 32 * 2 / 3);
+    }
+
+    #[test]
+    fn narrow_content_gives_width_to_neighbours() {
+        // Analysis "balanced": efficiency 3 : heatmap 2. A one-key heatmap
+        // 60 columns wide hands the rest of its share to efficiency.
+        let size = |id: PaneId, _w: u16| match id {
+            PaneId::AnHeatmap => Size::range(5, 6).max_width(60),
+            id => Size::at_least(pane_def(id).2.min_h),
+        };
+        let area = Rect::new(0, 0, 220, 58);
+        let rects = compute(Tab::Analysis, 0, &[], area, &size);
+        let r = |id| rects.iter().find(|p| p.id == id).unwrap().rect;
+        assert_eq!(r(PaneId::AnHeatmap).width, 60);
+        assert_eq!(r(PaneId::AnEfficiency).width, 160);
+        assert_eq!(r(PaneId::AnHeatmap).x, 160);
+        // Never below the pane's minimum width, and a pane alone in its
+        // row keeps the full width.
+        let size = |id: PaneId, _w: u16| {
+            Size::at_least(5).max_width(if id == PaneId::AnHeatmap { 3 } else { 10 })
+        };
+        let rects = compute(Tab::Analysis, 2, &[], area, &size);
+        let h = rects.iter().find(|p| p.id == PaneId::AnHeatmap).unwrap();
+        assert_eq!(h.rect.width, 220);
     }
 
     #[test]

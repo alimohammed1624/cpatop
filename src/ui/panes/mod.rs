@@ -64,6 +64,13 @@ const GRAPH_MAX: u16 = 18;
 /// Tallest useful pane holding two stacked charts.
 const GRAPH2_MAX: u16 = 32;
 
+fn with_width(s: Size, w: Option<u16>) -> Size {
+    match w {
+        Some(w) => s.max_width(w),
+        None => s,
+    }
+}
+
 /// Height needs of a pane at outer width `w` (see [`layout::compute`]).
 pub fn size(app: &App, id: PaneId, w: u16) -> Size {
     use PaneId::*;
@@ -90,9 +97,13 @@ pub fn size(app: &App, id: PaneId, w: u16) -> Size {
         AnTokens => Size::range(9, GRAPH_MAX + 2),
         AnComposition => table(analysis::composition_len(app)),
         AnModels => table(analysis::models_len(app)),
-        AnSpeed => table(analysis::speed_len(app)),
+        // Short tables leave the rest of their row to the neighbour.
+        AnSpeed => with_width(table(analysis::speed_len(app)), analysis::speed_width(app)),
         AnEfficiency => table(analysis::efficiency_len(app)),
-        AnHeatmap => table(analysis::heatmap_len(app)),
+        AnHeatmap => with_width(
+            table(analysis::heatmap_len(app)),
+            analysis::heatmap_width(app),
+        ),
         EvLog => Size::at_least(8),
         EvDetail => Size::range(6, events::detail_lines(w.saturating_sub(3)) + 2),
         CrList => table(app.data.identities.get().map(|p| p.identities.len())),
@@ -848,14 +859,16 @@ pub fn nice_max(v: f64) -> f64 {
 
 /// The top of an axis for a series peaking at `peak`. Counts (`integral`)
 /// keep whole-number tops — their labels have no decimals — so a peak of
-/// 7 tops out at 7, not at a `7.5` that would print as `8`.
+/// 7 tops out at 8 (an even top has a whole half-way label), not at a
+/// `7.5` that would print as `8`.
 pub fn axis_top(peak: f64, integral: bool) -> f64 {
     let top = nice_max(peak);
-    if integral && top.fract() != 0.0 {
-        peak.ceil().max(1.0)
-    } else {
-        top
+    if !integral || top.fract() == 0.0 {
+        return top;
     }
+    let whole = peak.ceil().max(1.0);
+    let even = whole + whole % 2.0;
+    if peak / even >= 0.8 { even } else { whole }
 }
 
 /// Whether every finite value is a whole number (counts, tokens).
@@ -1000,8 +1013,10 @@ mod tests {
     #[test]
     fn count_axes_keep_whole_tops() {
         use super::axis_top;
-        assert_eq!(axis_top(7.0, true), 7.0);
-        assert_eq!(axis_top(11.0, true), 11.0);
+        assert_eq!(axis_top(7.0, true), 8.0);
+        assert_eq!(axis_top(11.0, true), 12.0);
+        assert_eq!(axis_top(17.0, true), 18.0);
+        assert_eq!(axis_top(3.0, true), 3.0);
         assert_eq!(axis_top(12.0, true), 12.0);
         assert_eq!(axis_top(13.0, true), 15.0);
         assert_eq!(axis_top(0.0, true), 1.0);
