@@ -448,7 +448,13 @@ pub fn activity(f: &mut Frame, app: &App, area: Rect, focused: bool) {
             true,
         );
     }
-    legend(f, app, a, Rect::new(body.x + 1, legend_y, body.width.saturating_sub(1), 1), both);
+    legend(
+        f,
+        app,
+        a,
+        Rect::new(body.x + 1, legend_y, body.width.saturating_sub(1), 1),
+        both,
+    );
 }
 
 fn legend(f: &mut Frame, app: &App, a: &Activity, area: Rect, tokens: bool) {
@@ -524,12 +530,20 @@ fn heat(
             area.x + 1,
             area.y,
             &Line::from(vec![
-                Span::styled(title, Style::default().fg(t.title).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    title,
+                    Style::default().fg(t.title).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(format!(" · {what} · rows start at"), dim),
             ]),
             area.width.saturating_sub(1),
         );
-        Rect::new(area.x, area.y + 1, area.width, area.height.saturating_sub(1))
+        Rect::new(
+            area.x,
+            area.y + 1,
+            area.width,
+            area.height.saturating_sub(1),
+        )
     } else {
         area
     };

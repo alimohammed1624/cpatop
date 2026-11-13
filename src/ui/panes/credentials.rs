@@ -6,12 +6,12 @@ use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
 use crate::ui::table::{Align, Col, TRow, col, flex, num, text};
+use crate::ui::widgets::{self, flow, health_color, meter, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
-use crate::ui::widgets::{self, flow, health_color, meter, stat};
 
 pub(super) fn ident_name(app: &App, i: &Identity) -> String {
     let n = if !i.display_name.is_empty() {
@@ -331,4 +331,3 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         ),
     );
 }
-

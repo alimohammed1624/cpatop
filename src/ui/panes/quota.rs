@@ -7,12 +7,12 @@ use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
 use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, text};
+use crate::ui::widgets::{self, flow, meter, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
-use crate::ui::widgets::{self, flow, meter, stat};
 
 fn inspection_items(app: &App) -> Vec<Vec<Span<'static>>> {
     let t = app.theme();
@@ -234,7 +234,12 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                     .styled(cell_name, Style::default().fg(t.title), text(&name))
                     .text(cell_plan, text(&plan_s))
                     .text(r.display_label(), text(&r.display_label()))
-                    .meter(left / 100.0, Some(color), format!(" {left:>3.0}%"), num(left))
+                    .meter(
+                        left / 100.0,
+                        Some(color),
+                        format!(" {left:>3.0}%"),
+                        num(left),
+                    )
                     .text(
                         reset.map(|s| fmt::secs(s as f64)).unwrap_or("-".into()),
                         num(reset.unwrap_or(0) as f64),
@@ -407,4 +412,3 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         "no quota cycles in the last 30 days",
     );
 }
-

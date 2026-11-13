@@ -67,7 +67,10 @@ fn status_spans(app: &App) -> Vec<Span<'static>> {
         Style::default().fg(t.graph_text),
     ));
     if l.loading_more {
-        v.push(Span::styled(" · loading older…", Style::default().fg(t.warn)));
+        v.push(Span::styled(
+            " · loading older…",
+            Style::default().fg(t.warn),
+        ));
     }
     // Active server-side filters.
     let f = &l.filters;
@@ -337,8 +340,7 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             v(opt(&e.source_type)),
             sep(),
             k("key"),
-            v(e
-                .api_key
+            v(e.api_key
                 .as_deref()
                 .map(|k| app.key_name_by_label(k))
                 .unwrap_or("-".into())),

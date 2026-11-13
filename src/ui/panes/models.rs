@@ -5,12 +5,12 @@ use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
 use crate::ui::table::{Align, Col, TRow, col, flex, num, text};
+use crate::ui::widgets::meter;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use crate::ui::widgets::meter;
 
 const PRICE_COLS: [Col; 8] = [
     flex("model", 14),

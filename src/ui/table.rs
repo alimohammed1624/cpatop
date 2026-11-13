@@ -105,7 +105,10 @@ pub fn text(s: &str) -> SortKey {
 pub enum Cell {
     Spans(Vec<Span<'static>>),
     /// Sparkline, one character per bucket (pooled when narrower).
-    Spark { values: Vec<f64>, color: Color },
+    Spark {
+        values: Vec<f64>,
+        color: Color,
+    },
     /// Meter filling the column, followed by `label`.
     Meter {
         frac: f64,
@@ -167,7 +170,8 @@ impl TRow {
     }
     /// Append a styled text cell.
     pub fn styled(mut self, s: impl Into<String>, style: Style, key: SortKey) -> TRow {
-        self.cells.push(Cell::Spans(vec![Span::styled(s.into(), style)]));
+        self.cells
+            .push(Cell::Spans(vec![Span::styled(s.into(), style)]));
         self.sort.push(key);
         self
     }
@@ -297,8 +301,8 @@ pub fn fit(cols: &[Col], content: &[usize], width: u16) -> Vec<Placed> {
 }
 
 fn allocate(cols: &[Col], content: &[usize], width: u16, keep: &[usize]) -> Vec<Placed> {
-    let total = keep.iter().map(|i| cols[*i].width).sum::<u16>()
-        + keep.len().saturating_sub(1) as u16;
+    let total =
+        keep.iter().map(|i| cols[*i].width).sum::<u16>() + keep.len().saturating_sub(1) as u16;
     let mut widths: Vec<u16> = keep.iter().map(|i| cols[*i].width).collect();
     let mut spare = width.saturating_sub(total);
     let want = |k: usize| -> u16 {
@@ -343,7 +347,7 @@ fn allocate(cols: &[Col], content: &[usize], width: u16, keep: &[usize]) -> Vec<
     }
     // Then breathing room between columns (up to two extra cells per gap).
     let gaps = keep.len().saturating_sub(1) as u16;
-    let extra = if gaps > 0 { (spare / gaps).min(2) } else { 0 };
+    let extra = spare.checked_div(gaps).unwrap_or(0).min(2);
     let mut x = 0u16;
     keep.iter()
         .zip(widths)
@@ -477,7 +481,15 @@ pub fn render(
                 } else {
                     spans
                 };
-                put(buf, area.x + p.x, y, p.width, &spans, cols[p.col].align, base);
+                put(
+                    buf,
+                    area.x + p.x,
+                    y,
+                    p.width,
+                    &spans,
+                    cols[p.col].align,
+                    base,
+                );
             }
         }
     }

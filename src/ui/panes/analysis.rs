@@ -221,7 +221,12 @@ pub fn composition(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused:
                     Style::default().fg(t.title),
                     num(c.total_tokens),
                 )
-                .meter(c.percent / 100.0, None, format!(" {:>5.1}%", c.percent), num(c.percent))
+                .meter(
+                    c.percent / 100.0,
+                    None,
+                    format!(" {:>5.1}%", c.percent),
+                    num(c.percent),
+                )
                 .text(fmt::count(c.requests), num(c.requests))
                 .styled(
                     if c.cost_available {

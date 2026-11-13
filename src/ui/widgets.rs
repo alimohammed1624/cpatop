@@ -132,12 +132,20 @@ impl Widget for Graph<'_> {
         let h = area.height as usize;
         // Braille has two dot columns per cell, but only when there are at
         // least that many buckets; fewer buckets are drawn as solid bars.
-        let per_cell =
-            if self.symbols == GraphSymbols::Braille && self.data.len() >= w * 2 { 2 } else { 1 };
+        let per_cell = if self.symbols == GraphSymbols::Braille && self.data.len() >= w * 2 {
+            2
+        } else {
+            1
+        };
         let vals = resample(self.data, w * per_cell);
         let max = self
             .max
-            .unwrap_or_else(|| vals.iter().copied().filter(|v| v.is_finite()).fold(0.0, f64::max))
+            .unwrap_or_else(|| {
+                vals.iter()
+                    .copied()
+                    .filter(|v| v.is_finite())
+                    .fold(0.0, f64::max)
+            })
             .max(f64::MIN_POSITIVE);
         let color_at = |cy: usize| {
             self.color.unwrap_or_else(|| {
@@ -221,7 +229,11 @@ pub struct Axes<'a> {
 impl Axes<'_> {
     /// Width of the y-label gutter.
     fn label(&self, v: f64) -> String {
-        if v == 0.0 { "0".into() } else { (self.y_fmt)(v) }
+        if v == 0.0 {
+            "0".into()
+        } else {
+            (self.y_fmt)(v)
+        }
     }
 
     pub fn gutter(&self) -> u16 {
@@ -284,7 +296,11 @@ impl Axes<'_> {
         let ticks = max_ticks.min(n);
         let mut last_end = 0usize;
         for k in 0..ticks {
-            let i = if ticks == 1 { 0 } else { k * (n - 1) / (ticks - 1) };
+            let i = if ticks == 1 {
+                0
+            } else {
+                k * (n - 1) / (ticks - 1)
+            };
             let (c0, _) = bucket_cols(i, n, w);
             let lw = fmt::width(&self.labels[i]);
             // Labels sit on the axis line, starting at their bucket.
@@ -480,7 +496,10 @@ pub fn heat_cell(level: Option<f64>, color: Color, t: &Theme) -> (char, Color) {
         None => (if t.no_color { ' ' } else { '■' }, t.meter_bg),
         Some(l) if t.no_color => {
             let shades = ['░', '▒', '▓', '█'];
-            (shades[((l.clamp(0.0, 1.0) * 3.0).round() as usize).min(3)], color)
+            (
+                shades[((l.clamp(0.0, 1.0) * 3.0).round() as usize).min(3)],
+                color,
+            )
         }
         Some(_) => ('■', color),
     }
@@ -609,7 +628,10 @@ mod tests {
                 let (a, b) = bucket_cols(i, n, w);
                 assert!(a < b && b <= w, "n={n} w={w} i={i}");
                 if n <= w {
-                    assert!(cols[a..b].iter().all(|v| *v == i as f64), "n={n} w={w} i={i}");
+                    assert!(
+                        cols[a..b].iter().all(|v| *v == i as f64),
+                        "n={n} w={w} i={i}"
+                    );
                 }
             }
         }
@@ -625,8 +647,10 @@ mod tests {
 
     #[test]
     fn meters_are_readable_without_colour() {
-        let mut t = Theme::default();
-        t.no_color = true;
+        let t = Theme {
+            no_color: true,
+            ..Default::default()
+        };
         let text: String = meter(0.5, 10, &t, None)
             .iter()
             .map(|s| s.content.to_string())

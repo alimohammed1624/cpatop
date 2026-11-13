@@ -156,7 +156,10 @@ fn rt_head(
             name,
             fmtf(v[i]),
             vec![Span::styled(
-                format!("  @ {}", b.get(i).map(|x| cursor_time(x, false)).unwrap_or_default()),
+                format!(
+                    "  @ {}",
+                    b.get(i).map(|x| cursor_time(x, false)).unwrap_or_default()
+                ),
                 Style::default().fg(t.hi),
             )],
         ),
@@ -504,7 +507,9 @@ pub fn share(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
     if placeholder(f, app, inner, &app.data.realtime) {
         return;
     }
-    let Some(items) = share_items(app) else { return };
+    let Some(items) = share_items(app) else {
+        return;
+    };
     let dim = app.dim(PaneId::RtShare);
     let rows = items
         .iter()
@@ -518,7 +523,12 @@ pub fn share(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
             };
             TRow::new(i.key.clone())
                 .text(name.clone(), text(&name))
-                .meter(i.share / 100.0, None, format!(" {:>5.1}%", i.share), num(i.share))
+                .meter(
+                    i.share / 100.0,
+                    None,
+                    format!(" {:>5.1}%", i.share),
+                    num(i.share),
+                )
                 .styled(
                     fmt::compact(i.tokens),
                     Style::default().fg(t.title),
@@ -673,12 +683,8 @@ pub fn cache(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
             )
         }
     };
-    f.buffer_mut().set_line(
-        inner.x + 1,
-        inner.y,
-        &head,
-        inner.width.saturating_sub(1),
-    );
+    f.buffer_mut()
+        .set_line(inner.x + 1, inner.y, &head, inner.width.saturating_sub(1));
     let labels = time_labels(&b, false, false);
     chart(
         f,

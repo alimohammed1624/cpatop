@@ -547,7 +547,10 @@ impl App {
         format!(
             "{}|{}|{}|{}",
             self.range.key(),
-            self.api_key.as_ref().map(|k| k.id.as_str()).unwrap_or("all"),
+            self.api_key
+                .as_ref()
+                .map(|k| k.id.as_str())
+                .unwrap_or("all"),
             self.live.filters.key(),
             self.nonce
         )
@@ -931,7 +934,9 @@ impl App {
             Group::Models => d.catalog.error.is_some() || d.pricing.error.is_some(),
             Group::Settings => d.sessions.error.is_some(),
             Group::KeyOptions => d.api_keys.error.is_some() || d.key_options.error.is_some(),
-            Group::EventFilters => d.event_models.error.is_some() || d.event_sources.error.is_some(),
+            Group::EventFilters => {
+                d.event_models.error.is_some() || d.event_sources.error.is_some()
+            }
             _ => false,
         }
     }
@@ -954,7 +959,12 @@ impl App {
             Tab::Credentials => &[Group::Credentials, Group::Detail],
             Tab::Quota => &[Group::Quota, Group::Credentials],
             Tab::Models => &[Group::Models],
-            Tab::Settings => &[Group::Settings, Group::KeyUsage, Group::KeyOptions, Group::Meta],
+            Tab::Settings => &[
+                Group::Settings,
+                Group::KeyUsage,
+                Group::KeyOptions,
+                Group::Meta,
+            ],
         }
     }
 

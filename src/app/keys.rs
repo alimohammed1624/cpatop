@@ -166,16 +166,14 @@ impl App {
                     ed.field = 1 - ed.field;
                     ed.error = None;
                 }
-                KeyCode::Enter => {
-                    match ed.build(now) {
-                        Ok(c) => {
-                            self.overlay = None;
-                            self.set_range(TimeRange::Custom(c));
-                            self.flash(format!("range {}", TimeRange::Custom(c).label()));
-                        }
-                        Err(e) => ed.error = Some(e),
+                KeyCode::Enter => match ed.build(now) {
+                    Ok(c) => {
+                        self.overlay = None;
+                        self.set_range(TimeRange::Custom(c));
+                        self.flash(format!("range {}", TimeRange::Custom(c).label()));
                     }
-                }
+                    Err(e) => ed.error = Some(e),
+                },
                 KeyCode::Backspace => {
                     ed.field_mut().pop();
                     ed.error = None;
@@ -311,7 +309,11 @@ impl App {
             };
             // Several sources can share a label; the identity tells them apart.
             let short: String = s.value.chars().take(8).collect();
-            items.push(PickItem::new(Some(s.value.clone()), label, format!("#{short}")));
+            items.push(PickItem::new(
+                Some(s.value.clone()),
+                label,
+                format!("#{short}"),
+            ));
         }
         let cur = self.live.filters.source.as_ref().map(|s| s.0.clone());
         for it in &mut items {
@@ -485,7 +487,13 @@ impl App {
         let cur = self.focused();
         let i = cur
             .and_then(|c| visible.iter().position(|v| *v == c))
-            .map(|i| if forward { (i + 1) % n } else { (i + n - 1) % n })
+            .map(|i| {
+                if forward {
+                    (i + 1) % n
+                } else {
+                    (i + n - 1) % n
+                }
+            })
             .unwrap_or(0);
         self.focus.insert(self.tab, visible[i]);
     }

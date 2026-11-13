@@ -14,7 +14,13 @@ pub fn wrap_indent(text: &str, width: usize, indent: usize) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut cur = String::new();
     let width = width.max(indent + 8);
-    let limit_now = |out: &Vec<String>| if out.is_empty() { width } else { width - indent };
+    let limit_now = |out: &Vec<String>| {
+        if out.is_empty() {
+            width
+        } else {
+            width - indent
+        }
+    };
     for word in text.split_whitespace() {
         let limit = limit_now(&out);
         if !cur.is_empty() && fmt::width(&cur) + 1 + fmt::width(word) > limit {
@@ -251,7 +257,11 @@ mod tests {
 
     #[test]
     fn wraps_with_indent_and_splits_long_words() {
-        let v = wrap_indent("⚠ /a/very/long/path/that/goes/on/and/on is readable by others", 24, 2);
+        let v = wrap_indent(
+            "⚠ /a/very/long/path/that/goes/on/and/on is readable by others",
+            24,
+            2,
+        );
         assert!(v.len() >= 3, "{v:?}");
         for l in &v[1..] {
             assert!(l.starts_with("  "), "{l:?}");

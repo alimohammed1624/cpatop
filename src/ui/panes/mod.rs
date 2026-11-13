@@ -230,15 +230,14 @@ fn collapsed_summary(app: &App, id: PaneId) -> Option<String> {
                 fmt::compact(l.total_points)
             )
         }
-        RtShare => top(
-            d.realtime
-                .get()?
-                .current_usage
-                .models
-                .iter()
-                .map(|i| (i.label.clone(), i.tokens))
-                .collect(),
-        ),
+        RtShare => top(d
+            .realtime
+            .get()?
+            .current_usage
+            .models
+            .iter()
+            .map(|i| (i.label.clone(), i.tokens))
+            .collect()),
         RtSpeed => d
             .realtime
             .get()?
@@ -257,7 +256,11 @@ fn collapsed_summary(app: &App, id: PaneId) -> Option<String> {
             .join(" · "),
         RtCache => {
             let r = d.realtime.get()?;
-            let v: Vec<f64> = r.cache_level.iter().filter_map(|c| c.cache_read_rate).collect();
+            let v: Vec<f64> = r
+                .cache_level
+                .iter()
+                .filter_map(|c| c.cache_read_rate)
+                .collect();
             format!(
                 "cache read {} now · avg {}",
                 v.last().map(|x| fmt::pct(*x, 1)).unwrap_or("-".into()),
@@ -270,14 +273,13 @@ fn collapsed_summary(app: &App, id: PaneId) -> Option<String> {
             let f: f64 = o.iter().map(|x| x.failures).sum();
             format!("ok {} · fail {}", fmt::int(r - f), fmt::int(f))
         }
-        OvDist => top(
-            d.comparisons
-                .get()?
-                .models
-                .iter()
-                .map(|i| (i.label.clone(), i.total_tokens))
-                .collect(),
-        ),
+        OvDist => top(d
+            .comparisons
+            .get()?
+            .models
+            .iter()
+            .map(|i| (i.label.clone(), i.total_tokens))
+            .collect()),
         OvActivity => {
             let a = d.activity.get()?;
             format!(
@@ -287,14 +289,13 @@ fn collapsed_summary(app: &App, id: PaneId) -> Option<String> {
                 fmt::int(a.total_failure)
             )
         }
-        AnComposition | AnModels | AnEfficiency => top(
-            d.analysis
-                .get()?
-                .model_composition
-                .iter()
-                .map(|i| (i.label.clone(), i.total_tokens))
-                .collect(),
-        ),
+        AnComposition | AnModels | AnEfficiency => top(d
+            .analysis
+            .get()?
+            .model_composition
+            .iter()
+            .map(|i| (i.label.clone(), i.total_tokens))
+            .collect()),
         AnSpeed => {
             let a = d.analysis.get()?;
             a.model_speed
@@ -496,7 +497,13 @@ pub fn chart(
     let shifted: Vec<f64> = s
         .values
         .iter()
-        .map(|v| if v.is_finite() { (v - s.floor).max(0.0) } else { *v })
+        .map(|v| {
+            if v.is_finite() {
+                (v - s.floor).max(0.0)
+            } else {
+                *v
+            }
+        })
         .collect();
     f.render_widget(
         Graph {

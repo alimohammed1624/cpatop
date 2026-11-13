@@ -273,11 +273,10 @@ impl AuthManager {
     /// `--api-key-file` is never shadowed by a stored admin session. After an
     /// expiry the previous role is kept.
     fn wanted_role(&self, want: Option<String>) -> Option<String> {
-        let explicit = self.interactive.as_ref().or_else(|| {
-            self.creds
-                .pick_explicit()
-                .filter(|_| !self.auto_disabled)
-        });
+        let explicit = self
+            .interactive
+            .as_ref()
+            .or_else(|| self.creds.pick_explicit().filter(|_| !self.auto_disabled));
         match explicit {
             Some(c) => Some(role_of(c.mode).to_string()),
             None => want.or_else(|| self.creds.prefer.map(|m| role_of(m).to_string())),

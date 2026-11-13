@@ -222,7 +222,8 @@ impl Custom {
                 }
             }
             Custom::Hours { start, end } => {
-                let slots = ((end - start).num_hours() + 1).clamp(limits::MIN_HOURS, limits::MAX_HOURS);
+                let slots =
+                    ((end - start).num_hours() + 1).clamp(limits::MIN_HOURS, limits::MAX_HOURS);
                 let current = hour_floor(now);
                 let end = end.min(current);
                 let mut start = end - Duration::hours(slots - 1);
@@ -284,7 +285,7 @@ impl Custom {
         let time = time.trim();
         let hour: u32 = match time.split_once(':') {
             Some((h, m)) => {
-                if m.trim_start_matches('0') != "" {
+                if !m.trim_start_matches('0').is_empty() {
                     return Err(format!("{s:?}: hours must start at :00"));
                 }
                 h.parse().map_err(|_| bad())?
@@ -468,7 +469,11 @@ mod tests {
         assert_eq!(back, h);
         assert_eq!(h.label(), "11-13 10:00→17:00");
         assert_eq!(h.params()[2], ("start", "2026-11-13T10:00:00+05:30".into()));
-        assert!("custom:2026-11-07..2026-11-01".parse::<TimeRange>().is_err());
+        assert!(
+            "custom:2026-11-07..2026-11-01"
+                .parse::<TimeRange>()
+                .is_err()
+        );
     }
 
     #[test]

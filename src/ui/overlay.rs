@@ -28,7 +28,10 @@ fn boxed(f: &mut Frame, t: &Theme, r: Rect, title: &str, bottom: &str) -> Rect {
         block = block.title_bottom(Line::from(vec![
             Span::styled("─", bs),
             Span::styled(
-                format!(" {} ", fmt::trunc(bottom, r.width.saturating_sub(6) as usize)),
+                format!(
+                    " {} ",
+                    fmt::trunc(bottom, r.width.saturating_sub(6) as usize)
+                ),
                 Style::default().fg(t.graph_text),
             ),
         ]));
@@ -174,8 +177,18 @@ pub fn picker(f: &mut Frame, app: &App, hit: &mut Hit, p: &Picker) {
     let t = app.theme();
     let area = f.area();
     let vis = p.visible();
-    let max_label = p.items.iter().map(|i| fmt::width(&i.label)).max().unwrap_or(10);
-    let max_detail = p.items.iter().map(|i| fmt::width(&i.detail)).max().unwrap_or(0);
+    let max_label = p
+        .items
+        .iter()
+        .map(|i| fmt::width(&i.label))
+        .max()
+        .unwrap_or(10);
+    let max_detail = p
+        .items
+        .iter()
+        .map(|i| fmt::width(&i.detail))
+        .max()
+        .unwrap_or(0);
     let w = ((max_label + max_detail + 9) as u16).clamp(54, 84);
     let h = (p.items.len() as u16 + 3).min(22);
     let r = centered(area, w, h);
@@ -192,7 +205,10 @@ pub fn picker(f: &mut Frame, app: &App, hit: &mut Hit, p: &Picker) {
     // Query line.
     let count = format!("{}/{}", vis.len(), p.items.len());
     let q = Line::from(vec![
-        Span::styled(" › ", Style::default().fg(t.hi).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " › ",
+            Style::default().fg(t.hi).add_modifier(Modifier::BOLD),
+        ),
         Span::styled(p.query.clone(), Style::default().fg(t.title)),
         Span::styled("█", Style::default().fg(t.hi)),
     ]);
@@ -228,15 +244,9 @@ pub fn picker(f: &mut Frame, app: &App, hit: &mut Hit, p: &Picker) {
         // " ● " + label + at least two spaces + detail + " ".
         let room = (list.width as usize).saturating_sub(3 + 1);
         let label = fmt::trunc(&it.label, room.saturating_sub(2).max(8));
-        let detail = fmt::trunc(
-            &it.detail,
-            room.saturating_sub(fmt::width(&label) + 2),
-        );
+        let detail = fmt::trunc(&it.detail, room.saturating_sub(fmt::width(&label) + 2));
         let mut spans = vec![
-            Span::styled(
-                format!(" {mark}"),
-                base.patch(Style::default().fg(t.ok)),
-            ),
+            Span::styled(format!(" {mark}"), base.patch(Style::default().fg(t.ok))),
             Span::styled(
                 label,
                 base.patch(if selected {
@@ -283,13 +293,7 @@ pub fn range_editor(f: &mut Frame, app: &App, ed: &RangeEditor) {
         ),
     };
     let r = centered(area, 62, 12);
-    let inner = boxed(
-        f,
-        t,
-        r,
-        title,
-        "Tab switch field · Enter apply · Esc back",
-    );
+    let inner = boxed(f, t, r, title, "Tab switch field · Enter apply · Esc back");
     let dim = Style::default().fg(t.graph_text);
     let field = |label: &str, value: &str, active: bool| -> Line<'static> {
         let w = 28usize;
