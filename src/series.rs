@@ -157,8 +157,14 @@ pub fn densify_analysis(a: &mut Analysis, now: DateTime<Utc>) {
         return;
     };
     let daily = a.granularity == "daily";
-    let mut extra: Vec<String> = a.token_usage.iter().map(|b| b.bucket.clone()).collect();
-    extra.extend(a.model_usage.buckets.iter().cloned());
+    // Buckets outside the axis are kept only when they carry data (the
+    // `today` series is zero-filled to midnight; those future zeros go).
+    let extra: Vec<String> = a
+        .token_usage
+        .iter()
+        .filter(|b| b.total_tokens > 0.0 || b.requests > 0.0)
+        .map(|b| b.bucket.clone())
+        .collect();
     let Some(axis) = Axis::build(start, end, daily, now, &extra) else {
         return;
     };
@@ -332,6 +338,28 @@ mod tests {
         assert_eq!(a.token_usage.len(), 20);
         assert_eq!(a.token_usage[4].total_tokens, 7.0);
         assert_eq!(a.token_usage[19].total_tokens, 9.0);
+    }
+
+    #[test]
+    fn zero_filled_future_buckets_are_dropped() {
+        let mut a = Analysis {
+            granularity: "hourly".into(),
+            range_start: Some("2026-11-13T00:00:00+05:30".into()),
+            range_end: Some("2026-11-13T23:59:59.999999999+05:30".into()),
+            token_usage: vec![
+                tb("2026-11-13T18:30:00+05:30", 9.0),
+                tb("2026-11-13T19:30:00+05:30", 0.0),
+                tb("2026-11-13T23:30:00+05:30", 0.0),
+            ],
+            ..Default::default()
+        };
+        a.token_usage[1].requests = 0.0;
+        a.token_usage[2].requests = 0.0;
+        densify_analysis(&mut a, now("2026-11-13T13:50:00Z"));
+        assert_eq!(
+            a.token_usage.last().unwrap().bucket,
+            "2026-11-13T18:30:00+05:30"
+        );
     }
 
     #[test]
