@@ -7,6 +7,25 @@ All notable changes to cpatop are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- One-line installer: `curl -fsSL https://raw.githubusercontent.com/alimohammed1624/cpatop/main/install.sh | sh`
+  downloads the prebuilt binary for the machine, checks it against
+  `SHA256SUMS` and installs to `~/.local/bin` (`CPATOP_INSTALL_DIR`,
+  `CPATOP_VERSION`). Release archives are named without the version
+  (`cpatop-<target>.tar.gz`) so `releases/latest/download/` always works.
+- `--logout-on-exit` (config `logout_on_exit`) ends the server session on
+  quit; by default `q` keeps it and the next start reuses it.
+- The help overlay scrolls (`↑↓` `j`/`k` `PgUp`/`PgDn` `g`/`G`, wheel)
+  with a position indicator and uses up to three columns on wide
+  terminals; only `Esc`, `?` and `q` close it.
+- Spare space shows more detail: the selected API key's token trend, tokens
+  per quota window, a 5 h requests/failures chart in the credential
+  detail; sparkline columns widen with the table.
+- The header shows the refresh cadence of the tab on screen (`10s`, `1m`,
+  `live`, `on R`); stale data is marked amber in the header and `◌ stale`
+  on panes.
+- Credentials that share a name get a provider suffix (`· codex`)
+  everywhere credentials are listed; the selected row's full name is shown
+  on the focused table's border when its name is cut.
 - Request log filters (result `e`, model `m`, source `o`, clear `c`) are
   sent to the server on the live stream and on history pages, so totals and
   paging match the filter; model and source pickers come from
@@ -27,6 +46,24 @@ All notable changes to cpatop are documented here. The format follows
 - Key-event tests and HTTP integration tests against a mock Keeper.
 
 ### Changed
+- Analysis series are rebuilt on dense, calendar-aligned axes (UTC hours
+  or local days) with zeros for missing buckets, clipped to now; averages
+  divide by the selected duration. Analysis refreshes every 60 s.
+- Activity heatmaps use whole-hour (or whole-day) rows in local time and
+  choose span, cell width and side-by-side layout to fill the pane; titles
+  no longer overwrite row labels and the legend wraps instead of being cut.
+- API keys show the server's masked `prefix…suffix` like the web UI
+  (privacy mode still shows only `key #id`).
+- Volumes (token heat, share meters, key × model heatmap) use a single-hue
+  ramp; cache and success rates are coloured good/bad; muted text is
+  brighter in every theme; credentials without requests show a neutral
+  track.
+- Names in tables are truncated in the middle (`claude-…-5-2`); Quota
+  keeps plan and status (shrinking to `⚠`) at 80×24.
+- The graph cursor starts on the last bucket with data; `today` axes stop
+  at the current hour.
+- The API-key role no longer shows the one-row key × model heatmap or an
+  "api keys" dimension.
 - `Esc` never quits: it closes overlays, clears filters and graph cursors;
   quit with `q` or Ctrl-C. `r` opens the range picker (`[`/`]` still cycle).
 - `--privacy` hides every e-mail address (`account-N`), key fragment
@@ -44,6 +81,12 @@ All notable changes to cpatop are documented here. The format follows
   readable (distinct glyphs, reverse video).
 
 ### Fixed
+- `--privacy` now also hides IP addresses in the server address (header,
+  Keys server pane, login and offline screens) and inside URLs, catches
+  lowercase opaque keys (`sk-…`) and IP-valued aliases; `--help` and the
+  help overlay describe it correctly.
+- Without colour, failed requests in outcome bars are drawn as `░`, and the
+  activity legend shows the glyphs the maps use.
 - Money, compact-number, rate and duration formatting carried incorrectly
   at rounding boundaries (`$1.999` → `$2.00`, `999.96k` → `1.00M`).
 - Sparklines no longer interpolate between buckets; missing buckets render

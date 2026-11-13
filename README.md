@@ -63,14 +63,42 @@ All captured from a live Keeper with `--privacy`: e-mail addresses become
 
 ## Install
 
-**Release binaries.** Each [GitHub release](https://github.com/alimohammed1624/cpatop/releases)
-has static Linux binaries (x86_64, aarch64; musl, no OpenSSL) and macOS
-binaries (x86_64, aarch64, universal), plus `SHA256SUMS`:
+```sh
+curl -fsSL https://raw.githubusercontent.com/alimohammed1624/cpatop/main/install.sh | sh
+```
+
+The script picks the prebuilt binary for your machine — Linux x86_64 or
+aarch64 (static musl), macOS Intel or Apple silicon — from the latest
+[GitHub release](https://github.com/alimohammed1624/cpatop/releases),
+checks it against the release's `SHA256SUMS` and installs it to
+`~/.local/bin` without sudo (it tells you the line to add if that is not on
+your `PATH`). Options:
+
+- `CPATOP_INSTALL_DIR=/some/dir` — install somewhere else.
+- `CPATOP_VERSION=v0.1.0` — install a specific release instead of the latest.
 
 ```sh
-# pick the archive for your platform from the release page
-tar xzf cpatop-v*-x86_64-unknown-linux-musl.tar.gz
-install -m 755 cpatop-*/cpatop ~/.local/bin/
+curl -fsSL https://raw.githubusercontent.com/alimohammed1624/cpatop/main/install.sh | CPATOP_INSTALL_DIR=~/bin sh
+```
+
+To read the script before running it:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alimohammed1624/cpatop/main/install.sh -o install.sh
+less install.sh
+sh install.sh
+```
+
+**Uninstall:** run `cpatop logout` to end your server sessions, then delete
+the binary (`rm ~/.local/bin/cpatop`). `cpatop paths` lists the config and
+state directories, which you can delete too.
+
+**Release archives by hand.** Each release has `cpatop-<target>.tar.gz`
+archives plus `SHA256SUMS`:
+
+```sh
+tar xzf cpatop-x86_64-unknown-linux-musl.tar.gz
+install -m 755 cpatop-x86_64-unknown-linux-musl/cpatop ~/.local/bin/
 ```
 
 **With cargo** (Rust 1.88+):

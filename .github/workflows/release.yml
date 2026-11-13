@@ -2,6 +2,11 @@ name: Release
 
 # Push a tag like v0.2.0 to build release binaries and attach them to a
 # GitHub release for that tag.
+#
+# Asset names are deliberately version-independent (cpatop-<target>.tar.gz,
+# containing a top-level cpatop-<target>/ dir) so that
+# https://github.com/alimohammed1624/cpatop/releases/latest/download/<asset>
+# always resolves. Keep asset names in sync with install.sh.
 on:
   push:
     tags: ["v*"]
@@ -51,7 +56,8 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          name=cpatop-${GITHUB_REF_NAME}-${{ matrix.target }}
+          # Keep asset names in sync with install.sh.
+          name=cpatop-${{ matrix.target }}
           mkdir -p "dist/$name"
           cp target/${{ matrix.target }}/release/cpatop README.md LICENSE CHANGELOG.md config.example.toml "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
@@ -73,7 +79,8 @@ jobs:
       - name: lipo
         shell: bash
         run: |
-          name=cpatop-${GITHUB_REF_NAME}-universal-apple-darwin
+          # Keep asset names in sync with install.sh.
+          name=cpatop-universal-apple-darwin
           mkdir -p "dist/$name"
           lipo -create -output "dist/$name/cpatop" \
             aarch64-apple-darwin/target/aarch64-apple-darwin/release/cpatop \
@@ -98,6 +105,7 @@ jobs:
         run: |
           mkdir out
           find artifacts -name '*.tar.gz' -exec cp {} out/ \;
+          # install.sh looks up "<hash>  cpatop-<target>.tar.gz" lines here.
           (cd out && sha256sum *.tar.gz > SHA256SUMS)
           ls -l out
       - uses: softprops/action-gh-release@v2
