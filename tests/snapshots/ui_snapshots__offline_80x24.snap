@@ -7,14 +7,13 @@ expression: "render(&mut app, 80, 24)"
 
 
 
+
         ╭─ cpatop ──────────────────────────────────── localhost:8318 ─╮
         │                                                              │
         │ Cannot load data from the server                             │
         │ cannot reach server: connection failed: Connection refused   │
         │   (os error 111)                                             │
         │ retrying in 0s · base URL http://localhost:8318              │
-        │                                                              │
-        │                                                              │
         │                                                              │
         │                                                              │
         │                                                              │

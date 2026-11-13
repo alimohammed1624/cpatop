@@ -59,7 +59,7 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             let b = &a.token_usage[i];
             vec![
                 vec![Span::styled(
-                    format!("@ {}", cursor_time(&b.bucket, daily(a))),
+                    format!("▸ {}", cursor_time(&b.bucket, daily(a))),
                     Style::default().fg(t.hi),
                 )],
                 stat(t, "tokens", fmt::compact(b.total_tokens), None),

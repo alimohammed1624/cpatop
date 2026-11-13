@@ -138,6 +138,12 @@ shot() {
 
   local ans="$TMP/$name.ans" html="$TMP/$name.html" raw="$TMP/$name.raw.png"
   tmux capture-pane -p -e -t "$sess" >"$ans"
+  # Privacy guard: --privacy must leave no e-mail, masked key or IP address.
+  if tmux capture-pane -p -t "$sess" |
+    grep -nE '@|\*\*\*|[0-9]{1,3}(\.[0-9]{1,3}){3}|[0-9a-f]{1,4}(:[0-9a-f]{0,4}){3,}' >&2; then
+    echo "privacy check failed in scene $name; not writing the PNG" >&2
+    exit 1
+  fi
 
   # Quit like a user would; the server session is logged out in cleanup.
   tmux send-keys -t "$sess" q

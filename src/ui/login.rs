@@ -89,7 +89,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         _ => 1,
     } as u16;
     let extra = warn_lines.len() as u16 + if warn_lines.is_empty() { 0 } else { 1 };
-    let h = (12 + error_lines + extra).min(area.height);
+    let h = (10 + error_lines + extra).min(area.height);
     let r = Rect::new(
         area.x + area.width.saturating_sub(w) / 2,
         area.y + area.height.saturating_sub(h) / 2,

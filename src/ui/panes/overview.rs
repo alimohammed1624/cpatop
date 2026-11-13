@@ -220,7 +220,7 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
     let label = Style::default().fg(t.graph_text);
     let at = |i: usize| {
         vec![Span::styled(
-            format!("  @ {}", cursor_time(&buckets[i], daily)),
+            format!("  ▸ {}", cursor_time(&buckets[i], daily)),
             Style::default().fg(t.hi),
         )]
     };

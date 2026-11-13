@@ -157,7 +157,7 @@ fn rt_head(
             fmtf(v[i]),
             vec![Span::styled(
                 format!(
-                    "  @ {}",
+                    "  ▸ {}",
                     b.get(i).map(|x| cursor_time(x, false)).unwrap_or_default()
                 ),
                 Style::default().fg(t.hi),
@@ -313,7 +313,7 @@ pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
     ];
     if let Some(i) = cur {
         head.push(Span::styled(
-            format!("  @ {}", cursor_time(&b[i], false)),
+            format!("  ▸ {}", cursor_time(&b[i], false)),
             Style::default().fg(t.hi),
         ));
     }
@@ -663,7 +663,7 @@ pub fn cache(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
                 "no input".into()
             },
             vec![Span::styled(
-                format!("  @ {}", cursor_time(&b[i], false)),
+                format!("  ▸ {}", cursor_time(&b[i], false)),
                 Style::default().fg(t.hi),
             )],
         ),
