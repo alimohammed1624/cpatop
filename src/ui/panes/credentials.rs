@@ -64,6 +64,19 @@ const CRED_COLS: [Col; 11] = [
     col("last", 5, Align::Right, 9),
 ];
 
+/// The credential columns for an inner width: the priority column is titled
+/// `prio` when every column fits at its minimum width with it, `P` otherwise.
+fn cred_cols(width: u16) -> Vec<Col> {
+    let mut cols = CRED_COLS.to_vec();
+    cols[3].title = "prio".into();
+    cols[3].width = 4;
+    let need: u16 = cols.iter().map(|c| c.width + 1).sum::<u16>() - 1;
+    if need > width {
+        cols[3] = CRED_COLS[3].clone();
+    }
+    cols
+}
+
 pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
     let l = &app.data.identities;
@@ -165,7 +178,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
         PaneId::CrList,
         inner,
         focused,
-        &CRED_COLS,
+        &cred_cols(inner.width),
         rows,
         "no credentials",
     );
@@ -428,5 +441,16 @@ fn health_chart(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, h: &Credent
     );
     if fail.iter().any(|v| *v > 0.0) {
         super::overlay_failures(f, app, plot, &fail, top, symbols);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cred_cols;
+
+    #[test]
+    fn priority_column_is_spelled_out_when_it_fits() {
+        assert_eq!(cred_cols(158)[3].title, "prio");
+        assert_eq!(cred_cols(78)[3].title, "P");
     }
 }

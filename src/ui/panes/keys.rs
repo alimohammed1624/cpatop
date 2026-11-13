@@ -252,6 +252,17 @@ pub fn sessions(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
     );
 }
 
+/// The server poller's last status in plain words: it pulls usage from CPA
+/// and reports `empty` when the last pull had no new events.
+fn poller_text(app: &App, status: &str) -> String {
+    match status {
+        "empty" => "no new usage".into(),
+        "completed" => "ingested new usage".into(),
+        "" => "no pull yet".into(),
+        s => app.privacy_text(s),
+    }
+}
+
 fn server_text(app: &App) -> Vec<Line<'static>> {
     let t = app.theme();
     let k = |s: &str| Span::styled(format!("{s:<12}"), Style::default().fg(t.graph_text));
@@ -282,7 +293,7 @@ fn server_text(app: &App) -> Vec<Line<'static>> {
                 yes(s.cpa_request_log_access_enabled),
             ]));
             if let Some(ls) = &s.last_status {
-                lines.push(Line::from(vec![k("poller"), v(app.privacy_text(ls))]));
+                lines.push(Line::from(vec![k("last pull"), v(poller_text(app, ls))]));
             }
             if let Some(w) = s.last_warning.as_ref().filter(|w| !w.is_empty()) {
                 lines.push(Line::from(Span::styled(

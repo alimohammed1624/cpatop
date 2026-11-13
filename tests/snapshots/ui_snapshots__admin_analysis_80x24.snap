@@ -6,7 +6,7 @@ expression: s
 ─ Overview  Realtime  Analysis  Requests  Credentials  Quota  Models  Keys ─────
 ╭─¹ tokens ──────────────────────────────────────────────────── today · daily ─╮
 │ tokens 123M   requests 1,176   cost $88.79 (partial)   $/1M $0.7206          │
-│ avg/day 123M                                                                 │
+│ avg/day 16.0M over 7.7d (Nov 6 → now)                                        │
 │ 200M┤                                                                        │
 │     │                                                               ⣤⣤⣤⣤⣤⣤⣤⣤⣤│
 │     │                                                               ⣿⣿⣿⣿⣿⣿⣿⣿⣿│
@@ -25,4 +25,4 @@ expression: s
 │⠁ ⠐ ⢀                        ┊││gpt-6.1-sol             -       79            │
 │ 2.64s                        ││                                              │
 ╰─ ttft 1.12s → ─────── 2.18s ─╯╰──────────────────────────────────────────────╯
-─⁶ efficiency  ▸ claude-opus-5-5 57% · claude…───⁷ heatmap  ▸ 1 keys × 3 mode…──
+─⁶ efficiency  ▸ claude-opus-5-5 57% · claude…───⁷ heatmap  ▸ 1 key × 3 model…──

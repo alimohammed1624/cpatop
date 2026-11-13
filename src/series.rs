@@ -210,6 +210,62 @@ pub fn densify_analysis(a: &mut Analysis, now: DateTime<Utc>) {
     a.model_usage.buckets = axis.labels.clone();
 }
 
+/// The span an analysis response actually covers: the server's
+/// `range_start` → `range_end`, clipped to `now`. Averages and rates divide
+/// by this, not by the nominal range length (a `30d` range is calendar
+/// aligned and runs from local midnight 30 days ago to tomorrow's midnight).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Window {
+    pub start: DateTime<FixedOffset>,
+    pub end: DateTime<FixedOffset>,
+    /// The range runs past `now`, so `end` is now.
+    pub to_now: bool,
+}
+
+impl Window {
+    /// Window of an analysis response; `None` without bounds or when the
+    /// range starts in the future.
+    pub fn of(a: &Analysis, now: DateTime<Utc>) -> Option<Window> {
+        let start = a.range_start.as_deref().and_then(parse_ts)?;
+        let end = a.range_end.as_deref().and_then(parse_ts)?;
+        let off = *start.offset();
+        let now = now.with_timezone(&off);
+        let to_now = end > now;
+        let end = if to_now { now } else { end };
+        (end > start).then_some(Window { start, end, to_now })
+    }
+
+    pub fn minutes(&self) -> f64 {
+        ((self.end - self.start).num_seconds().max(60)) as f64 / 60.0
+    }
+
+    /// Length, `30.8d` or `19.3h`.
+    pub fn length(&self) -> String {
+        let m = self.minutes();
+        if m >= 2.0 * 1440.0 {
+            format!("{:.1}d", m / 1440.0)
+        } else {
+            format!("{:.1}h", m / 60.0)
+        }
+    }
+
+    /// Bounds, `Oct 14 → now` or `00:00 → now` (times for spans under two
+    /// days).
+    pub fn bounds(&self) -> String {
+        let pat = if self.minutes() >= 2.0 * 1440.0 {
+            "%b %-d"
+        } else {
+            "%H:%M"
+        };
+        let end = if self.to_now {
+            "now".to_string()
+        } else {
+            self.end.format(pat).to_string()
+        };
+        format!("{} → {end}", self.start.format(pat))
+    }
+}
+
 /// Drop buckets that start after `now` (the `today` axes run to midnight).
 /// Returns how many leading buckets to keep.
 pub fn until_now(buckets: &[String], now: DateTime<Utc>) -> usize {
@@ -381,6 +437,42 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn analysis_window_uses_server_bounds_clipped_to_now() {
+        // 30d: the server returns Oct 14 00:00 → Nov 14 00:00 (+05:30); at
+        // 19:20 local on Nov 13 the data covers 30 days 19h 20m, not 30.
+        let a = Analysis {
+            range_start: Some("2026-10-14T00:00:00+05:30".into()),
+            range_end: Some("2026-11-14T00:00:00+05:30".into()),
+            ..Default::default()
+        };
+        let w = Window::of(&a, now("2026-11-13T13:50:00Z")).unwrap();
+        assert!(w.to_now);
+        assert_eq!(w.minutes(), 30.0 * 1440.0 + 19.0 * 60.0 + 20.0);
+        assert_eq!(w.length(), "30.8d");
+        assert_eq!(w.bounds(), "Oct 14 → now");
+        // A past range keeps its own end.
+        let past = Analysis {
+            range_start: Some("2026-11-01T00:00:00+05:30".into()),
+            range_end: Some("2026-11-08T00:00:00+05:30".into()),
+            ..Default::default()
+        };
+        let w = Window::of(&past, now("2026-11-13T13:50:00Z")).unwrap();
+        assert!(!w.to_now);
+        assert_eq!(w.minutes(), 7.0 * 1440.0);
+        assert_eq!(w.bounds(), "Nov 1 → Nov 8");
+        // today: hours since local midnight.
+        let today = Analysis {
+            range_start: Some("2026-11-13T00:00:00+05:30".into()),
+            range_end: Some("2026-11-13T23:59:59.999999999+05:30".into()),
+            ..Default::default()
+        };
+        let w = Window::of(&today, now("2026-11-13T13:50:00Z")).unwrap();
+        assert_eq!(w.length(), "19.3h");
+        assert_eq!(w.bounds(), "00:00 → now");
+        assert!(Window::of(&Analysis::default(), now("2026-11-13T13:50:00Z")).is_none());
     }
 
     #[test]

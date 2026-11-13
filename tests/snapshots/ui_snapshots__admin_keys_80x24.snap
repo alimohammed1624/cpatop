@@ -10,14 +10,14 @@ expression: s
 │  #2 dem…    native        -       -        - ││ running     yes  syncing yes │
 │  #3 tst…    native        -       -        - ││ timezone    Asia/Kolkata     │
 │                                              ││ request log no               │
-│ ▸ #1 dem… · tokens  Σ 131M  peak 40.9M       ││ poller      empty            │
+│ ▸ #1 dem… · tokens  Σ 131M  peak 40.9M       ││ last pull   no new usage     │
 │ 50.0M┤                                       ││ polling     10s / 60s        │
 │      │                                   ⣿⣿  ││                              │
 │      │                                   ⣿⣿  ││                              │
 │ 25.0M┤                                 ⣶⣶⣿⣿⣶⣶││                              │
 │      │         ⣿⣿                  ⣀⣀  ⣿⣿⣿⣿⣿⣿││                              │
 │     0┤       ⣀⣀⣿⣿⣤⣤           ⣤⣤⣶⣶⣶⣿⣿⣤⣤⣿⣿⣿⣿⣿⣿││                              │
-│      └23:30──────04:30────────10:30─────16:30││                              │
+│      └──00:00────────06:00────────12:00──────││                              │
 ╰─ ↑↓ select · s/S sort · / filter ────────────╯╰──────────────────────────────╯
 ╭─² sessions ───────────────────────────────────────────────────── 4 sessions ─╮
 │kind     via       name        ip               last seen    expires          │

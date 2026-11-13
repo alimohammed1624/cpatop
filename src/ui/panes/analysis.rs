@@ -9,6 +9,7 @@ use crate::api::models::{Analysis, CompositionItem};
 use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
+use crate::series::Window;
 use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, spark, text};
 use crate::ui::widgets::{self, flow, stat};
 use ratatui::Frame;
@@ -26,10 +27,18 @@ fn daily(a: &Analysis) -> bool {
     a.granularity == "daily"
 }
 
-/// Length of the selected range in minutes (RPM/TPM and averages), as the
-/// server counts it: ranges ending today stop at now.
+/// The span the data covers: the server's range bounds clipped to now.
+fn window(app: &App) -> Option<Window> {
+    Window::of(an(app)?, app.clock.utc())
+}
+
+/// Length of the covered span in minutes (RPM/TPM and averages). Without
+/// range bounds in the response, the selected range as the server counts it.
 fn window_minutes(app: &App) -> Option<f64> {
-    let m = app.range.window_minutes(app.server_now());
+    let m = match window(app) {
+        Some(w) => w.minutes(),
+        None => app.range.window_minutes(app.server_now()),
+    };
     (m > 0.0).then_some(m)
 }
 
@@ -83,8 +92,9 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             let reqs: f64 = a.token_usage.iter().map(|b| b.requests).sum();
             let cost = a.cost_summary.total_cost_usd;
             let blended = if total > 0.0 { cost / total * 1e6 } else { 0.0 };
-            // Averages divide by the selected duration, not by the number
-            // of buckets the server happened to return.
+            // Averages divide by the span the data covers (the server's
+            // range clipped to now), not by the nominal range length or the
+            // number of buckets the server happened to return.
             let unit = if daily(a) { 1440.0 } else { 60.0 };
             let avg = window_minutes(app)
                 .map(|m| total / (m / unit).max(1.0))
@@ -93,17 +103,24 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             if !a.cost_summary.cost_available {
                 cost_item.push(Span::styled(" (partial)", Style::default().fg(t.warn)));
             }
+            let mut avg_item = stat(
+                t,
+                if daily(a) { "avg/day" } else { "avg/hour" },
+                fmt::compact(avg),
+                None,
+            );
+            if let Some(w) = window(app) {
+                avg_item.push(Span::styled(
+                    format!(" over {} ({})", w.length(), w.bounds()),
+                    Style::default().fg(t.graph_text),
+                ));
+            }
             vec![
                 stat(t, "tokens", fmt::compact(total), None),
                 stat(t, "requests", fmt::int(reqs), None),
                 cost_item,
                 stat(t, "$/1M", fmt::usd(blended), None),
-                stat(
-                    t,
-                    if daily(a) { "avg/day" } else { "avg/hour" },
-                    fmt::compact(avg),
-                    None,
-                ),
+                avg_item,
             ]
         }
     };

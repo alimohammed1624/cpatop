@@ -327,11 +327,15 @@ fn collapsed_summary(app: &App, id: PaneId) -> Option<String> {
         }
         AnHeatmap => {
             let h = &d.analysis.get()?.heatmap;
-            format!("{} keys × {} models", h.api_keys.len(), h.models.len())
+            format!(
+                "{} × {}",
+                fmt::plural(h.api_keys.len(), "key", "keys"),
+                fmt::plural(h.models.len(), "model", "models")
+            )
         }
         _ if layout::pane_def(id).2.table => {
             let n = app.table(id).len.get();
-            format!("{n} rows")
+            fmt::plural(n, "row", "rows")
         }
         _ => return None,
     })
@@ -626,18 +630,29 @@ pub fn chart(
         .filter(|v| v.is_finite())
         .fold(0.0, f64::max);
     let top = s.max.unwrap_or_else(|| nice_max(peak - s.floor) + s.floor);
+    // Hourly buckets that start off the hour get their ticks at whole hours.
+    let hours = offset_hours(labels);
     let axes = Axes {
         theme: t,
         y_min: s.floor,
         y_max: top,
         y_fmt: s.fmt,
-        labels,
+        labels: if hours.is_some() { &[] } else { labels },
     };
     let plot = if area.height >= 4 {
         axes.draw(f.buffer_mut(), area)
     } else {
         area
     };
+    if let Some((frac, hours)) = &hours
+        && plot != area
+    {
+        let dim = Style::default().fg(t.graph_text);
+        for (x, label) in hour_ticks(hours, *frac, plot.width as usize) {
+            f.buffer_mut()
+                .set_string(plot.x + x as u16, plot.bottom(), label, dim);
+        }
+    }
     let shifted: Vec<f64> = s
         .values
         .iter()
@@ -669,6 +684,65 @@ pub fn chart(
         widgets::draw_cursor(f.buffer_mut(), plot, i, n, t);
     }
     plot
+}
+
+/// An hourly axis whose buckets start off the hour: the server cuts hourly
+/// buckets on UTC hours, so in a +05:30 zone they read `23:30`, `00:30`, …
+/// Returns where the whole local hour falls inside each bucket (`0.5` for
+/// +05:30) and that hour per bucket, or `None` for any other axis (on-the-hour
+/// buckets, minutes, days, gaps).
+fn offset_hours(labels: &[String]) -> Option<(f64, Vec<u32>)> {
+    if labels.len() < 2 {
+        return None;
+    }
+    let hm = labels
+        .iter()
+        .map(|l| {
+            let (h, m) = l.split_once(':').filter(|_| l.len() == 5)?;
+            Some((h.parse::<u32>().ok()?, m.parse::<u32>().ok()?))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let m = hm[0].1;
+    let hourly = hm
+        .windows(2)
+        .all(|w| w[1].1 == m && w[1].0 == (w[0].0 + 1) % 24);
+    if m == 0 || m >= 60 || hm[0].0 >= 24 || !hourly {
+        return None;
+    }
+    let frac = f64::from(60 - m) / 60.0;
+    Some((frac, hm.iter().map(|(h, _)| (h + 1) % 24).collect()))
+}
+
+/// Tick positions (column, label) for whole hours on an offset hourly axis
+/// of `width` columns: every 1, 2, 3, 4, 6, 8, 12 or 24 hours, as many as fit
+/// (at most five), each label starting at its hour.
+fn hour_ticks(hours: &[u32], frac: f64, width: usize) -> Vec<(usize, String)> {
+    const LW: usize = 5;
+    let n = hours.len();
+    if n == 0 || width < LW {
+        return vec![];
+    }
+    let max = (width / (LW + 3)).clamp(1, 5);
+    let step = [1, 2, 3, 4, 6, 8, 12, 24]
+        .into_iter()
+        .find(|s| hours.iter().filter(|h| *h % s == 0).count() <= max)
+        .unwrap_or(24);
+    let mut out = Vec::new();
+    let mut next_free = 0usize;
+    for (i, h) in hours.iter().enumerate() {
+        if h % step != 0 {
+            continue;
+        }
+        let (c0, c1) = widgets::bucket_cols(i, n, width);
+        let at = c0 + ((c1 - c0) as f64 * frac).round() as usize;
+        let x = at.min(width - LW);
+        if x < next_free {
+            continue;
+        }
+        out.push((x, format!("{h:02}:00")));
+        next_free = x + LW + 1;
+    }
+    out
 }
 
 /// Draw failure counts over a bar chart of request totals: in the error
@@ -765,7 +839,46 @@ pub fn chart_head(app: &App, name: &str, value: String, rest: Vec<Span<'static>>
 
 #[cfg(test)]
 mod tests {
-    use super::nice_max;
+    use super::{hour_ticks, nice_max, offset_hours};
+
+    fn labels(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn half_hour_buckets_get_whole_hour_ticks() {
+        // `today` in +05:30: UTC-hour buckets 23:30 … 20:30 local.
+        let l: Vec<String> = (0..22)
+            .map(|i| format!("{:02}:30", (23 + i) % 24))
+            .collect();
+        let (frac, hours) = offset_hours(&l).unwrap();
+        assert_eq!(frac, 0.5);
+        assert_eq!(hours[0], 0);
+        let ticks = hour_ticks(&hours, frac, 88);
+        let names: Vec<&str> = ticks.iter().map(|(_, s)| s.as_str()).collect();
+        assert_eq!(names, ["00:00", "06:00", "12:00", "18:00"]);
+        // 00:00 sits in the middle of the first bucket (4 columns wide).
+        assert_eq!(ticks[0].0, 2);
+        // At 80 columns the axis is narrower but ticks stay on whole hours.
+        assert!(
+            hour_ticks(&hours, frac, 50)
+                .iter()
+                .all(|(_, s)| s.ends_with(":00"))
+        );
+    }
+
+    #[test]
+    fn other_axes_keep_their_labels() {
+        assert!(offset_hours(&labels(&["00:00", "01:00", "02:00"])).is_none());
+        assert!(offset_hours(&labels(&["20:43", "20:44", "20:45"])).is_none());
+        assert!(offset_hours(&labels(&["11-12", "11-13"])).is_none());
+        // A gap in the hours: not a dense hourly axis.
+        assert!(offset_hours(&labels(&["01:30", "03:30"])).is_none());
+        // +05:45: the hour is a quarter into the bucket.
+        let (frac, hours) = offset_hours(&labels(&["10:45", "11:45"])).unwrap();
+        assert_eq!(frac, 0.25);
+        assert_eq!(hours, [11, 12]);
+    }
 
     #[test]
     fn nice_scale_maxima() {

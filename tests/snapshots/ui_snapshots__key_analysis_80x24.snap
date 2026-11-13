@@ -6,7 +6,7 @@ expression: s
 ─┤ Overview ├┤ Realtime ├┤ Analysis ├───────────────────────── layout balanced ─
 ╭─¹ tokens ──────────────────────────────────────────────────── today · daily ─╮
 │ tokens 123M   requests 1,176   cost $88.79 (partial)   $/1M $0.7206          │
-│ avg/day 123M                                                                 │
+│ avg/day 16.0M over 7.7d (Nov 6 → now)                                        │
 │ 200M┤                                                                        │
 │     │                                                               ⣤⣤⣤⣤⣤⣤⣤⣤⣤│
 │     │                                                               ⣿⣿⣿⣿⣿⣿⣿⣿⣿│

@@ -54,7 +54,8 @@ All notable changes to cpatop are documented here. The format follows
 ### Changed
 - Analysis series are rebuilt on dense, calendar-aligned axes (UTC hours
   or local days) with zeros for missing buckets, clipped to now; averages
-  divide by the selected duration. Analysis refreshes every 60 s.
+  and rates divide by the span the data covers. Analysis refreshes every
+  60 s.
 - Activity heatmaps use whole-hour (or whole-day) rows in local time and
   choose span, cell width and side-by-side layout to fill the pane; titles
   no longer overwrite row labels and the legend wraps instead of being cut.
@@ -87,6 +88,33 @@ All notable changes to cpatop are documented here. The format follows
   readable (distinct glyphs, reverse video).
 
 ### Fixed
+- Analysis averages and rpm/tpm divided by the nominal range length
+  (Σ/30 for `30d`) although the server's range is calendar aligned
+  (Oct 14 00:00 → Nov 14 00:00); they now divide by the returned range
+  clipped to now and say so: `avg/day 12.6M over 30.8d (Oct 14 → now)`.
+- Realtime trends no longer explode when the first half of the window is
+  nearly empty (`↑8800.0%`): with fewer than 5 requests before the midpoint
+  no trend is shown, and larger changes read `↑>999%`. Model speed halves
+  without samples read `no samples` instead of `-`.
+- Hourly graphs in zones with a half-hour offset (+05:30) labelled their
+  x axis `23:30 04:30 09:30`; ticks now sit on whole local hours (`00:00
+  06:00 12:00`), placed inside the UTC-hour buckets.
+- `Esc` pressed quickly before another key (which terminals send as
+  Alt+key) no longer leaves a picker open with the key typed into its
+  filter; it closes the picker (or steps back from the custom-range editor)
+  and the key takes effect.
+- With `--logout-on-exit` the help overlay said quitting keeps the server
+  session; it now says `quit and log out on the server`.
+- Wording: counts are pluralised (`1 key × 3 models`, `1 row`); the
+  outcomes header says `fail rate`; pricing rules read `0 branches ·
+  0 conditions` instead of `0b · 0c`; the credentials priority column is
+  titled `prio` when the table has room; the Keys server pane shows the
+  poller's last pull in plain words (`last pull  no new usage`).
+- Quota status contradicted its bars (`⚠ limit reached` next to 5h 93% /
+  Weekly 77% left, a 78%-left bar in red): bars are coloured by what is
+  left (red only below 5%), a limit is reached only where a window has
+  about nothing left and the `⚠` sits on that window, and a server limit
+  flag the windows do not confirm reads `◌ limit flag (cached 3h ago)`.
 - `--privacy` now also hides IP addresses in the server address (header,
   Keys server pane, login and offline screens) and inside URLs, catches
   lowercase opaque keys (`sk-…`) and IP-valued aliases; `--help` and the

@@ -52,6 +52,17 @@ fn centered(area: Rect, w: u16, h: u16) -> Rect {
     )
 }
 
+const QUIT_KEYS: &str = "q  Ctrl-C";
+
+/// What quitting does to the server session (`--logout-on-exit`).
+fn quit_text(logout_on_exit: bool) -> &'static str {
+    if logout_on_exit {
+        "quit and log out on the server"
+    } else {
+        "quit (the server session is kept)"
+    }
+}
+
 const HELP: &[(&str, &[(&str, &str)])] = &[
     (
         "navigate",
@@ -62,7 +73,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("1-9", "hide / show pane by number"),
             ("p l / P", "next / previous layout"),
             ("Esc", "close / clear the innermost thing"),
-            ("q  Ctrl-C", "quit (the server session is kept)"),
+            (QUIT_KEYS, "quit (the server session is kept)"),
         ],
     ),
     (
@@ -115,12 +126,22 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
 ];
 
 /// Lines of one help section.
-fn help_section(t: &Theme, name: &str, rows: &[(&str, &str)]) -> Vec<Line<'static>> {
+fn help_section(
+    t: &Theme,
+    name: &str,
+    rows: &[(&str, &str)],
+    logout_on_exit: bool,
+) -> Vec<Line<'static>> {
     let mut v = vec![Line::from(Span::styled(
         name.to_string(),
         Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
     ))];
     for (k, d) in rows {
+        let d = if *k == QUIT_KEYS {
+            quit_text(logout_on_exit)
+        } else {
+            d
+        };
         v.push(Line::from(vec![
             Span::styled(
                 format!(" {k:<14}"),
@@ -134,7 +155,7 @@ fn help_section(t: &Theme, name: &str, rows: &[(&str, &str)]) -> Vec<Line<'stati
 
 /// Help columns: sections in order, each column filled until it is as tall
 /// as an even split, so nothing is clipped at any width.
-fn help_columns(t: &Theme, ncols: usize) -> Vec<Vec<Line<'static>>> {
+fn help_columns(t: &Theme, ncols: usize, logout_on_exit: bool) -> Vec<Vec<Line<'static>>> {
     let total: usize = HELP.iter().map(|(_, r)| r.len() + 2).sum();
     let target = total.div_ceil(ncols);
     let mut cols: Vec<Vec<Line<'static>>> = vec![Vec::new()];
@@ -147,7 +168,7 @@ fn help_columns(t: &Theme, ncols: usize) -> Vec<Vec<Line<'static>>> {
         if !cur.is_empty() {
             cur.push(Line::from(""));
         }
-        cur.extend(help_section(t, name, rows));
+        cur.extend(help_section(t, name, rows, logout_on_exit));
     }
     cols
 }
@@ -160,7 +181,7 @@ pub fn help(f: &mut Frame, app: &App) {
     let area = f.area();
     let col_w = 54u16;
     let ncols = (((area.width.saturating_sub(4)) / (col_w + 2)) as usize).clamp(1, 3);
-    let cols = help_columns(t, ncols);
+    let cols = help_columns(t, ncols, app.settings.logout_on_exit);
     let ncols = cols.len() as u16;
     let content_h = cols.iter().map(Vec::len).max().unwrap_or(0) as u16;
     let w = col_w * ncols + 2 * (ncols - 1) + 3;
@@ -353,4 +374,32 @@ pub fn range_editor(f: &mut Frame, app: &App, ed: &RangeEditor) {
     Paragraph::new(lines)
         .wrap(ratatui::widgets::Wrap { trim: false })
         .render(inner, f.buffer_mut());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(cols: &[Vec<Line<'static>>]) -> String {
+        cols.iter()
+            .flatten()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn help_describes_what_quitting_does_to_the_session() {
+        let t = &crate::theme::all_themes(None).0[0];
+        let kept = text(&help_columns(t, 1, false));
+        assert!(kept.contains("quit (the server session is kept)"));
+        let out = text(&help_columns(t, 1, true));
+        assert!(out.contains("quit and log out on the server"));
+        assert!(!out.contains("session is kept"));
+    }
 }
