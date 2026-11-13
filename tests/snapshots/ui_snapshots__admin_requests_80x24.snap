@@ -4,7 +4,7 @@ expression: s
 ---
  cpatop ⌂ localhost:8318 │ admin │ ◷ today │ ⟳ live │ ↻ 0s ago │ ● ok    ? help
 ─ Overview  Realtime  Analysis  Requests  Credentials  Quota  Models  Keys ─────
-╭─¹ requests ◆ ──────────────────────────────────── ● live · 3/1,172 in today ─╮
+╭─¹ requests ◆ ─────────────────────────── ● live · 3 loaded of 1,172 · today ─╮
 │time      source             model           result   latency  tokens     cost│
 │16:37:17  user1@example.com  claude-opus-5-5 ✓ 200      1.72s   44.5k  $0.0281│
 │16:37:15  user1@example.com  claude-opus-5-5 ✓ 200      1.96s   39.7k  $0.0201│

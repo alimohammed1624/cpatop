@@ -25,4 +25,4 @@ expression: s
 │claude-fable-5-2       2.98M        12││claude-fable-5-2   92.5 t/s   85.5 t/s│
 │gpt-6-luna             11.0k         1││gpt-6-luna          9.7 t/s no samples│
 ╰─ d dimension · s/S sort · / fi… ─────╯╰──────────────────────────────────────╯
-─⁶ latency  ▸ p95 ttft 2.39s …───⁷ cache  ▸ cache read 94.1% now · avg 94.9% ───
+─⁶ latency  ▸ p95 ttft 2.39s ────⁷ cache  ▸ cache read 94.1% now · avg 94.9% ───

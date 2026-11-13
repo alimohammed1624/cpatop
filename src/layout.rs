@@ -518,6 +518,9 @@ impl Size {
 /// anything (a separator, a title line and a readable chart).
 const SOAK_MIN: u16 = 8;
 
+/// Fewest rows a table pane is shown in: borders, header and one row.
+const TABLE_MIN: u16 = 4;
+
 /// A placed pane. `collapsed` panes get one row: a title bar only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Placed {
@@ -578,6 +581,47 @@ fn give_to_neighbours(placed: &mut [(PaneDef, Rect)], sizes: &[Size], weights: &
         x += r.width;
     }
     true
+}
+
+/// Hand `spare` rows out one at a time to the row least served relative to
+/// its weight, among those the flags allow (see [`compute`]).
+fn grow_pass(
+    rows: &[RowPlan],
+    heights: &mut [u16],
+    spare: &mut u16,
+    respect_max: bool,
+    fit_only: bool,
+    soak_only: bool,
+) {
+    let any_weighted = rows.iter().any(|r| !r.collapsed && r.weight > 0);
+    while *spare > 0 {
+        let pick = rows
+            .iter()
+            .enumerate()
+            .filter(|(i, r)| {
+                !r.collapsed
+                    && (!soak_only || r.soak)
+                    && (r.weight > 0 || (!respect_max && !any_weighted))
+                    && (!respect_max || r.max.is_none_or(|m| heights[*i] < m))
+                    && (!fit_only || r.fit.is_none_or(|m| heights[*i] < m))
+            })
+            .min_by(|(i, a), (j, b)| {
+                // Least served relative to weight first.
+                let wa = a.weight.max(1) as u32;
+                let wb = b.weight.max(1) as u32;
+                let fa = heights[*i].saturating_sub(a.min) as u32 * wb;
+                let fb = heights[*j].saturating_sub(b.min) as u32 * wa;
+                fa.cmp(&fb)
+            })
+            .map(|(i, _)| i);
+        match pick {
+            Some(i) => {
+                heights[i] += 1;
+                *spare -= 1;
+            }
+            None => break,
+        }
+    }
 }
 
 /// Compute pane rectangles for a tab. `size` reports each pane's height
@@ -698,41 +742,6 @@ pub fn compute(
         heights[0] = area.height;
     }
     let mut spare = area.height.saturating_sub(heights.iter().sum());
-    let any_weighted = rows.iter().any(|r| !r.collapsed && r.weight > 0);
-    let grow_pass = |heights: &mut Vec<u16>,
-                     spare: &mut u16,
-                     respect_max: bool,
-                     fit_only: bool,
-                     soak_only: bool| {
-        while *spare > 0 {
-            let pick = rows
-                .iter()
-                .enumerate()
-                .filter(|(i, r)| {
-                    !r.collapsed
-                        && (!soak_only || r.soak)
-                        && (r.weight > 0 || (!respect_max && !any_weighted))
-                        && (!respect_max || r.max.is_none_or(|m| heights[*i] < m))
-                        && (!fit_only || r.fit.is_none_or(|m| heights[*i] < m))
-                })
-                .min_by(|(i, a), (j, b)| {
-                    // Least served relative to weight first.
-                    let wa = a.weight.max(1) as u32;
-                    let wb = b.weight.max(1) as u32;
-                    let fa = heights[*i].saturating_sub(a.min) as u32 * wb;
-                    let fb = heights[*j].saturating_sub(b.min) as u32 * wa;
-                    fa.cmp(&fb)
-                })
-                .map(|(i, _)| i);
-            match pick {
-                Some(i) => {
-                    heights[i] += 1;
-                    *spare -= 1;
-                }
-                None => break,
-            }
-        }
-    };
     // Content-sized (fixed) rows get up to their maximum first; then the
     // weighted rows share the rest.
     for (i, r) in rows.iter().enumerate() {
@@ -746,17 +755,40 @@ pub fn compute(
         }
     }
     // Rows grow until their shortest pane is complete…
-    grow_pass(&mut heights, &mut spare, true, true, false);
+    grow_pass(&rows, &mut heights, &mut spare, true, true, false);
     // …then rows that put extra height to use (charts under tables), when
     // there are enough rows for a chart…
     let chart_fits = rows.iter().enumerate().any(|(i, r)| {
         r.soak && !r.collapsed && r.max.is_none_or(|m| heights[i] + spare >= m + SOAK_MIN)
     });
     if chart_fits {
-        grow_pass(&mut heights, &mut spare, false, false, true);
+        grow_pass(&rows, &mut heights, &mut spare, false, false, true);
     }
-    // …then up to the tallest pane's needs, then everything else.
-    grow_pass(&mut heights, &mut spare, true, false, false);
+    // …then up to the tallest pane's needs…
+    grow_pass(&rows, &mut heights, &mut spare, true, false, false);
+    // …and rows left over now would only be blank space inside a box that
+    // is already complete: a collapsed row comes back instead when they are
+    // enough for it, most important first. A table may give up one row
+    // below its minimum (never below a header and one row): a short list
+    // beats a one-line title bar.
+    let mut order: Vec<usize> = (0..rows.len()).filter(|i| rows[*i].collapsed).collect();
+    order.sort_by_key(|i| rows[*i].def.prio);
+    for i in order {
+        let r = &mut rows[i];
+        let tables = r.panes.iter().all(|(d, _)| d.table);
+        let need = if tables {
+            r.min.saturating_sub(1).max(TABLE_MIN).min(r.min)
+        } else {
+            r.min
+        };
+        if spare + 1 >= need {
+            r.collapsed = false;
+            r.min = need;
+            spare -= need - 1;
+            heights[i] = need;
+        }
+    }
+    // …then everything else.
     // Rows sized exactly to their content (a one-line message) stay as
     // they are while any other row can take the rest.
     let rigid: Vec<bool> = rows.iter().map(|r| r.max == Some(r.min)).collect();
@@ -789,7 +821,7 @@ pub fn compute(
         }
         heights = h2;
     }
-    grow_pass(&mut heights, &mut spare, false, false, false);
+    grow_pass(&rows, &mut heights, &mut spare, false, false, false);
     if spare > 0
         && let Some(last) = heights.last_mut()
     {

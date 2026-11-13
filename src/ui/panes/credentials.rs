@@ -25,6 +25,18 @@ fn shown_plan(app: &App, i: &Identity) -> Option<(String, bool)> {
         .or_else(|| super::quota::quota_plan(app, i).map(|p| (p, true)))
 }
 
+/// [`shown_plan`] in words: a plan read from the cached quota says so, in
+/// the same wording in the detail pane and the row popup.
+fn plan_text(app: &App, i: &Identity) -> Option<String> {
+    shown_plan(app, i).map(|(p, from_quota)| {
+        if from_quota {
+            format!("{p} (from quota)")
+        } else {
+            p
+        }
+    })
+}
+
 pub(super) fn plan(i: &Identity) -> String {
     i.subscription
         .as_ref()
@@ -55,14 +67,7 @@ pub(super) fn identity_fields(app: &App, i: &Identity) -> Vec<(&'static str, Str
         ("type", crate::app::ident_kind(i)),
         ("provider", app.privacy(&i.provider)),
         ("auth type", app.privacy(&i.auth_type_name)),
-        (
-            "plan",
-            match shown_plan(app, i) {
-                Some((p, true)) => format!("{p} (from quota)"),
-                Some((p, false)) => p,
-                None => String::new(),
-            },
-        ),
+        ("plan", plan_text(app, i).unwrap_or_default()),
         (
             "subscription",
             i.subscription
@@ -370,10 +375,8 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         )],
         stat(t, "provider", i.provider.clone(), Some(t.fg)),
     ];
-    match shown_plan(app, i) {
-        Some((p, false)) => items.push(stat(t, "plan", p, Some(t.accent))),
-        Some((p, true)) => items.push(stat(t, "plan", format!("{p} (quota)"), Some(t.accent))),
-        None => {}
+    if let Some(p) = plan_text(app, i) {
+        items.push(stat(t, "plan", p, Some(t.accent)));
     }
     if let Some(until) = i.active_until.as_deref()
         && let Some(s) = fmt::until(until, now)
