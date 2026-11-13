@@ -16,6 +16,8 @@
 #   CPATOP_SHOT_API_KEY_FILE   CPA API key file (API-key scenes)
 #   SHOT_ONLY                  optional space-separated scene names to render
 #   SHOT_TIMEOUT               seconds to wait for data per scene (default 30)
+#   SHOT_RANGE                 time range for every scene (default 24h, so the
+#                              graphs are full whatever the time of day)
 #
 # Scenes whose credential is not configured are skipped. Sessions are logged
 # out on the server when the script exits.
@@ -28,6 +30,7 @@ PW_FILE=${CPATOP_SHOT_PASSWORD_FILE:-}
 KEY_FILE=${CPATOP_SHOT_API_KEY_FILE:-}
 ONLY=${SHOT_ONLY:-}
 TIMEOUT=${SHOT_TIMEOUT:-30}
+RANGE=${SHOT_RANGE:-24h}
 
 FONT_PX=14
 CELL_W=$(awk -v f="$FONT_PX" 'BEGIN { printf "%.4f", f * 1233 / 2048 }') # Meslo advance
@@ -122,7 +125,7 @@ shot() {
   local cmd
   printf -v cmd '%q ' env -u NO_COLOR TERM=tmux-256color COLORTERM=truecolor \
     XDG_CONFIG_HOME="$cfg" XDG_STATE_HOME="$state" \
-    "$BIN" --base-url "$BASE_URL" --no-keyring --privacy --theme default "${cred[@]}"
+    "$BIN" --base-url "$BASE_URL" --no-keyring --privacy --theme default --range "$RANGE" "${cred[@]}"
   tmux new-session -d -s "$sess" -x "$cols" -y "$rows" "$cmd"
   tmux set-option -t "$sess" status off >/dev/null
   tmux resize-window -t "$sess" -x "$cols" -y "$rows"

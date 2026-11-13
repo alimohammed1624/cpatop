@@ -134,7 +134,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("b", "graph symbols braille / block / ascii"),
             ("x", "privacy: hide e-mails, API keys, IPs"),
             ("X X", "log out on the server (twice in 3 s)"),
-            ("b · ^S", "offline · login screen: change server URL"),
+            ("b · ^S", "change server URL (offline · login)"),
             ("?", "this help"),
         ],
     ),
@@ -314,15 +314,11 @@ pub fn help(f: &mut Frame, app: &App) {
             break;
         }
         let w = col_w.min(body.right() - x);
-        // Narrow terminals: lines that do not fit end in `…`.
-        let lines: Vec<Line<'static>> = if w < col_w {
-            lines
-                .into_iter()
-                .map(|l| Line::from(super::panes::fit_spans(l.spans, w as usize)))
-                .collect()
-        } else {
-            lines
-        };
+        // Lines that do not fit end in `…` instead of being cut.
+        let lines: Vec<Line<'static>> = lines
+            .into_iter()
+            .map(|l| Line::from(super::panes::fit_spans(l.spans, w as usize)))
+            .collect();
         Paragraph::new(lines)
             .scroll((col_off, 0))
             .render(Rect::new(x, body.y, w, body.height), f.buffer_mut());
