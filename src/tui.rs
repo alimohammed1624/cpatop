@@ -3,9 +3,9 @@
 use crate::api::Client;
 use crate::api::sse::{self, LiveParams};
 use crate::app::{App, Effect};
-use crate::auth::AuthManager;
+use crate::auth::{AuthCmd, AuthEvent, AuthManager};
 use crate::config::UiState;
-use crate::poller::{self, Query};
+use crate::poller::{self, Msg, Query};
 use crate::secrets::Credentials;
 use crate::session_store::SessionStore;
 use color_eyre::eyre::{Result, eyre};
@@ -126,5 +126,18 @@ pub async fn run(args: RunArgs) -> Result<()> {
     }
     ratatui::restore();
     save(&app);
+    // `--logout-on-exit`: end the server session too (q alone keeps it for
+    // the next start). Wait briefly for the auth task to confirm.
+    if app.settings.logout_on_exit && app.role.is_some() && auth_tx.send(AuthCmd::Logout).is_ok()
+    {
+        let wait = async {
+            while let Some(m) = rx.recv().await {
+                if matches!(m, Msg::Auth(AuthEvent::LoggedOut)) {
+                    break;
+                }
+            }
+        };
+        let _ = tokio::time::timeout(Duration::from_secs(5), wait).await;
+    }
     result
 }

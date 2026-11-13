@@ -61,8 +61,8 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("f / F", "focus next / previous table or graph"),
             ("1-9", "hide / show pane by number"),
             ("p l / P", "next / previous layout"),
-            ("?", "this help · q quit · Ctrl-C quit"),
             ("Esc", "close / clear the innermost thing"),
+            ("q  Ctrl-C", "quit (the server session is kept)"),
         ],
     ),
     (
@@ -90,7 +90,8 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("[ ]", "previous / next preset range"),
             ("a", "API-key filter picker (admin)"),
             ("w", "realtime window 15m / 30m / 60m"),
-            ("R", "refresh now · + - refresh interval"),
+            ("R", "refresh now"),
+            ("+ / -", "slower / faster overview refresh"),
         ],
     ),
     (
@@ -106,68 +107,91 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
         &[
             ("t / T", "next / previous theme"),
             ("b", "graph symbols braille / block / ascii"),
-            ("x", "privacy mode (mask e-mails)"),
-            ("X X", "log out (press twice within 3 s)"),
+            ("x", "privacy: hide e-mails, API keys, IPs"),
+            ("X X", "log out on the server (twice in 3 s)"),
+            ("?", "this help"),
         ],
     ),
 ];
 
+/// Lines of one help section.
+fn help_section(t: &Theme, name: &str, rows: &[(&str, &str)]) -> Vec<Line<'static>> {
+    let mut v = vec![Line::from(Span::styled(
+        name.to_string(),
+        Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+    ))];
+    for (k, d) in rows {
+        v.push(Line::from(vec![
+            Span::styled(
+                format!(" {k:<14}"),
+                Style::default().fg(t.hi).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(d.to_string(), Style::default().fg(t.fg)),
+        ]));
+    }
+    v
+}
+
+/// Help columns: sections in order, each column filled until it is as tall
+/// as an even split, so nothing is clipped at any width.
+fn help_columns(t: &Theme, ncols: usize) -> Vec<Vec<Line<'static>>> {
+    let total: usize = HELP.iter().map(|(_, r)| r.len() + 2).sum();
+    let target = total.div_ceil(ncols);
+    let mut cols: Vec<Vec<Line<'static>>> = vec![Vec::new()];
+    for (name, rows) in HELP {
+        let cur = cols.last_mut().expect("one column");
+        if !cur.is_empty() && cur.len() + rows.len() + 1 > target && cols.len() < ncols {
+            cols.push(Vec::new());
+        }
+        let cur = cols.last_mut().expect("one column");
+        if !cur.is_empty() {
+            cur.push(Line::from(""));
+        }
+        cur.extend(help_section(t, name, rows));
+    }
+    cols
+}
+
+/// The help overlay: one to three columns depending on the width; when the
+/// content is taller than the screen it scrolls (↑↓ j k PgUp PgDn g G or the
+/// mouse wheel) and the bottom border shows the position.
 pub fn help(f: &mut Frame, app: &App) {
     let t = app.theme();
     let area = f.area();
-    let section = |name: &str, rows: &[(&str, &str)]| -> Vec<Line<'static>> {
-        let mut v = vec![Line::from(Span::styled(
-            name.to_string(),
-            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
-        ))];
-        for (k, d) in rows {
-            v.push(Line::from(vec![
-                Span::styled(
-                    format!(" {k:<14}"),
-                    Style::default().fg(t.hi).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(d.to_string(), Style::default().fg(t.fg)),
-            ]));
-        }
-        v
-    };
-    let two = area.width >= 112;
-    let (mut left, mut right) = (Vec::new(), Vec::new());
-    for (i, (name, rows)) in HELP.iter().enumerate() {
-        let target = if two && i % 2 == 1 {
-            &mut right
-        } else {
-            &mut left
-        };
-        if !target.is_empty() {
-            target.push(Line::from(""));
-        }
-        target.extend(section(name, rows));
-    }
     let col_w = 54u16;
-    let w = if two { col_w * 2 + 3 } else { col_w + 2 };
-    let h = left.len().max(right.len()) as u16 + 3;
-    let r = centered(area, w, h);
-    let inner = boxed(
-        f,
-        t,
-        r,
-        "help",
-        &format!("cpatop {} · any key closes", env!("CARGO_PKG_VERSION")),
-    );
-    let lw = if two { col_w } else { inner.width };
-    Paragraph::new(left).render(
-        Rect::new(inner.x + 1, inner.y, lw.min(inner.width), inner.height),
-        f.buffer_mut(),
-    );
-    if two {
-        Paragraph::new(right).render(
-            Rect::new(
-                inner.x + col_w + 2,
-                inner.y,
-                inner.width.saturating_sub(col_w + 2),
-                inner.height,
-            ),
+    let ncols = (((area.width.saturating_sub(4)) / (col_w + 2)) as usize).clamp(1, 3);
+    let cols = help_columns(t, ncols);
+    let ncols = cols.len() as u16;
+    let content_h = cols.iter().map(Vec::len).max().unwrap_or(0) as u16;
+    let w = col_w * ncols + 2 * (ncols - 1) + 3;
+    let r = centered(area, w, content_h + 2);
+    let inner_h = r.height.saturating_sub(2);
+    let max = content_h.saturating_sub(inner_h) as usize;
+    app.help_max.set(max);
+    app.help_page.set(inner_h.saturating_sub(1).max(1) as usize);
+    let off = app.help_scroll.min(max);
+    let version = format!("cpatop {}", env!("CARGO_PKG_VERSION"));
+    let bottom = if max > 0 {
+        let last = (off + inner_h as usize).min(content_h as usize);
+        format!(
+            "{}{} {}-{}/{} · ↑↓ PgUp PgDn scroll · Esc ? q close",
+            if off > 0 { "▲" } else { " " },
+            if off < max { "▼" } else { " " },
+            off + 1,
+            last,
+            content_h
+        )
+    } else {
+        format!("{version} · Esc ? q close")
+    };
+    let inner = boxed(f, t, r, "help", &bottom);
+    for (i, lines) in cols.into_iter().enumerate() {
+        let x = inner.x + 1 + i as u16 * (col_w + 2);
+        if x >= inner.right() {
+            break;
+        }
+        Paragraph::new(lines).scroll((off as u16, 0)).render(
+            Rect::new(x, inner.y, col_w.min(inner.right() - x), inner.height),
             f.buffer_mut(),
         );
     }

@@ -123,9 +123,13 @@ Other commands:
 Useful flags: `--range 7d` (or `--range custom:2026-11-01..2026-11-07`),
 `--refresh 5`, `--theme nord`, `--symbols block`, `--auth api-key` (prefer the
 key when both credentials exist), `--privacy` (hide e-mails, keys and IPs),
-`--no-mouse`, `--no-keyring`, `--fresh-session`.
+`--no-mouse`, `--no-keyring`, `--fresh-session`, `--logout-on-exit`.
 
-Sessions are remembered per server and role. A credential given explicitly
+Sessions are remembered per server and role, and a stored session is checked
+with the server (`GET /auth/session`) and reused on the next start — cpatop
+only logs in again when it is no longer valid. **`q` keeps the server session**
+for next time; `cpatop logout` (or `X X` in the app) ends it, and
+`--logout-on-exit` (config `logout_on_exit = true`) ends it whenever you quit. A credential given explicitly
 for this run (`--password-file`, `--api-key-file`, `CPATOP_PASSWORD`,
 `CPATOP_API_KEY`) decides the role, so `--api-key-file` always opens the
 per-key dashboard even when an admin session is stored.
@@ -157,10 +161,11 @@ The focused pane lists its own keys in its bottom border; `?` shows them all.
 | `R` | Refresh now |
 | `t` / `T` | Next / previous theme |
 | `b` | Graph symbols: braille / block / ascii |
-| `x` | Privacy mode |
-| `X` `X` | Log out (press twice within 3 s) |
+| `x` | Privacy mode: hide e-mails, API keys and IP addresses |
+| `X` `X` | Log out on the server (press twice within 3 s) |
 | `Esc` | Close the overlay / clear the filter or cursor — never quits |
-| `?` | Help · `q` or `Ctrl-C` quits |
+| `?` | Help (scrolls with `↑↓` `j`/`k` `PgUp`/`PgDn` `g`/`G` or the wheel; `Esc`, `?` or `q` close it) |
+| `q`, `Ctrl-C` | Quit — the server session is kept for the next start |
 
 ## Configuration
 
@@ -177,9 +182,12 @@ Precedence: command line and environment → saved UI state → config file → 
 On macOS without `XDG_*` variables the platform directories are used
 (`cpatop paths` prints them).
 
-Polling defaults follow the web app: overview/realtime every 10 s,
-credentials/quota/keys every 60 s, analysis and models on entry, range change
-or `R`.
+Polling defaults: overview/realtime every 10 s (`+`/`-`, `--refresh`),
+analysis, credentials, quota and keys every 60 s (`slow_refresh_secs`),
+models on entry, range change or `R`; the request log is a live stream. The
+header shows the cadence of the tab on screen (`⟳ 10s`, `⟳ 1m`, `⟳ live`,
+`⟳ on R`) and turns the age amber when refreshes were missed; panes whose
+data is that old show `◌ stale`.
 
 ## Themes
 
@@ -225,15 +233,20 @@ complete starting point. A user theme with a built-in name replaces it.
   shows the login screen. A secret typed into the login screen is kept in
   memory only.
 - Secrets are never logged or rendered (the login field shows bullets).
-  API keys returned by the server are shown only as a short prefix (`abc…`);
-  the raw-key endpoint `/usage/api-keys/settings` is never called.
+  API keys returned by the server are shown the way the web dashboard
+  shows them — the server's own masked form, short prefix and six-character
+  suffix (`abc…x1y2z3`); the raw-key endpoint `/usage/api-keys/settings` is
+  never called.
 - cpatop only issues GET requests, plus `POST /auth/login`,
   `/auth/api-key-login` and `/auth/logout`. It never changes Keeper settings
   or data, never triggers quota refreshes and never calls the GitHub-backed
   update check.
 - `--privacy` (or `x`) hides every e-mail address (shown as `account-N`),
-  every part of an API key (keys are `key #id`) and IP addresses, in tables,
-  details, pickers and error text — handy for screenshots and screen sharing.
+  every part of an API key (keys are `key #id`) and every IP address
+  (`‹ip›`, including the server address in the header and inside URLs), in
+  tables, details, pickers, error text and the login and offline screens —
+  handy for screenshots and screen sharing. Host names such as `localhost`
+  stay visible.
 
 ## Development
 

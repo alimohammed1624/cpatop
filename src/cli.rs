@@ -59,9 +59,14 @@ pub struct Cli {
     #[arg(long, value_enum, value_name = "KIND")]
     pub symbols: Option<GraphSymbols>,
 
-    /// Mask e-mail addresses (for screenshots)
+    /// Hide e-mail addresses, API keys and IP addresses (screenshots, screen sharing)
     #[arg(long)]
     pub privacy: bool,
+
+    /// Log out on the server when quitting (by default `q` keeps the session
+    /// for the next start; `cpatop logout` ends it later)
+    #[arg(long)]
+    pub logout_on_exit: bool,
 
     /// Disable mouse support
     #[arg(long)]

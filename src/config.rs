@@ -53,9 +53,13 @@ pub struct FileConfig {
     pub theme: Option<String>,
     pub range: Option<TimeRange>,
     pub graph_symbols: Option<GraphSymbols>,
-    /// Mask e-mail addresses (handy for screenshots).
+    /// Hide e-mail addresses, API keys and IP addresses (handy for
+    /// screenshots and screen sharing).
     pub privacy: Option<bool>,
     pub mouse: Option<bool>,
+    /// Log the server session out when quitting (default: keep it so the
+    /// next start reuses it).
+    pub logout_on_exit: Option<bool>,
 }
 
 impl FileConfig {
@@ -166,6 +170,8 @@ pub struct Settings {
     pub graph_symbols: GraphSymbols,
     pub privacy: bool,
     pub mouse: bool,
+    /// End the server session when quitting.
+    pub logout_on_exit: bool,
     /// `NO_COLOR` is set: render without relying on colour.
     pub no_color: bool,
 }
@@ -182,6 +188,7 @@ impl Default for Settings {
             graph_symbols: GraphSymbols::Braille,
             privacy: false,
             mouse: true,
+            logout_on_exit: false,
             no_color: false,
         }
     }

@@ -519,3 +519,32 @@ async fn live_stream_params_change_reconnects() {
         }
     }
 }
+
+/// An explicit `--api-key-file` with a valid stored session of the same
+/// role reuses it: no new server session per launch.
+#[tokio::test]
+async fn explicit_credential_reuses_a_valid_stored_session_of_its_role() {
+    let server = MockServer::start().await;
+    mount_session_endpoints(&server).await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let dir = tempdir("reuse-explicit");
+    let base = server.uri();
+    let store = store_with(
+        &dir,
+        &[(&base, "admintok", "admin"), (&base, "keytok", "api_key_viewer")],
+    );
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (_cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+    tokio::spawn(
+        AuthManager::new(Client::new(&base).unwrap(), store, key_creds(), tx, cmd_rx).run(),
+    );
+    match next_auth(&mut rx).await {
+        AuthEvent::LoggedIn { role, .. } => assert_eq!(role, Role::KeyViewer),
+        e => panic!("expected reuse, got {e:?}"),
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}

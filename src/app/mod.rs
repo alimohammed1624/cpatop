@@ -241,6 +241,11 @@ pub struct App {
     pub warnings: Vec<String>,
     /// UTC offset of the server, learned from timestamps in its responses.
     pub server_offset: Option<FixedOffset>,
+    /// Help overlay scroll offset; the renderer reports the largest useful
+    /// offset and the visible height.
+    pub help_scroll: usize,
+    pub help_max: Cell<usize>,
+    pub help_page: Cell<usize>,
     /// Privacy mode: stable `account-N` numbers per hidden identifier.
     pub privacy_aliases: RefCell<HashMap<String, usize>>,
 }
@@ -313,6 +318,9 @@ impl App {
             tab_by_role: ui.tab.clone(),
             warnings: Vec::new(),
             server_offset: None,
+            help_scroll: 0,
+            help_max: Cell::new(0),
+            help_page: Cell::new(10),
             privacy_aliases: RefCell::new(HashMap::new()),
         };
         app.restore_ui(ui);

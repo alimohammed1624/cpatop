@@ -40,8 +40,12 @@ range = "today"
 # braille | block | ascii
 graph_symbols = "braille"
 
-# Mask e-mail addresses in the UI (useful for screenshots).
+# Hide e-mail addresses, API keys and IP addresses (screenshots, screen sharing).
 privacy = false
+
+# Log the server session out when quitting. By default `q` keeps it so the
+# next start reuses it; `cpatop logout` ends it later.
+logout_on_exit = false
 
 # Enable mouse support (click tabs/panes, scroll lists).
 mouse = true

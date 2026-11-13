@@ -130,10 +130,22 @@ impl App {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let now = self.server_now();
         match self.overlay.as_mut() {
-            Some(Overlay::Help) => match k.code {
-                KeyCode::Char('q') => self.should_quit = true,
-                _ => self.overlay = None,
-            },
+            // Help scrolls; only Esc, ? and q close it (q never quits here).
+            Some(Overlay::Help) => {
+                let page = self.help_page.get().max(1) as isize;
+                match k.code {
+                    KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') | KeyCode::F(1) => {
+                        self.overlay = None
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => self.scroll_help(1),
+                    KeyCode::Up | KeyCode::Char('k') => self.scroll_help(-1),
+                    KeyCode::PageDown | KeyCode::Char(' ') => self.scroll_help(page),
+                    KeyCode::PageUp => self.scroll_help(-page),
+                    KeyCode::Home | KeyCode::Char('g') => self.help_scroll = 0,
+                    KeyCode::End | KeyCode::Char('G') => self.scroll_help(isize::MAX / 2),
+                    _ => {}
+                }
+            }
             Some(Overlay::Picker(p)) => match k.code {
                 KeyCode::Esc => self.overlay = None,
                 KeyCode::Enter => {
@@ -404,6 +416,12 @@ impl App {
         self.effects.push(Effect::SaveState);
     }
 
+    /// Scroll the help overlay, clamped to its content (known after a draw).
+    fn scroll_help(&mut self, delta: isize) {
+        let max = self.help_max.get() as isize;
+        self.help_scroll = (self.help_scroll as isize).saturating_add(delta).clamp(0, max) as usize;
+    }
+
     fn move_sel(&mut self, id: PaneId, delta: isize) {
         let st = self.table_mut(id);
         let len = st.len.get();
@@ -550,7 +568,10 @@ impl App {
         match k.code {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Esc => self.escape(focused),
-            KeyCode::Char('?') | KeyCode::F(1) => self.overlay = Some(Overlay::Help),
+            KeyCode::Char('?') | KeyCode::F(1) => {
+                self.help_scroll = 0;
+                self.overlay = Some(Overlay::Help)
+            }
             KeyCode::Left if graph_focus.is_some() => {
                 self.move_cursor(graph_focus.unwrap_or(PaneId::OvTrend), -1)
             }
@@ -760,9 +781,6 @@ impl App {
                     return;
                 }
                 if self.overlay.is_some() {
-                    if matches!(self.overlay, Some(Overlay::Help)) {
-                        self.overlay = None;
-                    }
                     return;
                 }
                 if let Some((t, _)) = self.hit.tabs.iter().find(|(_, r)| r.contains(pos)) {
@@ -815,6 +833,10 @@ impl App {
                 let down = m.kind == MouseEventKind::ScrollDown;
                 if let Some(Overlay::Picker(p)) = &mut self.overlay {
                     p.move_by(if down { 1 } else { -1 });
+                    return;
+                }
+                if matches!(self.overlay, Some(Overlay::Help)) {
+                    self.scroll_help(if down { 3 } else { -3 });
                     return;
                 }
                 let delta = if down { 3 } else { -3 };

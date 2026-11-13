@@ -190,6 +190,7 @@ fn main() -> Result<()> {
             .unwrap_or(d.graph_symbols),
         privacy: cli.privacy || ui_state.privacy.or(file_cfg.privacy).unwrap_or(false),
         mouse: !cli.no_mouse && file_cfg.mouse.unwrap_or(true),
+        logout_on_exit: cli.logout_on_exit || file_cfg.logout_on_exit.unwrap_or(false),
         no_color: std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()),
     };
 
