@@ -14,7 +14,13 @@ pub fn wrap_indent(text: &str, width: usize, indent: usize) -> Vec<String> {
     let width = width.max(indent + 8);
     let mut out: Vec<String> = Vec::new();
     let mut cur = String::new();
-    let limit = |out: &Vec<String>| if out.is_empty() { width } else { width - indent };
+    let limit = |out: &Vec<String>| {
+        if out.is_empty() {
+            width
+        } else {
+            width - indent
+        }
+    };
     for word in text.split_whitespace() {
         let ww = fmt::width(word);
         if ww > limit(&out) / 2 {

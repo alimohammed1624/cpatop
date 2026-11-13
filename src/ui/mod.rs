@@ -98,6 +98,7 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
     ]);
     let role = match app.role {
         Some(Role::Admin) => "admin".to_string(),
+        Some(Role::KeyViewer) if app.settings.privacy => app.session_key_name(),
         Some(Role::KeyViewer) => format!("key {}", app.session_key_name()),
         None => "-".into(),
     };

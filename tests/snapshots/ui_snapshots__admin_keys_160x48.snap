@@ -27,7 +27,7 @@ expression: s
 ╭─² sessions ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 4 sessions ─╮
 │kind      via        name         agent                                       ip                last seen     expires                                         │
 │admin     keeper     admin        curl/8.23.0                                 ::1               11-13 16:39   11-20 16:33   ●                                 │
-│api key   keeper     dem…         curl/8.23.0                                 ::1               11-13 16:39   11-20 16:33                                     │
+│api key   keeper     #1 dem…      curl/8.23.0                                 ::1               11-13 16:39   11-20 16:33                                     │
 │admin     keeper     admin        Mozilla/5.0 (X11; Linux x86_64) AppleWeb…   ::1               11-13 16:38   11-19 18:22                                     │
 │admin     keeper     admin        Mozilla/5.0 (Macintosh; Intel Mac OS X 1…   fd00::2           11-13 11:22   11-20 03:18                                     │
 │                                                                                                                                                              │

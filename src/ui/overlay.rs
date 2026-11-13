@@ -86,7 +86,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
     (
         "data",
         &[
-            ("r", "range picker (presets, custom days/hours)"),
+            ("r", "range picker: presets, custom ranges"),
             ("[ ]", "previous / next preset range"),
             ("a", "API-key filter picker (admin)"),
             ("w", "realtime window 15m / 30m / 60m"),

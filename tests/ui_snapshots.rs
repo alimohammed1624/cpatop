@@ -320,7 +320,10 @@ fn keys_never_render_in_full() {
 /// Fixture strings that identify people or keys: e-mail addresses contain
 /// `@`; the fixture API keys are masked as `dem***…` / `tst***…`.
 fn assert_private(s: &str, what: &str) {
-    assert!(!s.contains('@'), "e-mail visible in privacy mode ({what}):\n{s}");
+    assert!(
+        !s.contains('@'),
+        "e-mail visible in privacy mode ({what}):\n{s}"
+    );
     for frag in ["dem", "tst", "xyz", "***", "127.0.0.1", "example.com"] {
         assert!(
             !s.contains(frag),

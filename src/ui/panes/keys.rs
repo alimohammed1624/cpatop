@@ -180,12 +180,11 @@ pub fn sessions(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
                 other => other,
             }
             .to_string();
-            let ip = app.ip(
-                &it.last_seen_ip
-                    .clone()
-                    .or(it.login_ip.clone())
-                    .unwrap_or("-".into()),
-            );
+            let ip = app.ip(&it
+                .last_seen_ip
+                .clone()
+                .or(it.login_ip.clone())
+                .unwrap_or("-".into()));
             let ua = app.privacy_text(&it.user_agent.clone().unwrap_or_default());
             TRow::new(format!("{n}"))
                 .styled(

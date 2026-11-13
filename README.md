@@ -35,20 +35,27 @@ gradient meters and sparklines.
 
 ## Screenshots
 
-All captured from a live Keeper with `--privacy` (e-mail addresses masked).
+All captured from a live Keeper with `--privacy`: e-mail addresses become
+`account-N`, API keys are shown only as `key #id`, IP addresses are hidden.
 
 | | |
 |---|---|
 | ![Realtime tab](docs/screenshots/admin-realtime.png) | ![Analysis tab](docs/screenshots/admin-analysis.png) |
 | **Realtime** — throughput, outcomes, latency scatter, cache hit rate over the last 15 minutes | **Analysis** — token trend, composition, latency, speed, efficiency and key × model heatmap |
-| ![Requests tab](docs/screenshots/admin-requests.png) | ![Credentials tab](docs/screenshots/admin-credentials.png) |
-| **Requests** — live request log over SSE with a detail pane | **Credentials** — per-credential health, success rate and recent errors |
+| ![Requests tab](docs/screenshots/admin-requests.png) | ![Failed requests](docs/screenshots/admin-requests-failed.png) |
+| **Requests** — live request log over SSE with a detail pane | **Server-side filters** — `e` shows failures only; `m`/`o` pick a model or source |
+| ![Credentials tab](docs/screenshots/admin-credentials.png) | ![Quota tab](docs/screenshots/admin-quota.png) |
+| **Credentials** — per-credential health, success rate and recent errors | **Quota** — every quota window per credential, with history |
+| ![Keys tab](docs/screenshots/admin-keys.png) | ![Graph cursor](docs/screenshots/graph-cursor.png) |
+| **Keys** — API keys with usage for the selected range, sessions | **Graph cursor** — `f` focuses a graph, `←`/`→` read exact bucket values |
+| ![Range picker](docs/screenshots/range-picker.png) | ![API-key picker](docs/screenshots/key-picker.png) |
+| **Range picker** (`r`) — presets plus custom day/hour ranges | **API-key picker** (`a`) — searchable, keys named by id |
 | ![API-key overview](docs/screenshots/apikey-overview.png) | ![Help overlay](docs/screenshots/help-overlay.png) |
 | **API-key mode** — the per-key dashboard | **Help** — `?` lists every key |
 | ![Light theme](docs/screenshots/theme-light.png) | ![Tokyo Night theme](docs/screenshots/theme-tokyo-night.png) |
 | **`light` theme** (Analysis) | **`tokyo-night` theme** (Realtime) |
-| ![Compact 100×30 layout](docs/screenshots/compact-100x30.png) | |
-| **Compact** — the overview at 100×30 | |
+| ![220×60](docs/screenshots/wide-220x60.png) | ![80×24](docs/screenshots/compact-80x24.png) |
+| **220×60** — panes size to their content | **80×24** — low-priority panes collapse to one-line summaries |
 
 ## Install
 

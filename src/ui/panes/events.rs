@@ -44,7 +44,10 @@ fn status_spans(app: &App) -> Vec<Span<'static>> {
         LiveStatus::Retrying { message, until } => {
             let s = until.saturating_duration_since(app.now()).as_secs();
             vec![Span::styled(
-                format!("▲ {} · retry {s}s", fmt::trunc(&app.privacy_text(message), 28)),
+                format!(
+                    "▲ {} · retry {s}s",
+                    fmt::trunc(&app.privacy_text(message), 28)
+                ),
                 Style::default().fg(t.err),
             )]
         }
@@ -339,7 +342,7 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             k("type"),
             v(opt(&e.source_type)),
             sep(),
-            k("key"),
+            k("api"),
             v(e.api_key
                 .as_deref()
                 .map(|k| app.key_name_by_label(k))

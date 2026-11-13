@@ -635,7 +635,15 @@ mod selection_tests {
         ];
         let st = TableState::default();
         let mut buf = Buffer::empty(Rect::new(0, 0, 20, 4));
-        render(&mut buf, Rect::new(0, 0, 20, 3), &t, &cols, &rows, &st, true);
+        render(
+            &mut buf,
+            Rect::new(0, 0, 20, 3),
+            &t,
+            &cols,
+            &rows,
+            &st,
+            true,
+        );
         assert!(buf[(0, 1)].modifier.contains(Modifier::REVERSED));
         assert!(!buf[(0, 2)].modifier.contains(Modifier::REVERSED));
     }
