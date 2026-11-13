@@ -1,7 +1,7 @@
 //! Quota tab: inspection summary, quota windows per credential and history.
 
 use super::credentials::{ident_name, plan};
-use super::{frame, placeholder, stale_marker, table_in};
+use super::{RowChart, frame, placeholder, stale_marker, table_in, table_with_chart};
 use crate::api::models::{Identity, QuotaRow};
 use crate::app::{App, Hit};
 use crate::fmt;
@@ -438,7 +438,29 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
                 .filter(c.status.clone())
         })
         .collect();
-    table_in(
+    // Spare rows chart the tokens each window allowed, oldest first.
+    let mut cycles: Vec<_> = h.cycles.iter().collect();
+    cycles.sort_by(|a, b| a.window_started_at.cmp(&b.window_started_at));
+    let per_window = RowChart {
+        title: format!("tokens per {kind} window"),
+        labels: cycles
+            .iter()
+            .map(|c| fmt::ts_fmt(&c.window_started_at, "%m-%d %H:%M"))
+            .collect(),
+        values: cycles.iter().map(|c| c.usage.total_tokens).collect(),
+        fmt: fmt::compact,
+        color: None,
+    };
+    let chart_for = |_: &str| -> Option<RowChart> {
+        Some(RowChart {
+            title: per_window.title.clone(),
+            labels: per_window.labels.clone(),
+            values: per_window.values.clone(),
+            fmt: per_window.fmt,
+            color: None,
+        })
+    };
+    table_with_chart(
         f,
         app,
         hit,
@@ -448,5 +470,6 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         &HIST_COLS,
         rows,
         "no quota cycles in the last 30 days",
+        &chart_for,
     );
 }

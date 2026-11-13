@@ -1,6 +1,6 @@
 //! Keys tab: API keys with range-scoped usage, sessions and server info.
 
-use super::{frame, placeholder, stale_marker, table_in};
+use super::{RowChart, frame, placeholder, stale_marker, table_in, table_with_chart, time_labels};
 use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
@@ -110,7 +110,29 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
                 .filter(format!("#{} {name} {masked} {kind}", k.id))
         })
         .collect();
-    table_in(
+    // Spare rows show the selected key's token trend for the range.
+    let chart_for = |id: &str| -> Option<RowChart> {
+        let c = app.data.key_usage.get()?;
+        let item = c.api_keys.iter().find(|k| k.key == id);
+        let keep = crate::series::until_now(&c.buckets, app.clock.utc());
+        let n = keep.min(c.buckets.len());
+        let values = item
+            .map(|i| i.token_series[..n.min(i.token_series.len())].to_vec())
+            .unwrap_or_else(|| vec![0.0; n]);
+        let label = keys
+            .items
+            .iter()
+            .find(|k| k.id == id)
+            .map(|k| k.label.clone())?;
+        Some(RowChart {
+            title: format!("{} · tokens", app.key_name(id, &label)),
+            labels: time_labels(&c.buckets[..n], c.granularity == "daily", false),
+            values,
+            fmt: fmt::compact,
+            color: None,
+        })
+    };
+    table_with_chart(
         f,
         app,
         hit,
@@ -120,6 +142,7 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
         &KEY_COLS,
         rows,
         "no API keys",
+        &chart_for,
     );
 }
 

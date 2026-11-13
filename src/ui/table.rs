@@ -41,6 +41,9 @@ pub struct Col {
     pub prio: u8,
     /// Truncate in the middle (names: the tail tells them apart).
     pub mid: bool,
+    /// A sparkline column: after meters reach a readable length it takes
+    /// the remaining width, stretching its buckets.
+    pub spark: bool,
 }
 
 pub const fn col(title: &'static str, width: u16, align: Align, prio: u8) -> Col {
@@ -52,6 +55,7 @@ pub const fn col(title: &'static str, width: u16, align: Align, prio: u8) -> Col
         align,
         prio,
         mid: false,
+        spark: false,
     }
 }
 
@@ -65,6 +69,21 @@ pub const fn flex(title: &'static str, width: u16) -> Col {
         align: Align::Left,
         prio: 0,
         mid: true,
+        spark: false,
+    }
+}
+
+/// A sparkline column that takes left-over width.
+pub const fn spark(title: &'static str, width: u16, prio: u8) -> Col {
+    Col {
+        title: Cow::Borrowed(title),
+        width,
+        flex: true,
+        grow: true,
+        align: Align::Left,
+        prio,
+        mid: false,
+        spark: true,
     }
 }
 
@@ -78,6 +97,7 @@ pub const fn grow(title: &'static str, width: u16, prio: u8) -> Col {
         align: Align::Left,
         prio,
         mid: false,
+        spark: false,
     }
 }
 
@@ -355,21 +375,34 @@ fn allocate(cols: &[Col], content: &[usize], width: u16, keep: &[usize]) -> Vec<
             break;
         }
     }
-    // Meters take what is left, up to a readable length.
+    // Meters take what is left up to a readable length, then sparklines
+    // (which can use any width), then meters up to their maximum.
+    const METER_SOFT: u16 = 32;
     const MAX_GROW: u16 = 48;
-    let growers: Vec<usize> = (0..keep.len()).filter(|k| cols[keep[*k]].grow).collect();
-    if !growers.is_empty() {
+    const MAX_SPARK: u16 = 160;
+    let meters: Vec<usize> = (0..keep.len())
+        .filter(|k| cols[keep[*k]].grow && !cols[keep[*k]].spark)
+        .collect();
+    let sparks: Vec<usize> = (0..keep.len()).filter(|k| cols[keep[*k]].spark).collect();
+    let mut grow = |set: &[usize], cap: u16, spare: &mut u16| {
         let mut gave = true;
-        while spare > 0 && gave {
+        while *spare > 0 && gave {
             gave = false;
-            for &k in &growers {
-                if spare > 0 && widths[k] < MAX_GROW {
+            for &k in set {
+                if *spare > 0 && widths[k] < cap {
                     widths[k] += 1;
-                    spare -= 1;
+                    *spare -= 1;
                     gave = true;
                 }
             }
         }
+    };
+    if sparks.is_empty() {
+        grow(&meters, MAX_GROW, &mut spare);
+    } else {
+        grow(&meters, METER_SOFT, &mut spare);
+        grow(&sparks, MAX_SPARK, &mut spare);
+        grow(&meters, MAX_GROW, &mut spare);
     }
     // Then breathing room between columns (up to two extra cells per gap).
     let gaps = keep.len().saturating_sub(1) as u16;

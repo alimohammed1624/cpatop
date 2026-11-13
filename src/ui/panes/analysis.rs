@@ -9,7 +9,7 @@ use crate::api::models::{Analysis, CompositionItem};
 use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
-use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, text};
+use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, spark, text};
 use crate::ui::widgets::{self, flow, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -273,7 +273,7 @@ const MODEL_COLS: [Col; 6] = [
     grow("share", 12, 1),
     col("req", 6, Align::Right, 2),
     col("cost", 9, Align::Right, 3),
-    col("trend", 8, Align::Left, 1),
+    spark("trend", 8, 1),
 ];
 
 pub fn models(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
@@ -363,7 +363,7 @@ const SPEED_COLS: [Col; 5] = [
     flex("model", 12),
     col("mean", 10, Align::Right, 0),
     col("samples", 7, Align::Right, 2),
-    col("per bucket", 10, Align::Left, 1),
+    spark("per bucket", 10, 1),
     col("range", 15, Align::Right, 3),
 ];
 

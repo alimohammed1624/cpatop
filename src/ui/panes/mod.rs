@@ -421,6 +421,127 @@ pub fn table_in(
     hit.selected.insert(id, rows[sel].id.clone());
 }
 
+/// A chart of the selected table row, drawn under the table when the pane
+/// has rows to spare (btop-style: leftover space shows more detail).
+pub struct RowChart {
+    pub title: String,
+    /// One label per bucket (time).
+    pub labels: Vec<String>,
+    pub values: Vec<f64>,
+    pub fmt: fn(f64) -> String,
+    pub color: Option<Color>,
+}
+
+/// Rows a chart needs to be worth drawing (title, plot, axis).
+const ROW_CHART_MIN: u16 = 7;
+
+/// [`table_in`], plus a chart of the selected row in the space the table
+/// does not need. `chart` maps the selected row id to its series.
+#[allow(clippy::too_many_arguments)]
+pub fn table_with_chart(
+    f: &mut Frame,
+    app: &App,
+    hit: &mut Hit,
+    id: PaneId,
+    inner: Rect,
+    focused: bool,
+    cols: &[Col],
+    rows: Vec<TRow>,
+    empty: &str,
+    chart_for: &dyn Fn(&str) -> Option<RowChart>,
+) {
+    let need = rows.len() as u16 + 1;
+    let spare = inner.height.saturating_sub(need + 1);
+    if rows.is_empty() || spare < ROW_CHART_MIN {
+        table_in(f, app, hit, id, inner, focused, cols, rows, empty);
+        return;
+    }
+    table_in(
+        f,
+        app,
+        hit,
+        id,
+        Rect::new(inner.x, inner.y, inner.width, need),
+        focused,
+        cols,
+        rows,
+        empty,
+    );
+    let Some(sel) = hit.selected.get(&id).cloned() else {
+        return;
+    };
+    let Some(c) = chart_for(&sel) else { return };
+    let area = Rect::new(
+        inner.x + 1,
+        inner.y + need + 1,
+        inner.width.saturating_sub(1),
+        spare,
+    );
+    draw_row_chart(f, app, hit, id, area, &c);
+}
+
+/// Draw a [`RowChart`] (title line plus a chart) into `area`.
+pub fn draw_row_chart(
+    f: &mut Frame,
+    app: &App,
+    hit: &mut Hit,
+    id: PaneId,
+    area: Rect,
+    c: &RowChart,
+) {
+    let t = app.theme();
+    let total: f64 = c.values.iter().filter(|v| v.is_finite()).sum();
+    let peak = c
+        .values
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .fold(0.0, f64::max);
+    f.buffer_mut().set_line(
+        area.x,
+        area.y,
+        &Line::from(vec![
+            Span::styled("▸ ", Style::default().fg(t.hi)),
+            Span::styled(
+                c.title.clone(),
+                Style::default().fg(t.title).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("  Σ {}  peak {}", (c.fmt)(total), (c.fmt)(peak)),
+                Style::default().fg(t.graph_text),
+            ),
+        ]),
+        area.width,
+    );
+    let g = Rect::new(
+        area.x,
+        area.y + 1,
+        area.width,
+        area.height.saturating_sub(1),
+    );
+    if peak <= 0.0 {
+        widgets::message(f.buffer_mut(), g, "no activity in this range", t.graph_text);
+        return;
+    }
+    chart(
+        f,
+        app,
+        hit,
+        id,
+        g,
+        &c.labels,
+        &Series {
+            values: &c.values,
+            fmt: c.fmt,
+            color: c.color,
+            max: None,
+            floor: 0.0,
+        },
+        app.settings.graph_symbols,
+        false,
+    );
+}
+
 /// Dimension switcher spans (`models│keys│…`) for the right title.
 pub fn dim_tabs(app: &App, id: PaneId, width: u16) -> Vec<Span<'static>> {
     let t = app.theme();
@@ -539,6 +660,41 @@ pub fn chart(
         widgets::draw_cursor(f.buffer_mut(), plot, i, n, t);
     }
     plot
+}
+
+/// Draw failure counts over a bar chart of request totals: in the error
+/// colour, or as `░` without colour so they stay distinguishable.
+pub fn overlay_failures(
+    f: &mut Frame,
+    app: &App,
+    plot: Rect,
+    fail: &[f64],
+    top: f64,
+    symbols: GraphSymbols,
+) {
+    use ratatui::widgets::Widget;
+    let t = app.theme();
+    let g = Graph {
+        data: fail,
+        theme: t,
+        symbols,
+        max: Some(top),
+        color: Some(t.err),
+    };
+    if t.no_color {
+        let mut scratch = ratatui::buffer::Buffer::empty(plot);
+        g.render(plot, &mut scratch);
+        let buf = f.buffer_mut();
+        for y in plot.y..plot.bottom() {
+            for x in plot.x..plot.right() {
+                if scratch[(x, y)].symbol() != " " {
+                    buf[(x, y)].set_char('░');
+                }
+            }
+        }
+    } else {
+        f.render_widget(g, plot);
+    }
 }
 
 /// Round a scale maximum up to 1, 2, 2.5 or 5 × 10ⁿ so axis labels are tidy.

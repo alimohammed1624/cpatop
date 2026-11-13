@@ -9,12 +9,12 @@ use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
 use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, text};
-use crate::ui::widgets::{self, Graph, Scatter, flow, meter, stat};
+use crate::ui::widgets::{self, Scatter, flow, meter, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Widget};
+use ratatui::widgets::Paragraph;
 
 fn rt(app: &App) -> Option<&Realtime> {
     app.data.realtime.get()
@@ -371,29 +371,7 @@ pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
         true,
     );
     if fail.iter().any(|v| *v > 0.0) {
-        let g = Graph {
-            data: &fail,
-            theme: t,
-            symbols,
-            max: Some(top),
-            color: Some(t.err),
-        };
-        if t.no_color {
-            // Without colour, failures get their own pattern (░) so they
-            // stay distinguishable from the successful part of each bar.
-            let mut scratch = ratatui::buffer::Buffer::empty(plot);
-            g.render(plot, &mut scratch);
-            let buf = f.buffer_mut();
-            for y in plot.y..plot.bottom() {
-                for x in plot.x..plot.right() {
-                    if scratch[(x, y)].symbol() != " " {
-                        buf[(x, y)].set_char('░');
-                    }
-                }
-            }
-        } else {
-            f.render_widget(g, plot);
-        }
+        super::overlay_failures(f, app, plot, &fail, top, symbols);
         if let Some(i) = cur {
             widgets::draw_cursor(f.buffer_mut(), plot, i, req.len(), t);
         }

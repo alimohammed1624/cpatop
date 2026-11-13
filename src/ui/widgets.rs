@@ -459,15 +459,17 @@ pub fn meter(frac: f64, width: usize, t: &Theme, color: Option<Color>) -> Vec<Sp
 }
 
 /// Mini sparkline using block eighths, one colour, scaled to the series' own
-/// peak. Buckets map to characters 1:1 when they fit (never interpolated);
-/// longer series are max-pooled. `NaN` (no data) renders as a blank, zero as
+/// peak. Short series are stretched over the width (each bucket repeats,
+/// never interpolated); longer series are max-pooled. `NaN` (no data) renders as a blank, zero as
 /// a dim baseline.
 pub fn spark(values: &[f64], width: usize, t: &Theme, color: Color) -> Vec<Span<'static>> {
     const B: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
     if width == 0 {
         return vec![];
     }
-    let n = values.len().min(width);
+    // Wider than the series: each bucket spans several characters (stretched,
+    // never interpolated); narrower: max-pooled.
+    let n = if values.is_empty() { 0 } else { width };
     let vals = resample(values, n);
     let max = vals
         .iter()
@@ -661,9 +663,13 @@ mod tests {
     #[test]
     fn sparklines_show_gaps_and_do_not_stretch() {
         let t = Theme::default();
+        let s = spark(&[f64::NAN, 1.0, f64::NAN, 2.0], 4, &t, Color::Blue);
+        let text: String = s.iter().map(|s| s.content.to_string()).collect();
+        assert_eq!(text, " ▅ █");
+        // Stretched to a wider column, each bucket repeats.
         let s = spark(&[f64::NAN, 1.0, f64::NAN, 2.0], 8, &t, Color::Blue);
         let text: String = s.iter().map(|s| s.content.to_string()).collect();
-        assert_eq!(text, " ▅ █    ");
+        assert_eq!(text, "  ▅▅  ██");
     }
 
     #[test]

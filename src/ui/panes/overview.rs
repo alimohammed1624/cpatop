@@ -8,7 +8,7 @@ use crate::api::models::ComparisonItem;
 use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
-use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, text};
+use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, spark, text};
 use crate::ui::widgets::{self, flow, meter, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -345,7 +345,7 @@ const DIST_COLS: [Col; 8] = [
     col("fail", 5, Align::Right, 4),
     col("cost", 9, Align::Right, 2),
     col("cache", 6, Align::Right, 5),
-    col("trend", 12, Align::Left, 3),
+    spark("trend", 12, 3),
 ];
 
 pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {

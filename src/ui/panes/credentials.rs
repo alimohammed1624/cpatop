@@ -1,7 +1,7 @@
 //! Credentials tab: credential list with health strips and a detail pane.
 
 use super::{frame, placeholder, stale_marker, table_in};
-use crate::api::models::Identity;
+use crate::api::models::{CredentialHealth, Identity};
 use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
@@ -253,13 +253,46 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         ));
     }
     let mut lines = flow(items, inner.width.saturating_sub(1), 3);
-    let mut strip = vec![Span::styled("health ", Style::default().fg(t.graph_text))];
-    strip.extend(health_strip(
-        app,
-        i,
-        inner.width.saturating_sub(10) as usize,
-    ));
-    lines.push(Line::from(strip));
+    // With rows to spare, the 5 h health becomes a chart of requests per
+    // bucket (failures on top); otherwise a one-line strip.
+    let n_err = app
+        .data
+        .identity_errors
+        .as_ref()
+        .filter(|(id, _)| *id == i.id)
+        .and_then(|(_, l)| l.get())
+        .map(|e| e.events.len().max(1))
+        .unwrap_or(1) as u16;
+    let top = lines.len() as u16;
+    let chart_h = inner.height.saturating_sub(top + 1 + n_err.min(8)).min(16);
+    let health = i
+        .credential_health
+        .as_ref()
+        .filter(|h| !h.buckets.is_empty());
+    let chart_at = match health {
+        Some(_) if chart_h >= 7 => {
+            let y = inner.y + top;
+            for _ in 0..chart_h {
+                lines.push(Line::from(""));
+            }
+            Some(Rect::new(
+                inner.x + 1,
+                y,
+                inner.width.saturating_sub(2),
+                chart_h,
+            ))
+        }
+        _ => {
+            let mut strip = vec![Span::styled("health ", Style::default().fg(t.graph_text))];
+            strip.extend(health_strip(
+                app,
+                i,
+                inner.width.saturating_sub(10) as usize,
+            ));
+            lines.push(Line::from(strip));
+            None
+        }
+    };
     lines.push(Line::from(Span::styled(
         "recent errors",
         Style::default().fg(t.hi).add_modifier(Modifier::BOLD),
@@ -318,4 +351,82 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             inner.height,
         ),
     );
+    if let (Some(area), Some(h)) = (chart_at, health) {
+        health_chart(f, app, hit, area, h);
+    }
+}
+
+/// Requests per 5 h health bucket, with failures drawn over them.
+fn health_chart(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, h: &CredentialHealth) {
+    let t = app.theme();
+    let req: Vec<f64> = h.buckets.iter().map(|b| b.success + b.failure).collect();
+    let fail: Vec<f64> = h.buckets.iter().map(|b| b.failure).collect();
+    let labels: Vec<String> = h
+        .buckets
+        .iter()
+        .map(|b| fmt::ts_fmt(&b.start_time, "%H:%M"))
+        .collect();
+    let mut head = vec![
+        Span::styled(
+            "health 5h ",
+            Style::default().fg(t.title).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("requests per ", Style::default().fg(t.graph_text)),
+        Span::styled(
+            fmt::secs(h.bucket_seconds).replace(" 00s", ""),
+            Style::default().fg(t.graph_text),
+        ),
+        Span::styled("  ok", Style::default().fg(t.ok)),
+        Span::styled(" · fail", Style::default().fg(t.err)),
+    ];
+    if t.no_color {
+        head.push(Span::styled(
+            "  █ ok ░ fail",
+            Style::default().fg(t.graph_text),
+        ));
+    }
+    f.buffer_mut()
+        .set_line(area.x, area.y, &Line::from(head), area.width);
+    let g = Rect::new(
+        area.x,
+        area.y + 1,
+        area.width,
+        area.height.saturating_sub(1),
+    );
+    let peak = req.iter().copied().fold(0.0, f64::max);
+    if peak <= 0.0 {
+        widgets::message(
+            f.buffer_mut(),
+            g,
+            "no requests in the last 5 h",
+            t.graph_text,
+        );
+        return;
+    }
+    let top = super::nice_max(peak);
+    let symbols = if app.settings.graph_symbols == crate::config::GraphSymbols::Ascii {
+        crate::config::GraphSymbols::Ascii
+    } else {
+        crate::config::GraphSymbols::Block
+    };
+    let plot = super::chart(
+        f,
+        app,
+        hit,
+        PaneId::CrDetail,
+        g,
+        &labels,
+        &super::Series {
+            values: &req,
+            fmt: fmt::int,
+            color: Some(t.ok),
+            max: Some(top),
+            floor: 0.0,
+        },
+        symbols,
+        false,
+    );
+    if fail.iter().any(|v| *v > 0.0) {
+        super::overlay_failures(f, app, plot, &fail, top, symbols);
+    }
 }
