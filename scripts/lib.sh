@@ -77,10 +77,13 @@ ci_announce() {
 }
 
 # ci_snapshot <sha> <dir>: extract the committed tree of <sha> into <dir>.
+# Files get the current time (tar -m), not the commit time: cargo decides
+# freshness by mtime, and older mtimes would let it reuse stale builds (with
+# the previous snapshot's CARGO_MANIFEST_DIR baked into the tests).
 ci_snapshot() {
     rm -rf "$2"
     mkdir -p "$2"
-    git archive --format=tar "$1" | tar -x -C "$2"
+    git archive --format=tar "$1" | tar -x -m -C "$2"
 }
 
 mac_ssh() {
@@ -103,7 +106,7 @@ mac_ship() {
     local rdir=".cache/cpatop-ci/src/$1-$2"
     git archive --format=tar "$1" | mac_ssh "set -e
         d=\"\$HOME/$rdir\"
-        rm -rf \"\$d\" && mkdir -p \"\$d\" && tar -x -C \"\$d\"
+        rm -rf \"\$d\" && mkdir -p \"\$d\" && tar -x -m -C \"\$d\"
         cd \"\$HOME/.cache/cpatop-ci/src\"
         ls -1t | tail -n +6 | while IFS= read -r old; do rm -rf \"./\$old\"; done" || return 1
     printf '%s\n' "$rdir"
