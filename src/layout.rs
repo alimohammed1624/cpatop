@@ -292,8 +292,10 @@ const RT_PRESETS: [Preset; 3] = [
         rows: &[
             row(Fixed(4), 0, &[(RtSummary, 1)]),
             row(Fill(3), 1, &[(RtThroughput, 3), (RtOutcomes, 2)]),
-            row(Fill(3), 2, &[(RtShare, 3), (RtLatency, 2)]),
-            row(Fill(3), 3, &[(RtSpeed, 3), (RtCache, 2)]),
+            // The two short tables share a row sized to their rows; the
+            // graphs below take the height.
+            row(Fill(2), 2, &[(RtShare, 1), (RtSpeed, 1)]),
+            row(Fill(3), 3, &[(RtLatency, 2), (RtCache, 3)]),
         ],
     },
     Preset {

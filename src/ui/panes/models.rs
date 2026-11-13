@@ -197,47 +197,67 @@ pub fn recalc(f: &mut Frame, app: &App, area: Rect, focused: bool) {
     let mut lines = vec![];
     match app.data.recalc.get().and_then(|o| o.as_ref()) {
         Some(task) => {
-            let color = match task.status.as_str() {
-                "running" => t.warn,
-                "failed" => t.err,
-                _ => t.ok,
+            // One status from `status` + `stage`: the stage only means
+            // something while the task runs (or where it failed).
+            let stage = match task.stage.as_str() {
+                "preparing" => "preparing",
+                "events" => "recalculating events",
+                "updating_stats" => "updating statistics",
+                "finalizing" => "finishing",
+                s => s,
+            };
+            let total = task.total_count.unwrap_or(0.0);
+            let pct =
+                (total > 0.0).then(|| (task.processed_count / total * 100.0).round().min(100.0));
+            let (status, color) = match task.status.as_str() {
+                "running" => (
+                    match (task.stage.as_str(), pct) {
+                        ("events", Some(p)) => format!("running · {stage} · {p:.0}%"),
+                        _ => format!("running · {stage}"),
+                    },
+                    t.warn,
+                ),
+                "failed" => (format!("failed while {stage}"), t.err),
+                "completed" => ("completed".to_string(), t.ok),
+                s => (s.to_string(), t.graph_text),
             };
             lines.push(Line::from(vec![
                 k("last task"),
                 Span::styled(
-                    task.status.clone(),
+                    status,
                     Style::default().fg(color).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(
-                    format!(" · {}", task.stage),
-                    Style::default().fg(t.graph_text),
-                ),
             ]));
-            let total = task.total_count.unwrap_or(0.0);
-            let mut prog = vec![k("progress")];
-            prog.extend(meter(
-                if total > 0.0 {
-                    task.processed_count / total
+            if task.status == "running" {
+                let mut prog = vec![k("progress")];
+                prog.extend(meter(pct.unwrap_or(0.0) / 100.0, 10, t, None));
+                prog.push(v(format!(
+                    " {}/{}",
+                    fmt::int(task.processed_count),
+                    task.total_count.map(fmt::int).unwrap_or("?".into())
+                )));
+                lines.push(Line::from(prog));
+            } else {
+                lines.push(Line::from(vec![
+                    k("events"),
+                    v(format!("{} recalculated", fmt::int(task.processed_count))),
+                ]));
+            }
+            lines.push(Line::from(vec![
+                k("costs of"),
+                v(format!(
+                    "{} → {}",
+                    fmt::ts_fmt(&task.start_at, "%m-%d %H:%M"),
+                    fmt::ts_fmt(&task.end_at, "%m-%d %H:%M")
+                )),
+            ]));
+            lines.push(Line::from(vec![
+                k(if task.status == "running" {
+                    "updated"
                 } else {
-                    0.0
-                },
-                10,
-                t,
-                None,
-            ));
-            prog.push(v(format!(
-                " {}/{}",
-                fmt::int(task.processed_count),
-                fmt::int(total)
-            )));
-            lines.push(Line::from(prog));
-            lines.push(Line::from(vec![
-                k("from"),
-                v(fmt::ts_fmt(&task.start_at, "%Y-%m-%d %H:%M")),
-            ]));
-            lines.push(Line::from(vec![
-                k("updated"),
-                v(fmt::ts_fmt(&task.updated_at, "%Y-%m-%d %H:%M")),
+                    "finished"
+                }),
+                v(fmt::ts_fmt(&task.updated_at, "%m-%d %H:%M")),
             ]));
             if let Some(e) = &task.error {
                 lines.push(Line::from(Span::styled(
@@ -258,7 +278,7 @@ pub fn recalc(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         ]));
         if let Some(e) = &o.earliest_start {
             lines.push(Line::from(vec![
-                k("window"),
+                k("can start"),
                 v(format!(
                     "{} → {}",
                     fmt::ts_fmt(e, "%m-%d %H:%M"),

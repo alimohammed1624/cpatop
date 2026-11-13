@@ -423,7 +423,23 @@ pub fn activity(f: &mut Frame, app: &App, area: Rect, focused: bool) {
             {
                 s.format("%a %m-%d").to_string()
             }
-            (Some(s), Some(e)) => format!("{} → {}", s.format(pat), e.format(pat)),
+            // The server's grid has a fixed span per window (it does not
+            // follow the selected range: 14d shows the last 30 days), so
+            // the span is named.
+            (Some(s), Some(e)) => {
+                let span = match a.window.as_str() {
+                    "day" => "24h",
+                    "week" => "7d",
+                    "month" => "30d",
+                    "year" => "364d",
+                    _ => "",
+                };
+                if span.is_empty() || area.width < 50 {
+                    format!("{} → {}", s.format(pat), e.format(pat))
+                } else {
+                    format!("last {span} · {} → {}", s.format(pat), e.format(pat))
+                }
+            }
             _ => String::new(),
         };
         right.push(Span::styled(text, Style::default().fg(t.graph_text)));

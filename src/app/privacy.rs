@@ -125,30 +125,57 @@ impl App {
         }
     }
 
-    /// A user agent. In privacy mode only the leading product token is kept
-    /// (`claude-cli/2.1.3`): comments and further tokens can carry host
+    /// A user agent. In privacy mode only product tokens are kept
+    /// (`Mozilla/5.0 (…) AppleWebKit/537.36 (…) Chrome Safari/537.36`):
+    /// comments become `(…)`, versions shaped like an address are dropped,
+    /// anything else becomes `…` — comments and free tokens can carry host
     /// names, accounts or ids.
     pub fn user_agent(&self, s: &str) -> String {
         if !self.settings.privacy || s.is_empty() || s == "-" {
             return s.to_string();
         }
-        let first = s.split_whitespace().next().unwrap_or("");
-        let (name, ver) = first.split_once('/').unwrap_or((first, ""));
-        let name_ok = !name.is_empty()
-            && name.len() <= 24
-            && name
-                .chars()
-                .all(|c| c.is_ascii_alphabetic() || c == '-' || c == '_' || c == '.')
-            && !is_sensitive(name);
-        let ver_ok = ver.len() <= 16
-            && ver.chars().all(|c| c.is_ascii_digit() || c == '.')
-            && ver.matches('.').count() <= 2;
-        let rest = if s.trim() != first { " …" } else { "" };
-        match (name_ok, ver_ok && !ver.is_empty()) {
-            (true, true) => format!("{name}/{ver}{rest}"),
-            (true, false) => format!("{name}{rest}"),
-            _ => HIDDEN.into(),
+        let mut out: Vec<String> = Vec::new();
+        let mut depth = 0usize;
+        for tok in s.split_whitespace() {
+            if depth > 0 || tok.starts_with('(') {
+                depth += tok.matches('(').count();
+                depth = depth.saturating_sub(tok.matches(')').count());
+                if out.last().map(String::as_str) != Some("(…)") {
+                    out.push("(…)".into());
+                }
+                continue;
+            }
+            // Only `product/version` tokens; bare words may be names.
+            let Some((name, ver)) = tok.split_once('/') else {
+                if out.last().is_none_or(|l| l != "…") {
+                    out.push("…".into());
+                }
+                continue;
+            };
+            let name_ok = !name.is_empty()
+                && name.len() <= 24
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphabetic() || c == '-' || c == '_' || c == '.')
+                && !is_sensitive(name);
+            let ver_ok = !ver.is_empty()
+                && ver.len() <= 16
+                && ver.chars().all(|c| c.is_ascii_digit() || c == '.')
+                && ver.matches('.').count() <= 2;
+            let piece = match (name_ok, ver_ok) {
+                (true, true) => format!("{name}/{ver}"),
+                (true, false) => name.to_string(),
+                _ => "…".to_string(),
+            };
+            if piece == "…" && out.last().is_some_and(|l| l == "…") {
+                continue;
+            }
+            out.push(piece);
         }
+        if out.iter().all(|p| p == "…" || p == "(…)") {
+            return HIDDEN.into();
+        }
+        out.join(" ")
     }
 
     /// A request endpoint (`POST /v1/messages`). In privacy mode only
@@ -1183,10 +1210,16 @@ mod privacy_tests {
         assert_eq!(a.key_name("4", "sk-abc"), "key #4");
         assert_eq!(
             a.user_agent("claude-cli/2.1.280 (external, alice@x.io)"),
-            "claude-cli/2.1.280 …"
+            "claude-cli/2.1.280 (…)"
         );
-        assert_eq!(a.user_agent("Mozilla/5.0 AppleWebKit"), "Mozilla/5.0 …");
+        assert_eq!(
+            a.user_agent(
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+            ),
+            "Mozilla/5.0 (…) AppleWebKit/537.36 (…) Chrome Safari/537.36"
+        );
         assert_eq!(a.user_agent("bob@x.io/1.0"), HIDDEN);
+        assert_eq!(a.user_agent("curl/8 host-10.0.0.1 x"), "curl/8 …");
         assert_eq!(a.user_agent("Chrome/142.0.0.0"), "Chrome");
         assert_eq!(a.endpoint("POST /v1/messages"), "POST /v1/messages");
         assert_eq!(
