@@ -151,7 +151,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("", "00:00, Analysis from 00:30; Overview"),
             ("", "days run 00:30 → 00:30"),
             ("Σ rolling", "activity grid: last N×24 h, not days"),
-            ("cache-hit req", "requests that read cached tokens"),
+            ("cache-hit", "requests that read cached tokens"),
             ("cache read", "input tokens read from the cache"),
         ],
     ),
@@ -767,7 +767,7 @@ mod tests {
         assert!(has("offline / login screen", "b · ^S"));
         assert!(!has("display & session", "b · ^S"));
         assert!(has("display & session", "b"));
-        assert!(has("reading the numbers", "cache-hit req"));
+        assert!(has("reading the numbers", "cache-hit"));
     }
 
     #[test]
