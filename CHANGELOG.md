@@ -48,7 +48,8 @@ All notable changes to cpatop are documented here. The format follows
 ### Changed
 - Analysis series are rebuilt on dense, calendar-aligned axes (UTC hours
   or local days) with zeros for missing buckets, clipped to now; averages
-  divide by the selected duration. Analysis refreshes every 60 s.
+  and rates divide by the span the data covers. Analysis refreshes every
+  60 s.
 - Activity heatmaps use whole-hour (or whole-day) rows in local time and
   choose span, cell width and side-by-side layout to fill the pane; titles
   no longer overwrite row labels and the legend wraps instead of being cut.
@@ -81,6 +82,10 @@ All notable changes to cpatop are documented here. The format follows
   readable (distinct glyphs, reverse video).
 
 ### Fixed
+- Analysis averages and rpm/tpm divided by the nominal range length
+  (Σ/30 for `30d`) although the server's range is calendar aligned
+  (Oct 14 00:00 → Nov 14 00:00); they now divide by the returned range
+  clipped to now and say so: `avg/day 12.6M over 30.8d (Oct 14 → now)`.
 - `--privacy` now also hides IP addresses in the server address (header,
   Keys server pane, login and offline screens) and inside URLs, catches
   lowercase opaque keys (`sk-…`) and IP-valued aliases; `--help` and the
