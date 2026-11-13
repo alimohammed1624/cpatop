@@ -64,7 +64,7 @@ fn status_spans(app: &App) -> Vec<Span<'static>> {
     };
     v.push(Span::styled(
         format!(
-            " · {}/{total} in {}",
+            " · {} loaded of {total} · {}",
             fmt::int(l.events.len() as f64),
             app.range.label()
         ),
