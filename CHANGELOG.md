@@ -86,6 +86,10 @@ All notable changes to cpatop are documented here. The format follows
   (Σ/30 for `30d`) although the server's range is calendar aligned
   (Oct 14 00:00 → Nov 14 00:00); they now divide by the returned range
   clipped to now and say so: `avg/day 12.6M over 30.8d (Oct 14 → now)`.
+- Realtime trends no longer explode when the first half of the window is
+  nearly empty (`↑8800.0%`): with fewer than 5 requests before the midpoint
+  no trend is shown, and larger changes read `↑>999%`. Model speed halves
+  without samples read `no samples` instead of `-`.
 - `--privacy` now also hides IP addresses in the server address (header,
   Keys server pane, login and offline screens) and inside URLs, catches
   lowercase opaque keys (`sk-…`) and IP-valued aliases; `--help` and the

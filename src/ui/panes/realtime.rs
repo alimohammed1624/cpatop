@@ -31,8 +31,14 @@ fn window_badge(app: &App) -> Vec<Span<'static>> {
     r
 }
 
+/// Fewest requests in the first half of the window for a trend: below it the
+/// baseline is noise and the percentage explodes (`↑8800%`).
+const MIN_TREND_REQUESTS: f64 = 5.0;
+
 /// Latest, average and second-half-vs-first-half trend of a series.
-fn trend_stats(v: &[f64]) -> (f64, f64, Option<f64>) {
+/// `reqs` are the requests behind each value; the trend is `None` when the
+/// first half has fewer than [`MIN_TREND_REQUESTS`].
+fn trend_stats(v: &[f64], reqs: &[f64]) -> (f64, f64, Option<f64>) {
     if v.is_empty() {
         return (0.0, 0.0, None);
     }
@@ -41,19 +47,45 @@ fn trend_stats(v: &[f64]) -> (f64, f64, Option<f64>) {
     let h = v.len() / 2;
     let a = v[..h].iter().sum::<f64>() / h.max(1) as f64;
     let b = v[h..].iter().sum::<f64>() / (v.len() - h).max(1) as f64;
-    let trend = (a > 0.0).then(|| (b - a) / a * 100.0);
+    let base: f64 = reqs.iter().take(h).sum();
+    let trend = (a > 0.0 && base >= MIN_TREND_REQUESTS).then(|| (b - a) / a * 100.0);
     (latest, avg, trend)
 }
 
+/// Trend text: `↑12.3%`, `↓4.0%`, capped at `↑>999%`.
+fn trend_text(x: f64) -> String {
+    let arrow = if x >= 0.0 { "↑" } else { "↓" };
+    if x.abs() > 999.0 {
+        format!("{arrow}>999%")
+    } else {
+        format!("{arrow}{:.1}%", x.abs())
+    }
+}
+
+/// The trend, or nothing when there is too little data for one.
 fn trend_span(app: &App, tr: Option<f64>) -> Span<'static> {
     let t = app.theme();
     match tr {
         Some(x) => Span::styled(
-            format!("{}{:.1}%", if x >= 0.0 { "↑" } else { "↓" }, x.abs()),
+            trend_text(x),
             Style::default().fg(if x >= 0.0 { t.warn } else { t.ok }),
         ),
-        None => Span::styled("–", Style::default().fg(t.graph_text)),
+        None => Span::raw(""),
     }
+}
+
+/// Requests per realtime bucket, aligned with `buckets`.
+fn bucket_requests(r: &Realtime, buckets: &[String]) -> Vec<f64> {
+    buckets
+        .iter()
+        .map(|b| {
+            r.request_level
+                .iter()
+                .find(|p| &p.bucket == b)
+                .map(|p| p.requests)
+                .unwrap_or(0.0)
+        })
+        .collect()
 }
 
 fn summary_items(app: &App, width: u16) -> Vec<Vec<Span<'static>>> {
@@ -150,6 +182,7 @@ fn rt_head(
     name: &str,
     v: &[f64],
     b: &[String],
+    reqs: &[f64],
     cur: Option<usize>,
     fmtf: fn(f64) -> String,
 ) -> Line<'static> {
@@ -169,7 +202,7 @@ fn rt_head(
             )],
         ),
         _ => {
-            let (latest, avg, tr) = trend_stats(v);
+            let (latest, avg, tr) = trend_stats(v, reqs);
             chart_head(
                 app,
                 name,
@@ -209,6 +242,7 @@ pub fn throughput(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: 
         .map(|p| p.requests_per_minute)
         .collect();
     let b = buckets(r);
+    let reqs = bucket_requests(r, &b);
     let labels = time_labels(&b, false, false);
     let cur = cursor(app, PaneId::RtThroughput, tpm.len());
     let x = inner.x + 1;
@@ -222,7 +256,7 @@ pub fn throughput(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: 
     f.buffer_mut().set_line(
         x,
         inner.y,
-        &rt_head(app, "tokens/min", &tpm, &b, cur, fmt::compact),
+        &rt_head(app, "tokens/min", &tpm, &b, &reqs, cur, fmt::compact),
         w,
     );
     chart(
@@ -247,7 +281,7 @@ pub fn throughput(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: 
         f.buffer_mut().set_line(
             x,
             y,
-            &rt_head(app, "requests/min", &rpm, &b, cur, fmt::per_minute),
+            &rt_head(app, "requests/min", &rpm, &b, &reqs, cur, fmt::per_minute),
             w,
         );
         chart(
@@ -556,6 +590,20 @@ pub fn share(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
     );
 }
 
+/// Mean speed of one half of the window, `no samples` when it had none.
+fn half_text(v: Option<f64>) -> String {
+    v.map(fmt::tps).unwrap_or_else(|| "no samples".into())
+}
+
+/// Speed change between the halves, `+12.3%`, capped at `>+999%`.
+fn delta_text(d: f64) -> String {
+    if d.abs() > 999.0 {
+        format!(">{}999%", if d >= 0.0 { "+" } else { "-" })
+    } else {
+        format!("{d:+.1}%")
+    }
+}
+
 const SPEED_COLS: [Col; 6] = [
     flex("model", 12),
     col("1st half", 10, Align::Right, 0),
@@ -592,19 +640,26 @@ pub fn speed(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
                 (Some(a), Some(b)) if a > 0.0 => Some((b - a) / a * 100.0),
                 _ => None,
             };
+            // A half without samples says so, dimmed, instead of a bare `-`.
+            let none = Style::default().fg(t.graph_text);
             TRow::new(s.model.clone())
                 .text(s.model.clone(), text(&s.model))
-                .text(
-                    a.map(fmt::tps).unwrap_or("-".into()),
+                .styled(
+                    half_text(a),
+                    if a.is_some() { Style::default() } else { none },
                     num(a.unwrap_or(-1.0)),
                 )
                 .styled(
-                    b.map(fmt::tps).unwrap_or("-".into()),
-                    Style::default().fg(t.title),
+                    half_text(b),
+                    if b.is_some() {
+                        Style::default().fg(t.title)
+                    } else {
+                        none
+                    },
                     num(b.unwrap_or(-1.0)),
                 )
                 .styled(
-                    delta.map(|d| format!("{d:+.1}%")).unwrap_or("-".into()),
+                    delta.map(delta_text).unwrap_or_default(),
                     Style::default().fg(match delta {
                         Some(d) if d < -5.0 => t.err,
                         Some(d) if d > 5.0 => t.ok,
@@ -653,6 +708,13 @@ pub fn cache(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
         .collect();
     let b: Vec<String> = r.cache_level.iter().map(|c| c.bucket.clone()).collect();
     let known: Vec<f64> = rates.iter().copied().filter(|v| v.is_finite()).collect();
+    let all_reqs = bucket_requests(r, &b);
+    let known_reqs: Vec<f64> = rates
+        .iter()
+        .zip(&all_reqs)
+        .filter(|(v, _)| v.is_finite())
+        .map(|(_, q)| *q)
+        .collect();
     let cur = cursor(app, PaneId::RtCache, rates.len());
     // Plot above a floor so small changes near 100% stay visible.
     let lo = known.iter().copied().fold(100.0, f64::min);
@@ -672,7 +734,7 @@ pub fn cache(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
             )],
         ),
         None => {
-            let (latest, avg, tr) = trend_stats(&known);
+            let (latest, avg, tr) = trend_stats(&known, &known_reqs);
             chart_head(
                 app,
                 "cache read",
@@ -713,4 +775,33 @@ pub fn cache(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
         app.settings.graph_symbols,
         true,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trend_needs_a_first_half_baseline() {
+        // Two requests before, many after: no trend instead of `↑8800%`.
+        let v = [0.0, 0.1, 0.0, 9.0, 8.0, 9.0];
+        let reqs = [0.0, 2.0, 0.0, 90.0, 80.0, 90.0];
+        assert_eq!(trend_stats(&v, &reqs).2, None);
+        // Enough requests in the first half: a trend, capped for display.
+        let reqs = [3.0, 3.0, 3.0, 90.0, 80.0, 90.0];
+        let tr = trend_stats(&v, &reqs).2.unwrap();
+        assert!(tr > 999.0);
+        assert_eq!(trend_text(tr), "↑>999%");
+        assert_eq!(trend_text(-30.14), "↓30.1%");
+        assert_eq!(trend_text(18.7), "↑18.7%");
+        assert_eq!(trend_stats(&[], &[]).2, None);
+    }
+
+    #[test]
+    fn speed_halves_read_cleanly() {
+        assert_eq!(half_text(None), "no samples");
+        assert_eq!(delta_text(12.34), "+12.3%");
+        assert_eq!(delta_text(4321.0), ">+999%");
+        assert_eq!(delta_text(-1500.0), ">-999%");
+    }
 }
