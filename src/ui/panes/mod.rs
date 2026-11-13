@@ -645,7 +645,10 @@ pub fn chart(
         .copied()
         .filter(|v| v.is_finite())
         .fold(0.0, f64::max);
-    let top = s.max.unwrap_or_else(|| nice_max(peak - s.floor) + s.floor);
+    let whole = integral(s.values) && s.floor.fract() == 0.0;
+    let top = s
+        .max
+        .unwrap_or_else(|| axis_top(peak - s.floor, whole) + s.floor);
     // Hourly buckets that start off the hour get their ticks at whole hours.
     let hours = offset_hours(labels);
     let axes = Axes {
@@ -653,6 +656,7 @@ pub fn chart(
         y_min: s.floor,
         y_max: top,
         y_fmt: s.fmt,
+        integral: whole,
         labels: if hours.is_some() { &[] } else { labels },
     };
     let plot = if area.height >= 4 {
@@ -810,7 +814,16 @@ pub fn overlay_failures(
     }
 }
 
-/// Round a scale maximum up to 1, 2, 2.5 or 5 × 10ⁿ so axis labels are tidy.
+/// Mantissas of the y-axis ladder. Consecutive rungs are at most 1.25×
+/// apart, so the smallest rung at or above a peak puts the peak at ≥ 80 %
+/// of the axis (1.75, 3.5 and 8 close the 1.5→2, 3→4 and 7.5→10 gaps).
+pub const NICE_LADDER: [f64; 14] = [
+    1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.5, 8.0, 10.0,
+];
+
+/// Round a scale maximum up to the next rung of [`NICE_LADDER`] × 10ⁿ, so
+/// axis labels are tidy (`125M`, `1.75k`, `7.5k`) and the peak fills at
+/// least 80 % of the axis.
 pub fn nice_max(v: f64) -> f64 {
     if !v.is_finite() || v <= 0.0 {
         return 1.0;
@@ -818,11 +831,39 @@ pub fn nice_max(v: f64) -> f64 {
     let exp = v.log10().floor();
     let base = 10f64.powf(exp);
     let m = v / base;
-    let nice = [1.0, 2.0, 2.5, 5.0, 10.0]
+    let nice = NICE_LADDER
         .into_iter()
-        .find(|x| m <= *x + 1e-9)
+        .find(|x| m <= *x * (1.0 + 1e-9))
         .unwrap_or(10.0);
-    nice * base
+    // Scale the rung's three digits by an exact power of ten so the top
+    // carries no float noise (`0.1 × 1.25` is not exactly `0.125`).
+    let digits = (nice * 100.0).round();
+    let e = exp as i32 - 2;
+    if e >= 0 {
+        digits * 10f64.powi(e)
+    } else {
+        digits / 10f64.powi(-e)
+    }
+}
+
+/// The top of an axis for a series peaking at `peak`. Counts (`integral`)
+/// keep whole-number tops — their labels have no decimals — so a peak of
+/// 7 tops out at 7, not at a `7.5` that would print as `8`.
+pub fn axis_top(peak: f64, integral: bool) -> f64 {
+    let top = nice_max(peak);
+    if integral && top.fract() != 0.0 {
+        peak.ceil().max(1.0)
+    } else {
+        top
+    }
+}
+
+/// Whether every finite value is a whole number (counts, tokens).
+pub fn integral(values: &[f64]) -> bool {
+    values
+        .iter()
+        .filter(|v| v.is_finite())
+        .all(|v| v.fract() == 0.0)
 }
 
 /// Time label for a bucket timestamp: `HH:MM` within a day, `MM-DD` for
@@ -917,10 +958,60 @@ mod tests {
     #[test]
     fn nice_scale_maxima() {
         assert_eq!(nice_max(0.0), 1.0);
-        assert_eq!(nice_max(7.3), 10.0);
-        assert_eq!(nice_max(76.3e6), 100e6);
+        assert_eq!(nice_max(-3.0), 1.0);
+        assert_eq!(nice_max(f64::NAN), 1.0);
+        assert_eq!(nice_max(7.3), 7.5);
+        assert_eq!(nice_max(76.3e6), 80e6);
         assert_eq!(nice_max(1.9), 2.0);
         assert_eq!(nice_max(2.2), 2.5);
         assert_eq!(nice_max(420.0), 500.0);
+        // Reviewed cases: 117M, 663 and a quota peak of 255.
+        assert_eq!(nice_max(117e6), 125e6);
+        assert_eq!(nice_max(663.0), 750.0);
+        assert_eq!(nice_max(255.0), 300.0);
+        // Exact rungs stay put.
+        assert_eq!(nice_max(1000.0), 1000.0);
+        assert_eq!(nice_max(1250.0), 1250.0);
+        assert_eq!(nice_max(7500.0), 7500.0);
+        assert_eq!(nice_max(0.3), 0.3);
+        assert_eq!(nice_max(0.012), 0.0125);
+    }
+
+    #[test]
+    fn nice_ladder_keeps_peak_above_80_percent() {
+        let l = super::NICE_LADDER;
+        for w in l.windows(2) {
+            assert!(w[0] / w[1] >= 0.8 - 1e-12, "{} → {}", w[0], w[1]);
+        }
+        // Peaks on, just above and between every rung, over many decades.
+        for exp in -3..=13 {
+            let base = 10f64.powi(exp);
+            for r in &l[..l.len() - 1] {
+                for m in [*r, r * 1.0001, r * 1.07, r * 1.2499] {
+                    let v = m * base;
+                    let top = nice_max(v);
+                    assert!(top >= v * (1.0 - 1e-9), "{v} → {top}");
+                    assert!(v / top >= 0.8 - 1e-9, "{v} → {top}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn count_axes_keep_whole_tops() {
+        use super::axis_top;
+        assert_eq!(axis_top(7.0, true), 7.0);
+        assert_eq!(axis_top(11.0, true), 11.0);
+        assert_eq!(axis_top(12.0, true), 12.0);
+        assert_eq!(axis_top(13.0, true), 15.0);
+        assert_eq!(axis_top(0.0, true), 1.0);
+        assert_eq!(axis_top(663.0, true), 750.0);
+        // Rates keep the fractional rung.
+        assert_eq!(axis_top(7.0, false), 7.5);
+        for p in 1..=200 {
+            let top = axis_top(p as f64, true);
+            assert_eq!(top.fract(), 0.0, "{p}");
+            assert!(p as f64 / top >= 0.8, "{p} → {top}");
+        }
     }
 }

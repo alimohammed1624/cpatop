@@ -416,7 +416,7 @@ fn health_chart(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, h: &Credent
         );
         return;
     }
-    let top = super::nice_max(peak);
+    let top = super::axis_top(peak, true);
     let symbols = if app.settings.graph_symbols == crate::config::GraphSymbols::Ascii {
         crate::config::GraphSymbols::Ascii
     } else {

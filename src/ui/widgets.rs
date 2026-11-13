@@ -217,6 +217,27 @@ impl Widget for Graph<'_> {
     }
 }
 
+/// Drop trailing zeros from the first decimal number in an axis label, so
+/// rungs read `7.5k`, `1M`, `0.5` rather than `7.50k`, `1.00M`, `0.50`.
+fn trim_zeros(s: &str) -> String {
+    let Some(dot) = s.find('.') else {
+        return s.to_string();
+    };
+    let digits = s[dot + 1..]
+        .find(|c: char| !c.is_ascii_digit())
+        .map_or(s.len(), |i| dot + 1 + i);
+    let frac = s[dot + 1..digits].trim_end_matches('0');
+    let head = &s[..dot];
+    if !head.ends_with(|c: char| c.is_ascii_digit()) {
+        return s.to_string();
+    }
+    if frac.is_empty() {
+        format!("{head}{}", &s[digits..])
+    } else {
+        format!("{head}.{frac}{}", &s[digits..])
+    }
+}
+
 /// Axis decorations for a time-series chart.
 pub struct Axes<'a> {
     pub theme: &'a Theme,
@@ -224,6 +245,9 @@ pub struct Axes<'a> {
     pub y_min: f64,
     pub y_max: f64,
     pub y_fmt: fn(f64) -> String,
+    /// The series holds whole numbers only: a fractional half-way value
+    /// would print rounded (`62.5` as `63`), so it is not labelled.
+    pub integral: bool,
     /// Bucket count and a label for each bucket (time).
     pub labels: &'a [String],
 }
@@ -234,14 +258,20 @@ impl Axes<'_> {
         if v == 0.0 {
             "0".into()
         } else {
-            (self.y_fmt)(v)
+            trim_zeros(&(self.y_fmt)(v))
         }
     }
 
-    pub fn gutter(&self) -> u16 {
+    /// The half-way value, when it can be labelled exactly.
+    fn mid(&self) -> Option<f64> {
         let mid = (self.y_min + self.y_max) / 2.0;
-        let w = [self.y_max, mid, self.y_min]
+        (!self.integral || mid.fract() == 0.0).then_some(mid)
+    }
+
+    pub fn gutter(&self) -> u16 {
+        let w = [Some(self.y_max), self.mid(), Some(self.y_min)]
             .iter()
+            .flatten()
             .map(|v| fmt::width(&self.label(*v)))
             .max()
             .unwrap_or(1);
@@ -264,16 +294,13 @@ impl Axes<'_> {
         }
         // The middle label names the half-way value, on the nearest row.
         let mid_row = (plot.height - 1).div_ceil(2);
-        let mid = (self.y_min + self.y_max) / 2.0;
         let ys = [
-            (plot.y, self.y_max),
-            (plot.y + mid_row, mid),
-            (plot.bottom() - 1, self.y_min),
+            (plot.y, Some(self.y_max)),
+            (plot.y + mid_row, self.mid().filter(|_| plot.height >= 5)),
+            (plot.bottom() - 1, Some(self.y_min)),
         ];
-        for (i, (y, v)) in ys.iter().enumerate() {
-            if i == 1 && plot.height < 5 {
-                continue;
-            }
+        for (y, v) in ys.iter() {
+            let Some(v) = v else { continue };
             let s = self.label(*v);
             let x = area.x + gw - 1 - fmt::width(&s) as u16;
             buf.set_string(x, *y, &s, dim);
@@ -694,6 +721,26 @@ mod tests {
         let text: String = s.iter().map(|s| s.content.to_string()).collect();
         assert_eq!(text.chars().count(), 10);
         assert_eq!(s[0].style.fg, Some(Color::Red));
+    }
+
+    #[test]
+    fn axis_labels_are_tidy() {
+        use crate::fmt::{compact, ms, per_minute};
+        use crate::ui::panes::nice_max;
+        let l = |v: f64| trim_zeros(&compact(v));
+        assert_eq!(l(nice_max(117e6)), "125M");
+        assert_eq!(l(nice_max(117e6) / 2.0), "62.5M");
+        assert_eq!(l(nice_max(1.1e3)), "1.25k");
+        assert_eq!(l(nice_max(7.1e3)), "7.5k");
+        assert_eq!(l(nice_max(7.1e3) / 2.0), "3.75k");
+        assert_eq!(l(nice_max(1.6e9)), "1.75B");
+        assert_eq!(l(nice_max(900e3)), "1M");
+        assert_eq!(l(nice_max(1.6e3) / 2.0), "875");
+        assert_eq!(trim_zeros(&per_minute(0.5)), "0.5");
+        assert_eq!(trim_zeros(&per_minute(12.0)), "12");
+        assert_eq!(trim_zeros(&ms(1200.0)), "1.2s");
+        assert_eq!(trim_zeros("1m 05s"), "1m 05s");
+        assert_eq!(trim_zeros("100%"), "100%");
     }
 
     #[test]

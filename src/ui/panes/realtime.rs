@@ -1,7 +1,7 @@
 //! Realtime tab.
 
 use super::{
-    Series, chart, chart_head, cursor, cursor_time, dim_tabs, frame, nice_max, placeholder,
+    Series, axis_top, chart, chart_head, cursor, cursor_time, dim_tabs, frame, placeholder,
     stale_marker, table_in, time_labels,
 };
 use crate::api::models::{LatencyPoint, Realtime, TopItem};
@@ -397,7 +397,7 @@ pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
     } else {
         crate::config::GraphSymbols::Block
     };
-    let top = nice_max(peak);
+    let top = axis_top(peak, true);
     let labels = time_labels(&b, false, false);
     let plot = chart(
         f,
