@@ -97,6 +97,8 @@ All notable changes to cpatop are documented here. The format follows
   Alt+key) no longer leaves a picker open with the key typed into its
   filter; it closes the picker (or steps back from the custom-range editor)
   and the key takes effect.
+- With `--logout-on-exit` the help overlay said quitting keeps the server
+  session; it now says `quit and log out on the server`.
 - `--privacy` now also hides IP addresses in the server address (header,
   Keys server pane, login and offline screens) and inside URLs, catches
   lowercase opaque keys (`sk-…`) and IP-valued aliases; `--help` and the
