@@ -213,7 +213,7 @@ The focused pane lists its own keys in its bottom border; `?` shows them all.
 | `+` / `-` | Slower / faster refresh |
 | `R` | Refresh now |
 | `t` / `T` | Next / previous theme |
-| `b` | Graph symbols: braille / block / ascii |
+| `b` | Graph symbols: braille / block / ascii; on the offline screen: change the server URL (`Ctrl-S` on the login screen) |
 | `x` | Privacy mode: hide e-mails, API keys and IP addresses |
 | `X` `X` | Log out on the server (press twice within 3 s) |
 | `Esc` | Close the overlay / clear the filter or cursor — never quits |
@@ -235,6 +235,22 @@ Precedence: command line and environment → saved UI state → config file → 
 
 On macOS without `XDG_*` variables the platform directories are used
 (`cpatop paths` prints them).
+
+**Wrong or unreachable server.** When the base URL cannot be reached (refused,
+DNS, timeout, TLS) or does not answer like a Keeper API, the offline screen
+keeps retrying and offers `b` to change the server URL (`Ctrl-S` on the login
+screen). The field starts with the current URL; `http://` is added when no
+scheme is typed, a trailing `/` is dropped and a sub-path is kept. cpatop then
+checks the server (`/api/v1/startup/status` and `/auth/session`, 5 s) and shows
+what is wrong (invalid URL, unreachable, not a Keeper) so you can edit again.
+A working URL is used right away — a stored session for that server is
+reused, a configured credential logs in, otherwise the login screen appears —
+and saved as `base_url` in the config file (`--config` if given; created with
+mode 0600 if missing; other keys and comments are kept). A `--base-url` flag
+or `CPATOP_BASE_URL` still wins on the next start, which the message points
+out. In privacy mode the field shows only the scheme and port (`http://•••:8318`).
+With `--logout-on-exit`, a session held on the old server is logged out when you
+switch (kept stored if that server cannot be reached); otherwise it stays stored.
 
 Polling defaults: overview/realtime every 10 s (`+`/`-`, `--refresh`),
 analysis, credentials, quota and keys every 60 s (`slow_refresh_secs`),

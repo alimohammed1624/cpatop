@@ -71,7 +71,10 @@ impl App {
                 self.expired_sent = None;
                 self.gate_sent = None;
                 self.screen = Screen::Dashboard;
-                if let Some(w) = self.warnings.first().cloned() {
+                self.server_edit = None;
+                if let Some(n) = self.server_notice.take() {
+                    self.flash(n);
+                } else if let Some(w) = self.warnings.first().cloned() {
                     self.flash(format!("⚠ {w}"));
                 }
                 if role_changed {

@@ -80,15 +80,24 @@ pub fn draw(f: &mut Frame, app: &App) {
         .take(3)
         .flat_map(|m| wrap_indent(&format!("⚠ {}", app.privacy_text(m)), text_w, 2))
         .collect();
-    let error_lines = match &app.screen {
-        Screen::Login(form) => form
-            .error
-            .as_deref()
-            .map(|e| wrap_indent(&format!("✗ {}", app.privacy_text(e)), text_w, 2).len())
-            .unwrap_or(1),
-        _ => 1,
-    } as u16;
-    let extra = warn_lines.len() as u16 + if warn_lines.is_empty() { 0 } else { 1 };
+    let edit_error = app.server_edit.as_ref().and_then(|e| e.error.as_deref());
+    let form_error = match &app.screen {
+        Screen::Login(form) => form.error.as_deref(),
+        _ => None,
+    };
+    let error_lines = edit_error
+        .or(form_error)
+        .map(|e| wrap_indent(&format!("✗ {}", app.privacy_text(e)), text_w, 2).len())
+        .unwrap_or(1) as u16;
+    // The outcome of a server change, until the dashboard shows.
+    let notice_lines: Vec<String> = match (&app.server_notice, &app.server_edit) {
+        (Some(n), None) => wrap_indent(&format!("✓ {}", app.privacy_text(n)), text_w, 2),
+        _ => Vec::new(),
+    };
+    let extra = warn_lines.len() as u16
+        + if warn_lines.is_empty() { 0 } else { 1 }
+        + notice_lines.len() as u16
+        + if notice_lines.is_empty() { 0 } else { 1 };
     let h = (10 + error_lines + extra).min(area.height);
     let r = Rect::new(
         area.x + area.width.saturating_sub(w) / 2,
@@ -126,114 +135,155 @@ pub fn draw(f: &mut Frame, app: &App) {
     let mut lines: Vec<Line> = Vec::new();
     let mut hint = "q quit · t theme";
     let wrap = |s: &str| -> Vec<String> { wrap_indent(s, text_w, 2) };
-    match &app.screen {
-        Screen::Connecting => {
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
-                "Connecting to CPA Usage Keeper…",
-                strong,
-            )));
-            lines.push(Line::from(Span::styled(app.base_url_label(), dim)));
-        }
-        Screen::Startup(s) => {
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled("Keeper is starting up", strong)));
-            let mut msg = format!("{} — {}", s.phase, s.message);
-            if let Some(p) = &s.progress {
-                if let Some(total) = p.total_count.filter(|t| *t > 0.0) {
-                    msg.push_str(&format!(
-                        " ({:.0}%)",
-                        (p.processed_count / total * 100.0).min(100.0)
-                    ));
-                } else {
-                    msg.push_str(&format!(" ({} processed)", fmt::int(p.processed_count)));
-                }
+    let field_w = inner.width.saturating_sub(4) as usize;
+    if let Some(edit) = &app.server_edit {
+        lines.push(Line::from(Span::styled(" Change server URL", strong)));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            " Base URL of the CPA Usage Keeper",
+            dim,
+        )));
+        lines.push(server_field(app, edit, field_w));
+        lines.push(Line::from(""));
+        if let Some(e) = &edit.error {
+            for l in wrap(&format!("✗ {}", app.privacy_text(e))) {
+                lines.push(Line::from(Span::styled(
+                    format!(" {l}"),
+                    Style::default().fg(t.err).add_modifier(Modifier::BOLD),
+                )));
             }
-            lines.push(Line::from(Span::styled(msg, Style::default().fg(t.warn))));
-            lines.push(Line::from(Span::styled("waiting until it is ready…", dim)));
-            hint = "r retry now · q quit";
-        }
-        Screen::Offline { message, retry_at } => {
-            lines.push(Line::from(""));
+        } else if edit.probing.is_some() {
             lines.push(Line::from(Span::styled(
-                "Cannot load data from the server",
-                Style::default().fg(t.err).add_modifier(Modifier::BOLD),
+                " checking the server…",
+                Style::default().fg(t.warn),
             )));
-            for l in wrap(&app.privacy_text(message)) {
-                lines.push(Line::from(Span::styled(l, Style::default().fg(t.fg))));
-            }
-            let secs = retry_at.saturating_duration_since(app.now()).as_secs();
+        } else {
             lines.push(Line::from(Span::styled(
-                format!("retrying in {secs}s · base URL {}", app.base_url_label()),
-                dim,
-            )));
-            hint = "r retry now · q quit";
-        }
-        Screen::LoggingIn { mode, source } => {
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
-                format!("Signing in ({})…", mode.label()),
-                strong,
-            )));
-            lines.push(Line::from(Span::styled(
-                format!("credential from {source}"),
+                " Checked first, then saved to the config.",
                 dim,
             )));
         }
-        Screen::Login(form) => {
-            let tab = |m: LoginMode| {
-                if m == form.mode {
-                    Span::styled(
-                        format!(" {} ", m.label()),
-                        Style::default()
-                            .bg(t.selected_bg)
-                            .fg(t.selected_fg)
-                            .add_modifier(Modifier::BOLD),
-                    )
-                } else {
-                    Span::styled(format!(" {} ", m.label()), Style::default().fg(t.inactive))
+        hint = "Enter connect · Esc cancel · ^U clear · ←→ Home End";
+    } else {
+        match &app.screen {
+            Screen::Connecting => {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Connecting to CPA Usage Keeper…",
+                    strong,
+                )));
+                lines.push(Line::from(Span::styled(app.base_url_label(), dim)));
+                hint = "b change server · q quit · t theme";
+            }
+            Screen::Startup(s) => {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled("Keeper is starting up", strong)));
+                let mut msg = format!("{} — {}", s.phase, s.message);
+                if let Some(p) = &s.progress {
+                    if let Some(total) = p.total_count.filter(|t| *t > 0.0) {
+                        msg.push_str(&format!(
+                            " ({:.0}%)",
+                            (p.processed_count / total * 100.0).min(100.0)
+                        ));
+                    } else {
+                        msg.push_str(&format!(" ({} processed)", fmt::int(p.processed_count)));
+                    }
                 }
-            };
-            lines.push(Line::from(vec![
-                Span::raw(" "),
-                tab(LoginMode::Admin),
-                Span::raw("  "),
-                tab(LoginMode::ApiKey),
-            ]));
-            lines.push(Line::from(""));
-            let label = match form.mode {
-                LoginMode::Admin => "Admin password",
-                LoginMode::ApiKey => "CPA API key",
-            };
-            lines.push(Line::from(Span::styled(format!(" {label}"), dim)));
-            let field_w = inner.width.saturating_sub(4) as usize;
-            let n = form.input.chars().count().min(field_w.saturating_sub(1));
-            let masked = format!("{}█", "•".repeat(n));
-            lines.push(Line::from(vec![
-                Span::raw(" "),
-                Span::styled(
-                    format!("{masked:<field_w$}"),
-                    Style::default().bg(t.meter_bg).fg(t.title),
-                ),
-            ]));
-            lines.push(Line::from(""));
-            if let Some(e) = &form.error {
-                for l in wrap(&format!("✗ {}", app.privacy_text(e))) {
-                    lines.push(Line::from(Span::styled(
-                        format!(" {l}"),
-                        Style::default().fg(t.err).add_modifier(Modifier::BOLD),
-                    )));
+                lines.push(Line::from(Span::styled(msg, Style::default().fg(t.warn))));
+                lines.push(Line::from(Span::styled("waiting until it is ready…", dim)));
+                hint = "r retry now · b change server · q quit";
+            }
+            Screen::Offline { message, retry_at } => {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Cannot load data from the server",
+                    Style::default().fg(t.err).add_modifier(Modifier::BOLD),
+                )));
+                for l in wrap(&app.privacy_text(message)) {
+                    lines.push(Line::from(Span::styled(l, Style::default().fg(t.fg))));
                 }
-            } else {
-                let sub = match form.mode {
-                    LoginMode::Admin => " Full dashboard (all tabs).",
-                    LoginMode::ApiKey => " Per-key dashboard for a native CPA API key.",
+                let secs = retry_at.saturating_duration_since(app.now()).as_secs();
+                lines.push(Line::from(Span::styled(
+                    format!("retrying in {secs}s · base URL {}", app.base_url_label()),
+                    dim,
+                )));
+                hint = "r retry now · b change server URL · q quit";
+            }
+            Screen::LoggingIn { mode, source } => {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    format!("Signing in ({})…", mode.label()),
+                    strong,
+                )));
+                lines.push(Line::from(Span::styled(
+                    format!("credential from {source}"),
+                    dim,
+                )));
+                hint = "b change server · q quit";
+            }
+            Screen::Login(form) => {
+                let tab = |m: LoginMode| {
+                    if m == form.mode {
+                        Span::styled(
+                            format!(" {} ", m.label()),
+                            Style::default()
+                                .bg(t.selected_bg)
+                                .fg(t.selected_fg)
+                                .add_modifier(Modifier::BOLD),
+                        )
+                    } else {
+                        Span::styled(format!(" {} ", m.label()), Style::default().fg(t.inactive))
+                    }
                 };
-                lines.push(Line::from(Span::styled(sub, dim)));
+                lines.push(Line::from(vec![
+                    Span::raw(" "),
+                    tab(LoginMode::Admin),
+                    Span::raw("  "),
+                    tab(LoginMode::ApiKey),
+                ]));
+                lines.push(Line::from(""));
+                let label = match form.mode {
+                    LoginMode::Admin => "Admin password",
+                    LoginMode::ApiKey => "CPA API key",
+                };
+                lines.push(Line::from(Span::styled(format!(" {label}"), dim)));
+                let n = form.input.chars().count().min(field_w.saturating_sub(1));
+                let masked = format!("{}█", "•".repeat(n));
+                lines.push(Line::from(vec![
+                    Span::raw(" "),
+                    Span::styled(
+                        format!("{masked:<field_w$}"),
+                        Style::default().bg(t.meter_bg).fg(t.title),
+                    ),
+                ]));
+                lines.push(Line::from(""));
+                if let Some(e) = &form.error {
+                    for l in wrap(&format!("✗ {}", app.privacy_text(e))) {
+                        lines.push(Line::from(Span::styled(
+                            format!(" {l}"),
+                            Style::default().fg(t.err).add_modifier(Modifier::BOLD),
+                        )));
+                    }
+                } else {
+                    let sub = match form.mode {
+                        LoginMode::Admin => " Full dashboard (all tabs).",
+                        LoginMode::ApiKey => " Per-key dashboard for a native CPA API key.",
+                    };
+                    lines.push(Line::from(Span::styled(sub, dim)));
+                }
+                hint = "Enter sign in · Tab mode · ^S server · Esc clear · ^C quit";
             }
-            hint = "Enter sign in · Tab switch mode · Esc clear · Ctrl-C quit";
+            Screen::Dashboard => {}
         }
-        Screen::Dashboard => {}
+    }
+    if !notice_lines.is_empty() {
+        lines.push(Line::from(""));
+        for l in &notice_lines {
+            lines.push(Line::from(Span::styled(
+                format!(" {l}"),
+                Style::default().fg(t.ok),
+            )));
+        }
     }
     if !warn_lines.is_empty() {
         lines.push(Line::from(""));
@@ -262,6 +312,37 @@ pub fn draw(f: &mut Frame, app: &App) {
             dim,
         );
     }
+}
+
+/// The server URL input: the visible part of the text (scrolled to keep
+/// the cursor in view) with the cursor cell highlighted.
+fn server_field(app: &App, edit: &crate::app::ServerEdit, field_w: usize) -> Line<'static> {
+    let t = app.theme();
+    let style = Style::default().bg(t.meter_bg).fg(t.title);
+    let cursor_style = style.add_modifier(Modifier::REVERSED);
+    let chars: Vec<char> = app.server_edit_echo(edit).chars().collect();
+    let field_w = field_w.max(2);
+    let start = (edit.cursor + 1).saturating_sub(field_w);
+    let end = (start + field_w).min(chars.len());
+    let before: String = chars[start.min(end)..edit.cursor.min(end)].iter().collect();
+    let at: String = chars
+        .get(edit.cursor)
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| " ".into());
+    let after: String = chars
+        .get(edit.cursor + 1..end)
+        .map(|s| s.iter().collect())
+        .unwrap_or_default();
+    let used = fmt::width(&before) + 1 + fmt::width(&after);
+    Line::from(vec![
+        Span::raw(" "),
+        Span::styled(before, style),
+        Span::styled(at, cursor_style),
+        Span::styled(
+            format!("{after}{}", " ".repeat(field_w.saturating_sub(used))),
+            style,
+        ),
+    ])
 }
 
 #[cfg(test)]

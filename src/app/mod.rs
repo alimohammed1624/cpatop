@@ -7,6 +7,7 @@ pub mod live;
 mod messages;
 pub mod overlay;
 mod privacy;
+pub mod server_edit;
 
 pub use live::{EventFilters, LiveState, LiveStatus, ResultFilter, match_error};
 pub use overlay::{Overlay, PickItem, PickKind, Picker, RangeEditor, Unit};
@@ -15,6 +16,7 @@ pub use privacy::{
     ident_kind_short, is_identifier, is_ip, is_sensitive, looks_like_key, mask_ips,
     provider_abbrev, raw_ident_name, scrub, sensitive_spans,
 };
+pub use server_edit::ServerEdit;
 
 use crate::api::models::*;
 use crate::api::sse::{LiveEvent, LiveParams};
@@ -171,6 +173,14 @@ pub enum Effect {
     Auth(AuthCmd),
     Fetch(Command),
     SaveState,
+    /// Check that a typed server URL answers like a Keeper API.
+    ProbeServer {
+        id: u64,
+        url: String,
+    },
+    /// Switch every request to this (probed) server and save it to the
+    /// config file; the runner answers with [`App::on_server_saved`].
+    SwitchServer(String),
 }
 
 #[derive(Debug)]
@@ -272,6 +282,16 @@ pub struct App {
     pub privacy_guard_hits: Cell<usize>,
     /// Tag of a newer cpatop release, from the background update check.
     pub update_available: Option<String>,
+    /// The "change server URL" field (offline, login and connecting screens).
+    pub server_edit: Option<ServerEdit>,
+    /// Outcome of the last server change, shown until the dashboard loads.
+    pub server_notice: Option<String>,
+    /// Probes of typed URLs get increasing ids; only the latest counts.
+    pub probe_seq: u64,
+    /// Config file a changed server URL is saved to.
+    pub config_path: Option<std::path::PathBuf>,
+    /// Where `settings.base_url` came from (flag, env, config, default).
+    pub base_url_source: crate::server::BaseUrlSource,
 }
 
 /// Dimensions of multi-dimension tables (`d` cycles them).
@@ -357,6 +377,11 @@ impl App {
                 .unwrap_or_else(|| fastrand::u64(1..=i64::MAX as u64)),
             privacy_guard_hits: Cell::new(0),
             update_available: None,
+            server_edit: None,
+            server_notice: None,
+            probe_seq: 0,
+            config_path: None,
+            base_url_source: Default::default(),
         };
         app.restore_ui(ui);
         app

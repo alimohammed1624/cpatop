@@ -1,0 +1,22 @@
+---
+source: tests/ui_snapshots.rs
+expression: "render(&mut app, 80, 24)"
+---
+
+
+
+
+
+
+        ╭─ cpatop ──────────────────────────────────── localhost:8318 ─╮
+        │  Change server URL                                           │
+        │                                                              │
+        │  Base URL of the CPA Usage Keeper                            │
+        │  http://localhost:8318                                       │
+        │                                                              │
+        │  ✗ not a CPA Usage Keeper server: 404 not found — check the  │
+        │    sub-path                                                  │
+        │                                                              │
+        │                                                              │
+        │ Enter connect · Esc cancel · ^U clear · ←→ Home End          │
+        ╰──────────────────────────────────────────────────────────────╯

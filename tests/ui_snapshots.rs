@@ -289,6 +289,57 @@ fn offline_screen() {
     insta::assert_snapshot!("offline_80x24", render(&mut app, 80, 24));
 }
 
+/// The "change server URL" field over the offline screen, with an error
+/// and the cursor inside the text.
+#[test]
+fn server_url_field() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut app = new_app();
+    app.on_msg(Msg::Auth(AuthEvent::Offline {
+        message: "cannot reach server: connection failed".into(),
+        retry_in: std::time::Duration::ZERO,
+    }));
+    app.on_key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE));
+    if let Some(e) = &mut app.server_edit {
+        e.error = Some("not a CPA Usage Keeper server: 404 not found — check the sub-path".into());
+        e.cursor = 7;
+    }
+    insta::assert_snapshot!("server_url_80x24", render(&mut app, 80, 24));
+    let narrow = render(&mut app, 50, 12);
+    assert!(narrow.contains("Change server URL"), "{narrow}");
+}
+
+/// In privacy mode the typed URL is echoed masked: hosts, IPs and paths
+/// never show, the scheme and port do.
+#[test]
+fn privacy_masks_the_server_url_field() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut app = new_app();
+    app.settings.privacy = true;
+    app.on_msg(Msg::Auth(AuthEvent::NeedLogin {
+        error: None,
+        mode: cpatop::api::LoginMode::Admin,
+    }));
+    app.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+    app.on_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+    for c in "http://127.0.0.1:8318/keeper-tst".chars() {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    if let Some(e) = &mut app.server_edit {
+        e.error = Some("unreachable: tcp connect error 10.0.0.5:8318".into());
+    }
+    let s = render(&mut app, 80, 24);
+    assert_private(&s, "server field");
+    assert!(s.contains("http://•••••••••:8318/••••••••••"), "{s}");
+    assert_eq!(app.privacy_guard_hits.get(), 0, "masked before the guard");
+    // The saved-confirmation names no directories.
+    app.server_edit = None;
+    app.on_server_saved(Ok("/home/dem/.config/cpatop/config.toml".into()));
+    let s = render(&mut app, 80, 24);
+    assert_private(&s, "saved notice");
+    assert!(s.contains("…/config.toml"), "{s}");
+}
+
 #[test]
 fn layouts_and_themes_do_not_panic() {
     let mut app = populated(Role::Admin);

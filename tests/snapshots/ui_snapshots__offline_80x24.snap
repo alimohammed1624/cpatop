@@ -17,5 +17,5 @@ expression: "render(&mut app, 80, 24)"
         │                                                              │
         │                                                              │
         │                                                              │
-        │ r retry now · q quit                                         │
+        │ r retry now · b change server URL · q quit                   │
         ╰──────────────────────────────────────────────────────────────╯

@@ -32,13 +32,24 @@ impl App {
             self.should_quit = true;
             return;
         }
-        if let Screen::Login(_) = self.screen {
-            self.on_login_key(k);
+        let dashboard = matches!(self.screen, Screen::Dashboard);
+        if self.server_edit.is_some() && !dashboard {
+            self.on_server_edit_key(k);
             return;
         }
-        if !matches!(self.screen, Screen::Dashboard) {
+        if let Screen::Login(_) = self.screen {
+            // Ctrl-S: change the server URL (letters go to the secret).
+            if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('s') {
+                self.open_server_edit();
+            } else {
+                self.on_login_key(k);
+            }
+            return;
+        }
+        if !dashboard {
             match k.code {
                 KeyCode::Char('q') => self.should_quit = true,
+                KeyCode::Char('b') => self.open_server_edit(),
                 KeyCode::Char('r') | KeyCode::Enter => {
                     self.effects.push(Effect::Auth(AuthCmd::RetryNow))
                 }
