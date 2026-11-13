@@ -167,7 +167,12 @@ fn trend_series(app: &App) -> Option<Trend> {
                 }
             }
         }
-        return Some((c.buckets.clone(), tokens, reqs, c.granularity == "daily"));
+        // The `today` axis runs to midnight; stop at the current bucket.
+        let keep = crate::series::until_now(&c.buckets, app.clock.utc()).max(1);
+        tokens.truncate(keep);
+        reqs.truncate(keep);
+        let buckets = c.buckets[..keep.min(n)].to_vec();
+        return Some((buckets, tokens, reqs, c.granularity == "daily"));
     }
     ov.map(|o| {
         (
@@ -703,6 +708,12 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
     }
     let items = dist_items(app);
     let total: f64 = items.iter().map(|i| i.total_tokens).sum();
+    let keep = app
+        .data
+        .comparisons
+        .get()
+        .map(|c| crate::series::until_now(&c.buckets, app.clock.utc()))
+        .unwrap_or(usize::MAX);
     let is_key = app.dim(PaneId::OvDist) == 1;
     let rows: Vec<TRow> = items
         .iter()
@@ -742,7 +753,11 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
                     cache.map(|c| fmt::pct(c, 1)).unwrap_or("-".into()),
                     num(cache.unwrap_or(-1.0)),
                 )
-                .spark(i.token_series.clone(), t.accent, num(i.total_tokens))
+                .spark(
+                    i.token_series[..keep.min(i.token_series.len())].to_vec(),
+                    t.accent,
+                    num(i.total_tokens),
+                )
                 .filter(format!("{name} {}", i.key))
         })
         .collect();

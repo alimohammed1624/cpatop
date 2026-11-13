@@ -150,6 +150,8 @@ pub struct Hit {
     pub bodies: Vec<(PaneId, Rect)>,
     /// Plot area and bucket count of each graph pane (for the cursor).
     pub graphs: Vec<(PaneId, Rect, usize)>,
+    /// Last bucket with data per graph pane (where the cursor starts).
+    pub graph_last: HashMap<PaneId, usize>,
     /// ID of the selected row per table, after sorting/filtering.
     pub selected: HashMap<PaneId, String>,
     /// Picker rows (item index → screen row) for mouse selection.
@@ -183,6 +185,17 @@ impl Clock {
     pub fn utc(&self) -> DateTime<Utc> {
         self.frozen.map(|f| f.1).unwrap_or_else(Utc::now)
     }
+}
+
+/// How a tab's data is refreshed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cadence {
+    /// Polled at this interval.
+    Every(Duration),
+    /// Pushed by the server (the request log's live stream).
+    Live,
+    /// Fetched on entry, range change or `R`.
+    OnDemand,
 }
 
 /// How long `X` stays armed for the logout confirmation.

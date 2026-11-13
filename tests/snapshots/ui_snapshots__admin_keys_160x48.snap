@@ -2,7 +2,7 @@
 source: tests/ui_snapshots.rs
 expression: s
 ---
- cpatop ⌂ localhost:8318 │ admin │ ◷ today │ ⟳ 10s │ ↻ 0s ago │ ● ok                                                                                     ? help
+ cpatop ⌂ localhost:8318 │ admin │ ◷ today │ ⟳ 1m │ ↻ 0s ago │ ● ok                                                                                      ? help
 ─┤ Overview ├┤ Realtime ├┤ Analysis ├┤ Requests ├┤ Credentials ├┤ Quota ├┤ Models ├┤ Keys ├──────────────────────────────────────────────────── layout stacked ─
 ╭─¹ api keys ◆ ────────────────────────────────────────────── 3 active · usage today · 0s ago ─╮╭─³ server ───────────────────────────────────── cpatop 0.1.0 ─╮
 │  id name         key     type     tokens share                           req     cost  synced││ server      localhost:8318                                   │

@@ -2,16 +2,16 @@
 source: tests/ui_snapshots.rs
 expression: s
 ---
- cpatop ⌂ localhost:8318 │ admin │ ◷ today │ ⟳ 10s │ ↻ 0s ago │ ● ok     ? help
+ cpatop ⌂ localhost:8318 │ admin │ ◷ today │ ⟳ 1m │ ↻ 0s ago │ ● ok      ? help
 ─ Overview  Realtime  Analysis  Requests  Credentials  Quota  Models  Keys ─────
 ╭─¹ tokens ──────────────────────────────────────────────────── today · daily ─╮
 │ tokens 123M   requests 1,176   cost $88.79 (partial)   $/1M $0.7206          │
-│ avg/day 41.1M                                                                │
+│ avg/day 123M                                                                 │
 │ 200M┤                                                                        │
-│     │                                                ⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤│
-│     │                                                ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
-│    0┤⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
-│     └11-12───────────────────11-12───────────────────11-13───────────────────│
+│     │                                                               ⣤⣤⣤⣤⣤⣤⣤⣤⣤│
+│     │                                                               ⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│    0┤                                                      ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│     └11-06────11-07─────────────11-09─────────────11-11─────────────11-13────│
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─² composition ◆ ─── d ‹credentials› ─╮╭─³ models ────────────────────────────╮
 │name                 tokens      req  ││model             tokens share        │

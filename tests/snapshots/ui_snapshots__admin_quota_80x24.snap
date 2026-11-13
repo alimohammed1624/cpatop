@@ -2,7 +2,7 @@
 source: tests/ui_snapshots.rs
 expression: s
 ---
- cpatop ⌂ localhost:8318 │ admin │ ◷ all time │ ⟳ 10s │ ↻ 0s ago │ ● ok  ? help
+ cpatop ⌂ localhost:8318 │ admin │ ◷ all time │ ⟳ 1m │ ↻ 0s ago │ ● ok   ? help
 ─ Overview  Realtime  Analysis  Requests  Credentials  Quota  Models  Keys ─────
 ╭─¹ inspection ───────────────────────────────────────────── auto refresh off ─╮
 │ accounts 7   checked 7/7   normal ■■■■■■ 6   limited ■■■■■■ 1   401 ■■■■■■ 0 │

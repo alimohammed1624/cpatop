@@ -7,7 +7,7 @@ pub mod table;
 pub mod widgets;
 
 use crate::api::Role;
-use crate::app::{App, Hit, InputMode, Overlay, Screen};
+use crate::app::{App, Cadence, Hit, InputMode, Overlay, Screen};
 use crate::fmt;
 use crate::layout::{self, PaneId};
 use ratatui::Frame;
@@ -23,6 +23,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     hit.panes.clear();
     hit.bodies.clear();
     hit.graphs.clear();
+    hit.graph_last.clear();
     hit.selected.clear();
     hit.picker.clear();
     render(f, app, &mut hit);
@@ -121,15 +122,26 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
             ),
         ]);
     }
-    segs.push(vec![
-        Span::styled("⟳ ", dim),
-        Span::styled(format!("{}s", app.settings.refresh_secs), val),
-    ]);
-    let age = app
-        .last_update()
+    // The refresh cadence of the tab on screen, not a global setting.
+    let cadence = match app.cadence() {
+        Cadence::Every(d) if d.as_secs() >= 60 && d.as_secs() % 60 == 0 => {
+            format!("{}m", d.as_secs() / 60)
+        }
+        Cadence::Every(d) => format!("{}s", d.as_secs()),
+        Cadence::Live => "live".into(),
+        Cadence::OnDemand => "on R".into(),
+    };
+    segs.push(vec![Span::styled("⟳ ", dim), Span::styled(cadence, val)]);
+    let at = app.last_update();
+    let age = at
         .map(|at| fmt::age(app.now().saturating_duration_since(at).as_secs()) + " ago")
         .unwrap_or_else(|| "—".into());
-    segs.push(vec![Span::styled("↻ ", dim), Span::styled(age, val)]);
+    let age_style = if app.is_stale(at).is_some() {
+        Style::default().fg(t.warn).add_modifier(Modifier::BOLD)
+    } else {
+        val
+    };
+    segs.push(vec![Span::styled("↻ ", dim), Span::styled(age, age_style)]);
     let status: Vec<Span<'static>> = match app.current_error() {
         Some(e) => vec![Span::styled(
             format!("▲ stale: {}", fmt::trunc(&app.privacy_text(e), 60)),

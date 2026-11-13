@@ -26,11 +26,10 @@ fn daily(a: &Analysis) -> bool {
     a.granularity == "daily"
 }
 
-/// Window length in minutes for RPM/TPM.
-fn window_minutes(a: &Analysis) -> Option<f64> {
-    let s = fmt::parse_ts(a.range_start.as_deref()?)?;
-    let e = fmt::parse_ts(a.range_end.as_deref()?)?;
-    let m = (e - s).num_seconds() as f64 / 60.0;
+/// Length of the selected range in minutes (RPM/TPM and averages), as the
+/// server counts it: ranges ending today stop at now.
+fn window_minutes(app: &App) -> Option<f64> {
+    let m = app.range.window_minutes(app.server_now());
     (m > 0.0).then_some(m)
 }
 
@@ -84,11 +83,12 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             let reqs: f64 = a.token_usage.iter().map(|b| b.requests).sum();
             let cost = a.cost_summary.total_cost_usd;
             let blended = if total > 0.0 { cost / total * 1e6 } else { 0.0 };
-            let avg = if series.is_empty() {
-                0.0
-            } else {
-                total / series.len() as f64
-            };
+            // Averages divide by the selected duration, not by the number
+            // of buckets the server happened to return.
+            let unit = if daily(a) { 1440.0 } else { 60.0 };
+            let avg = window_minutes(app)
+                .map(|m| total / (m / unit).max(1.0))
+                .unwrap_or(0.0);
             let mut cost_item = stat(t, "cost", fmt::usd(cost), Some(t.accent));
             if !a.cost_summary.cost_available {
                 cost_item.push(Span::styled(" (partial)", Style::default().fg(t.warn)));
@@ -195,7 +195,7 @@ pub fn composition(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused:
     if placeholder(f, app, inner, &app.data.analysis) {
         return;
     }
-    let mins = an(app).and_then(window_minutes);
+    let mins = an(app).and(window_minutes(app));
     let is_key = crate::app::dims_for(PaneId::AnComposition, app.role)
         .get(app.dim(PaneId::AnComposition))
         == Some(&"api keys");

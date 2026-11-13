@@ -216,6 +216,11 @@ impl App {
                 e
             }
             Payload::Analysis(r) => {
+                let utc = self.clock.utc();
+                let r = r.map(|mut a| {
+                    crate::series::densify_analysis(&mut a, utc);
+                    a
+                });
                 let e = d.analysis.apply(r, now);
                 if let Some(s) = self.data.analysis.get().and_then(|a| a.range_start.clone()) {
                     self.learn_offset(&s);
@@ -405,6 +410,29 @@ impl App {
                 Group::Meta,
             ],
         }
+    }
+
+    /// How the current tab's data is refreshed (shown in the header).
+    pub fn cadence(&self) -> Cadence {
+        if self.tab == Tab::Events {
+            return Cadence::Live;
+        }
+        let q = self.query();
+        match self.tab_groups().first().and_then(|g| q.interval(*g)) {
+            Some(d) => Cadence::Every(d),
+            None => Cadence::OnDemand,
+        }
+    }
+
+    /// Whether data fetched at `at` is older than its cadence allows (a few
+    /// refreshes were missed).
+    pub fn is_stale(&self, at: Option<Instant>) -> Option<u64> {
+        let Cadence::Every(d) = self.cadence() else {
+            return None;
+        };
+        let age = self.now().saturating_duration_since(at?);
+        let limit = (d * 5 / 2).max(Duration::from_secs(30));
+        (age > limit).then_some(age.as_secs())
     }
 
     /// Error to show in the header for the current tab, if any.

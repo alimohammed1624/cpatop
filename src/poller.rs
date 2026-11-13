@@ -130,8 +130,11 @@ impl Query {
     pub fn interval(&self, g: Group) -> Option<Duration> {
         match g {
             Group::Overview | Group::Realtime => Some(self.refresh),
-            Group::Analysis | Group::Models | Group::Detail | Group::EventFilters => None,
-            Group::KeyOptions
+            Group::Models | Group::Detail | Group::EventFilters => None,
+            // Analysis ranges are long; the slow cadence keeps them current
+            // without hammering the heavier endpoints.
+            Group::Analysis
+            | Group::KeyOptions
             | Group::Credentials
             | Group::Quota
             | Group::Settings
@@ -517,6 +520,14 @@ mod tests {
         q.range = TimeRange::Days(7);
         assert_eq!(q.activity_params(), vec![("range", "7d".to_string())]);
         assert_eq!(q.range_params(), vec![("range", "7d".to_string())]);
+    }
+
+    #[test]
+    fn analysis_refreshes_on_the_slow_cadence() {
+        let q = Query::default();
+        assert_eq!(q.interval(Group::Analysis), Some(q.slow));
+        assert_eq!(q.interval(Group::Overview), Some(q.refresh));
+        assert_eq!(q.interval(Group::Models), None);
     }
 
     #[test]

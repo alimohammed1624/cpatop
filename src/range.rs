@@ -94,6 +94,37 @@ impl TimeRange {
         }
     }
 
+    /// Length of the range in minutes, the way the server computes RPM, TPM
+    /// and daily averages: ranges ending today count only the time elapsed
+    /// so far; rolling ranges are exactly N hours or days.
+    pub fn window_minutes(self, now: DateTime<FixedOffset>) -> f64 {
+        let off = *now.offset();
+        let midnight = |d: NaiveDate| {
+            off.from_local_datetime(&d.and_time(NaiveTime::MIN))
+                .single()
+                .unwrap_or(now)
+        };
+        let elapsed =
+            |from: DateTime<FixedOffset>| (now - from).num_seconds().max(60) as f64 / 60.0;
+        let today = now.date_naive();
+        match self {
+            TimeRange::Today | TimeRange::Days(1) => elapsed(midnight(today)),
+            TimeRange::Yesterday => 1440.0,
+            TimeRange::Hours(h) => h as f64 * 60.0,
+            TimeRange::Days(d) => d as f64 * 1440.0,
+            TimeRange::Custom(Custom::Days { start, end }) if end >= today => {
+                elapsed(midnight(start))
+            }
+            TimeRange::Custom(Custom::Days { start, end }) => {
+                ((end - start).num_days() + 1) as f64 * 1440.0
+            }
+            TimeRange::Custom(Custom::Hours { start, end }) => {
+                let stop = (end + Duration::hours(1)).min(now);
+                ((stop - start).num_seconds().max(60)) as f64 / 60.0
+            }
+        }
+    }
+
     pub fn is_custom(self) -> bool {
         matches!(self, TimeRange::Custom(_))
     }
@@ -570,5 +601,25 @@ mod tests {
         assert_eq!(TimeRange::Today.step(false), TimeRange::Days(30));
         assert_eq!(TimeRange::Days(30).step(true), TimeRange::Today);
         assert_eq!(RtWindow::M60.next(), RtWindow::M15);
+    }
+
+    #[test]
+    fn window_minutes_follow_the_server() {
+        let now: DateTime<FixedOffset> = "2026-11-13T19:20:00+05:30".parse().unwrap();
+        assert_eq!(TimeRange::Today.window_minutes(now), 19.0 * 60.0 + 20.0);
+        assert_eq!(TimeRange::Yesterday.window_minutes(now), 1440.0);
+        assert_eq!(TimeRange::Hours(8).window_minutes(now), 480.0);
+        assert_eq!(TimeRange::Days(30).window_minutes(now), 30.0 * 1440.0);
+        let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        let wk = TimeRange::Custom(Custom::Days {
+            start: d("2026-11-07"),
+            end: d("2026-11-13"),
+        });
+        assert_eq!(wk.window_minutes(now), 6.0 * 1440.0 + 19.0 * 60.0 + 20.0);
+        let past = TimeRange::Custom(Custom::Days {
+            start: d("2026-11-01"),
+            end: d("2026-11-07"),
+        });
+        assert_eq!(past.window_minutes(now), 7.0 * 1440.0);
     }
 }

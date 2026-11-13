@@ -424,13 +424,27 @@ impl App {
             .map(|(_, _, n)| *n)
     }
 
-    /// Move the graph cursor; the first press lands on the latest bucket.
+    /// Move the graph cursor; the first press lands on the latest bucket
+    /// with data (`g`/`G` still reach the ends).
     fn move_cursor(&mut self, id: PaneId, delta: isize) {
         let Some(n) = self.graph_len(id).filter(|n| *n > 0) else {
             return;
         };
         let next = match self.cursor.get(&id) {
-            None => n - 1,
+            None if delta.abs() > 1 => {
+                if delta < 0 {
+                    0
+                } else {
+                    n - 1
+                }
+            }
+            None => self
+                .hit
+                .graph_last
+                .get(&id)
+                .copied()
+                .unwrap_or(n - 1)
+                .min(n - 1),
             Some(c) => ((*c).min(n - 1) as isize + delta).clamp(0, n as isize - 1) as usize,
         };
         self.cursor.insert(id, next);

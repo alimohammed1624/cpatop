@@ -2,7 +2,7 @@
 source: tests/ui_snapshots.rs
 expression: s
 ---
- cpatop ⌂ localhost:8318 │ admin │ ◷ today │ ⟳ 10s │ ↻ 0s ago │ ● ok                                                                                                                                                 ? help
+ cpatop ⌂ localhost:8318 │ admin │ ◷ today │ ⟳ live │ ↻ 0s ago │ ● ok                                                                                                                                                ? help
 ─┤ Overview ├┤ Realtime ├┤ Analysis ├┤ Requests ├┤ Credentials ├┤ Quota ├┤ Models ├┤ Keys ├──────────────────────────────────────────────────────────────────────────────────────────────────────────────── layout stacked ─
 ╭─¹ requests ◆ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── ● live · 3/1,172 in today ─╮
 │time       key      source              model             effort    result     latency      ttft       speed    tokens    cache       cost                                                                                │

@@ -369,13 +369,21 @@ pub fn placeholder<T>(f: &mut Frame, app: &App, inner: Rect, l: &Loaded<T>) -> b
     true
 }
 
-/// Right-title marker when data is present but the last refresh failed.
+/// Right-title marker when data is present but the last refresh failed, or
+/// when it is older than the tab's refresh cadence allows.
 pub fn stale_marker<T>(app: &App, l: &Loaded<T>) -> Vec<Span<'static>> {
     match (&l.data, &l.error) {
         (Some(_), Some(e)) => vec![Span::styled(
             format!("▲ {}", fmt::trunc(&app.privacy_text(e), 30)),
             Style::default().fg(app.theme().err),
         )],
+        (Some(_), None) => match app.is_stale(l.at) {
+            Some(age) => vec![Span::styled(
+                format!("◌ stale {}", fmt::age(age)),
+                Style::default().fg(app.theme().warn),
+            )],
+            None => vec![],
+        },
         _ => vec![],
     }
 }
@@ -522,6 +530,9 @@ pub fn chart(
     );
     if record {
         hit.graphs.push((id, plot, n));
+        if let Some(last) = s.values.iter().rposition(|v| v.is_finite() && *v > 0.0) {
+            hit.graph_last.insert(id, last);
+        }
     }
     if let Some(i) = cursor(app, id, n) {
         widgets::draw_cursor(f.buffer_mut(), plot, i, n, t);
