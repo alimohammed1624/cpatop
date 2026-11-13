@@ -461,9 +461,11 @@ pub fn meter(frac: f64, width: usize, t: &Theme, color: Option<Color>) -> Vec<Sp
 /// Mini sparkline using block eighths, one colour, scaled to the series' own
 /// peak. Short series are stretched over the width (each bucket repeats,
 /// never interpolated); longer series are max-pooled. `NaN` (no data) renders as a blank, zero as
-/// a dim baseline.
+/// a dim baseline. The tallest glyph is `▇`, not `█`: table sparklines sit
+/// in consecutive rows, and full blocks would merge with the row above into
+/// one tall bar.
 pub fn spark(values: &[f64], width: usize, t: &Theme, color: Color) -> Vec<Span<'static>> {
-    const B: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    const B: [char; 7] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇'];
     if width == 0 {
         return vec![];
     }
@@ -485,7 +487,7 @@ pub fn spark(values: &[f64], width: usize, t: &Theme, color: Color) -> Vec<Span<
                 Span::styled("▁", Style::default().fg(t.meter_bg))
             } else {
                 let f = (v / max).clamp(0.0, 1.0);
-                let i = ((f * 7.0).round() as usize).min(7);
+                let i = ((f * 6.0).round() as usize).min(6);
                 Span::styled(B[i].to_string(), Style::default().fg(color))
             }
         })
@@ -665,11 +667,11 @@ mod tests {
         let t = Theme::default();
         let s = spark(&[f64::NAN, 1.0, f64::NAN, 2.0], 4, &t, Color::Blue);
         let text: String = s.iter().map(|s| s.content.to_string()).collect();
-        assert_eq!(text, " ▅ █");
+        assert_eq!(text, " ▄ ▇");
         // Stretched to a wider column, each bucket repeats.
         let s = spark(&[f64::NAN, 1.0, f64::NAN, 2.0], 8, &t, Color::Blue);
         let text: String = s.iter().map(|s| s.content.to_string()).collect();
-        assert_eq!(text, "  ▅▅  ██");
+        assert_eq!(text, "  ▄▄  ▇▇");
     }
 
     #[test]

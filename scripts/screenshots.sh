@@ -196,12 +196,16 @@ pre { margin: 0; padding: ${PAD}px; width: ${gw}px; height: ${gh}px; color: #ccc
   font-variant-ligatures: none; white-space: pre; overflow: hidden; }
 pre span { line-height: ${LINE_PX}px; }
 /* Meslo's block elements are shorter than a cell (terminals draw their own);
-   centre them on the cell and stretch them so bars and fills touch. */
+   centre them on the cell and stretch them so bars and fills touch. Each is
+   clipped to its own cell, like a terminal does, so stretched partial blocks
+   (sparklines ▁▂▃) never spill into the rows above or below. */
+.cell { display: inline-block; width: ${CELL_W}px; height: ${LINE_PX}px;
+  overflow: hidden; vertical-align: top; line-height: ${LINE_PX}px; }
 .blk { display: inline-block; transform: scale(1.03, $BLK_SCALE) translateY(-0.0864em); }
 </style></head><body><div class="win"><div class="bar"><i></i><i></i><i></i></div><pre>
 EOF
     aha --no-header <"$ans" |
-      perl -CSD -pe 's/([\x{2580}-\x{259F}])/<span class="blk">$1<\/span>/g'
+      perl -CSD -pe 's/([\x{2580}-\x{259F}])/<span class="cell"><span class="blk">$1<\/span><\/span>/g'
     echo '</pre></div></body></html>'
   } >"$html"
   chromium --headless --disable-gpu --no-first-run --no-default-browser-check \
