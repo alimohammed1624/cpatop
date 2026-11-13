@@ -188,13 +188,18 @@ struct Plan {
 /// Cells keep a sane shape: one or two lines tall, at least as wide (in
 /// cells of two characters) as they are tall.
 fn plan(b: &Blocks, w: u16, h: u16) -> Plan {
+    plan_with(b, w, h, 2)
+}
+
+/// [`plan`] with cells at most `max_rh` lines tall.
+fn plan_with(b: &Blocks, w: u16, h: u16, max_rh: u16) -> Plan {
     let full = w.saturating_sub(LABEL_W + 1);
     let half = (w.saturating_sub(1) / 2).saturating_sub(LABEL_W + 1);
     // (both maps, no pooling, drawn area, titled, rows): higher is better.
     type Score = (bool, bool, u32, bool, usize);
     let mut best: Option<(Plan, Score)> = None;
     for &span in spans_for(&b.grain) {
-        for rh in [1u16, 2] {
+        for rh in (1..=max_rh).filter(|r| *r <= 2) {
             for side in [false, true] {
                 let avail = if side { half } else { full };
                 if avail < 8 {
@@ -205,7 +210,8 @@ fn plan(b: &Blocks, w: u16, h: u16) -> Plan {
                     continue;
                 }
                 for (both, titled) in [(true, true), (true, false), (false, true), (false, false)] {
-                    if side && !both {
+                    // Two maps are told apart by their titles.
+                    if (side && !both) || (both && !titled) {
                         continue;
                     }
                     let n = if both && !side { 2 } else { 1 };
@@ -287,14 +293,32 @@ pub fn activity_size(app: &App, w: u16) -> Size {
         return Size::at_least(6);
     };
     let head = flow(activity_head(app, a), w.saturating_sub(3), 2).len() as u16;
-    let rows = Blocks::new(a, *app.server_now().offset())
-        .map(|b| {
-            let span = *spans_for(&b.grain).last().unwrap_or(&D);
-            Grid::new(&b, span, w, 1).rows as u16
-        })
-        .unwrap_or(3);
+    let Some(b) = Blocks::new(a, *app.server_now().offset()) else {
+        return Size::at_least(6);
+    };
+    let span = *spans_for(&b.grain).last().unwrap_or(&D);
+    let rows = Grid::new(&b, span, w, 1).rows as u16;
     // Borders, head, legend and the coarsest single map at least.
-    Size::at_least(2 + head + 1 + rows)
+    let min = 2 + head + 1 + rows;
+    // Rows beyond what the maps can use at one line per row stay blank, so
+    // the pane asks for no more (taller cells only come from rows nobody
+    // else can use).
+    let inner_w = w.saturating_sub(2);
+    // The finest rows, one line each: side by side when both maps fit the
+    // width, stacked otherwise.
+    let finest = spans_for(&b.grain)[0];
+    let half = (inner_w.saturating_sub(1) / 2).saturating_sub(LABEL_W + 1);
+    let full = inner_w.saturating_sub(LABEL_W + 1);
+    let side = Grid::fit(&b, finest, half, 1, 2);
+    let maps_h = if half >= 8 && !side.pooled {
+        side.lines() + 1
+    } else {
+        2 * (Grid::fit(&b, finest, full, 1, 2).lines() + 1)
+    };
+    let p = plan_with(&b, inner_w, maps_h, 1);
+    let legend = flow(legend_items(app.theme(), &p), inner_w.saturating_sub(1), 1).len() as u16;
+    let pref = 2 + head + maps_h + legend;
+    Size::range(min, pref)
 }
 
 /// Legend items: map names (when untitled), health glyphs, the token ramp
@@ -484,6 +508,17 @@ fn draw_map(buf: &mut Buffer, t: &Theme, area: Rect, b: &Blocks, p: &Plan, token
             (false, false) => ("health", " · success rate per cell"),
             (true, true) => ("tokens", " per cell"),
             (false, true) => ("health", " · success rate"),
+        };
+        // The description goes when it would be cut.
+        let room = area.width.saturating_sub(2) as usize;
+        let what = if title.len() + what.chars().count() > room {
+            match tokens {
+                true if room >= 15 => " per cell",
+                false if room >= 21 => " · success rate",
+                _ => "",
+            }
+        } else {
+            what
         };
         buf.set_line(
             area.x + 1,

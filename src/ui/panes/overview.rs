@@ -1,8 +1,8 @@
 //! Overview tab (admin and API-key viewer).
 
 use super::{
-    Series, chart, chart_head, cursor, cursor_time, dim_tabs, frame, placeholder, stale_marker,
-    table_in, time_labels,
+    RowChart, Series, chart, chart_head, cursor, cursor_time, dim_tabs, frame, placeholder,
+    stale_marker, table_with_chart, time_labels,
 };
 use crate::api::models::ComparisonItem;
 use crate::app::{App, Hit};
@@ -411,7 +411,25 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
                 .filter(format!("{name} {}", i.key))
         })
         .collect();
-    table_in(
+    // Spare rows chart the selected row's tokens over the range.
+    let chart_for = |id: &str| -> Option<RowChart> {
+        let c = app.data.comparisons.get()?;
+        let i = items.iter().find(|i| i.key == id)?;
+        let n = keep.min(c.buckets.len()).min(i.token_series.len());
+        let name = match dim {
+            1 => app.key_name(&i.key, &i.label),
+            2 => app.credential_name(&i.key, &i.label),
+            _ => app.privacy(&i.label),
+        };
+        Some(RowChart {
+            title: format!("{name} · tokens"),
+            labels: time_labels(&c.buckets[..n], c.granularity == "daily", false),
+            values: i.token_series[..n].to_vec(),
+            fmt: fmt::compact,
+            color: None,
+        })
+    };
+    table_with_chart(
         f,
         app,
         hit,
@@ -421,5 +439,6 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
         &DIST_COLS,
         rows,
         "no usage in this range",
+        &chart_for,
     );
 }

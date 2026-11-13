@@ -59,6 +59,11 @@ pub fn draw(f: &mut Frame, app: &App, hit: &mut Hit, id: PaneId, area: Rect, foc
     }
 }
 
+/// Tallest useful single-chart graph pane (outer rows).
+const GRAPH_MAX: u16 = 18;
+/// Tallest useful pane holding two stacked charts.
+const GRAPH2_MAX: u16 = 32;
+
 /// Height needs of a pane at outer width `w` (see [`layout::compute`]).
 pub fn size(app: &App, id: PaneId, w: u16) -> Size {
     use PaneId::*;
@@ -70,16 +75,19 @@ pub fn size(app: &App, id: PaneId, w: u16) -> Size {
     };
     match id {
         OvTotals => Size::exact(overview::totals_lines(app, inner_w).max(1) + 2),
-        OvTrend => Size::at_least(9),
+        // Graphs stop growing at a readable height on large terminals; the
+        // rows go to tables, charts of the selected row and detail panes.
+        OvTrend => Size::range(9, GRAPH2_MAX),
         OvActivity => activity::activity_size(app, w),
-        OvDist => table(overview::dist_len(app)),
+        // Spare rows chart the selected row's tokens.
+        OvDist => table(overview::dist_len(app)).soaking(),
         RtSummary => Size::exact(realtime::summary_lines(app, inner_w).max(1) + 2),
-        RtThroughput => Size::at_least(8),
-        RtOutcomes | RtCache => Size::at_least(7),
-        RtLatency | AnLatency => Size::at_least(7),
+        RtThroughput => Size::range(8, GRAPH2_MAX),
+        RtOutcomes | RtCache => Size::range(7, GRAPH_MAX),
+        RtLatency | AnLatency => Size::range(7, GRAPH_MAX),
         RtShare => table(realtime::share_len(app)),
         RtSpeed => table(realtime::speed_len(app)),
-        AnTokens => Size::at_least(9),
+        AnTokens => Size::range(9, GRAPH_MAX + 2),
         AnComposition => table(analysis::composition_len(app)),
         AnModels => table(analysis::models_len(app)),
         AnSpeed => table(analysis::speed_len(app)),
@@ -91,10 +99,11 @@ pub fn size(app: &App, id: PaneId, w: u16) -> Size {
         CrDetail => Size::at_least(8),
         QuInspection => Size::exact(quota::inspection_lines(app, inner_w).max(1) + 2),
         QuList => table(quota::list_len(app)),
-        QuHistory => table(quota::history_len(app)),
+        QuHistory => quota::history_size(app),
         MoPricing | MoCatalog => Size::at_least(6),
         MoRecalc => Size::range(5, 10),
-        StKeys => table(app.data.api_keys.get().map(|k| k.items.len())),
+        // Spare rows chart the selected key's tokens.
+        StKeys => table(app.data.api_keys.get().map(|k| k.items.len())).soaking(),
         StSessions => table(app.data.sessions.get().map(|s| s.items.len())),
         StServer => Size::range(5, keys::server_lines(app, w.saturating_sub(4)) + 2),
     }

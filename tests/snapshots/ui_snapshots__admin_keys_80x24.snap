@@ -10,9 +10,14 @@ expression: s
 │  #2 dem…    native        -       -        - ││ running     yes  syncing yes │
 │  #3 tst…    native        -       -        - ││ timezone    Asia/Kolkata     │
 │                                              ││ request log no               │
-│                                              ││ poller      empty            │
-│                                              ││ polling     10s / 60s        │
-│                                              ││                              │
+│ ▸ #1 dem… · tokens  Σ 131M  peak 40.9M       ││ poller      empty            │
+│ 50.0M┤                                       ││ polling     10s / 60s        │
+│      │                                   ⣿⣿  ││                              │
+│      │                                   ⣿⣿  ││                              │
+│ 25.0M┤                                 ⣶⣶⣿⣿⣶⣶││                              │
+│      │         ⣿⣿                  ⣀⣀  ⣿⣿⣿⣿⣿⣿││                              │
+│     0┤       ⣀⣀⣿⣿⣤⣤           ⣤⣤⣶⣶⣶⣿⣿⣤⣤⣿⣿⣿⣿⣿⣿││                              │
+│      └23:30──────04:30────────10:30─────16:30││                              │
 ╰─ ↑↓ select · s/S sort · / filter ────────────╯╰──────────────────────────────╯
 ╭─² sessions ───────────────────────────────────────────────────── 4 sessions ─╮
 │kind     via       name        ip               last seen    expires          │
@@ -20,9 +25,4 @@ expression: s
 │api key  keeper    #1 dem…     ::1              11-13 16:39  11-20 16:33      │
 │admin    keeper    admin       ::1              11-13 16:38  11-19 18:22      │
 │admin    keeper    admin       fd00::2          11-13 11:22  11-20 03:18      │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯

@@ -322,6 +322,19 @@ pub fn list_len(app: &App) -> Option<usize> {
     )
 }
 
+/// Height of the history pane: one message line when there is nothing to
+/// list, the table plus (with three or more windows) a chart otherwise.
+pub fn history_size(app: &App) -> crate::layout::Size {
+    use crate::layout::Size;
+    match history_len(app) {
+        Some(n) if n > 0 => {
+            let s = Size::range(5, n as u16 + 3);
+            if n >= 3 { s.soaking() } else { s }
+        }
+        _ => Size::exact(3),
+    }
+}
+
 pub fn history_len(app: &App) -> Option<usize> {
     app.data
         .quota_history

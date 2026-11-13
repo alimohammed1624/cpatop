@@ -435,23 +435,37 @@ pub struct Size {
     pub min: u16,
     /// `None`: can use any number of rows (graphs, long tables).
     pub max: Option<u16>,
+    /// Puts rows beyond `max` to use (a chart under a table): such rows get
+    /// what is left once every row has its maximum, before anything else
+    /// grows past its maximum into blank space.
+    pub soak: bool,
 }
 
 impl Size {
     pub fn at_least(min: u16) -> Size {
-        Size { min, max: None }
+        Size {
+            min,
+            max: None,
+            soak: false,
+        }
     }
     pub fn exact(h: u16) -> Size {
         Size {
             min: h,
             max: Some(h),
+            soak: false,
         }
     }
     pub fn range(min: u16, max: u16) -> Size {
         Size {
             min,
             max: Some(max.max(min)),
+            soak: false,
         }
+    }
+    /// See [`Size::soak`].
+    pub fn soaking(self) -> Size {
+        Size { soak: true, ..self }
     }
 }
 
@@ -469,6 +483,7 @@ struct RowPlan {
     min: u16,
     max: Option<u16>,
     weight: u16,
+    soak: bool,
     collapsed: bool,
 }
 
@@ -523,6 +538,7 @@ pub fn compute(
                 .map(|s| s.max)
                 .collect::<Option<Vec<u16>>>()
                 .map(|v| v.into_iter().max().unwrap_or(min).max(min));
+            let soak = sizes.iter().any(|s| s.soak);
             let weight = match r.height {
                 Height::Fill(w) => w.max(1),
                 Height::Fixed(_) => 0,
@@ -533,6 +549,7 @@ pub fn compute(
                 min,
                 max,
                 weight,
+                soak,
                 collapsed: false,
             })
         })
@@ -575,34 +592,36 @@ pub fn compute(
     }
     let mut spare = area.height.saturating_sub(heights.iter().sum());
     let any_weighted = rows.iter().any(|r| !r.collapsed && r.weight > 0);
-    let grow_pass = |heights: &mut Vec<u16>, spare: &mut u16, respect_max: bool| {
-        while *spare > 0 {
-            let pick = rows
-                .iter()
-                .enumerate()
-                .filter(|(i, r)| {
-                    !r.collapsed
-                        && (r.weight > 0 || (!respect_max && !any_weighted))
-                        && (!respect_max || r.max.is_none_or(|m| heights[*i] < m))
-                })
-                .min_by(|(i, a), (j, b)| {
-                    // Least served relative to weight first.
-                    let wa = a.weight.max(1) as u32;
-                    let wb = b.weight.max(1) as u32;
-                    let fa = heights[*i].saturating_sub(a.min) as u32 * wb;
-                    let fb = heights[*j].saturating_sub(b.min) as u32 * wa;
-                    fa.cmp(&fb)
-                })
-                .map(|(i, _)| i);
-            match pick {
-                Some(i) => {
-                    heights[i] += 1;
-                    *spare -= 1;
+    let grow_pass =
+        |heights: &mut Vec<u16>, spare: &mut u16, respect_max: bool, soak_only: bool| {
+            while *spare > 0 {
+                let pick = rows
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, r)| {
+                        !r.collapsed
+                            && (!soak_only || r.soak)
+                            && (r.weight > 0 || (!respect_max && !any_weighted))
+                            && (!respect_max || r.max.is_none_or(|m| heights[*i] < m))
+                    })
+                    .min_by(|(i, a), (j, b)| {
+                        // Least served relative to weight first.
+                        let wa = a.weight.max(1) as u32;
+                        let wb = b.weight.max(1) as u32;
+                        let fa = heights[*i].saturating_sub(a.min) as u32 * wb;
+                        let fb = heights[*j].saturating_sub(b.min) as u32 * wa;
+                        fa.cmp(&fb)
+                    })
+                    .map(|(i, _)| i);
+                match pick {
+                    Some(i) => {
+                        heights[i] += 1;
+                        *spare -= 1;
+                    }
+                    None => break,
                 }
-                None => break,
             }
-        }
-    };
+        };
     // Content-sized (fixed) rows get up to their maximum first; then the
     // weighted rows share the rest.
     for (i, r) in rows.iter().enumerate() {
@@ -615,8 +634,11 @@ pub fn compute(
             spare -= add;
         }
     }
-    grow_pass(&mut heights, &mut spare, true);
-    grow_pass(&mut heights, &mut spare, false);
+    grow_pass(&mut heights, &mut spare, true, false);
+    // Rows that put extra height to use (charts under tables) next, then
+    // everything else.
+    grow_pass(&mut heights, &mut spare, false, true);
+    grow_pass(&mut heights, &mut spare, false, false);
     if spare > 0
         && let Some(last) = heights.last_mut()
     {
