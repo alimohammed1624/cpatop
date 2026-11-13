@@ -118,6 +118,9 @@ All notable changes to cpatop are documented here. The format follows
   readable (distinct glyphs, reverse video).
 
 ### Fixed
+- Table sparklines top out at `▇` so bars in neighbouring rows no longer
+  merge into one tall block; the screenshot renderer clips block glyphs
+  per cell. The graph cursor reads `11-13 00:00` (not `11-13 00`).
 - `today`/`yesterday` hourly series in half-hour zones start at local
   midnight: the first UTC-hour bucket (only data after midnight) is
   labelled `00:00` instead of `23:30` of the previous day.
