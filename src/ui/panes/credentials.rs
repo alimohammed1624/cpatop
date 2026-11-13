@@ -191,7 +191,7 @@ pub(super) fn identity_fields(app: &App, i: &Identity) -> Vec<(&'static str, Str
 fn health_strip(app: &App, i: &Identity, width: usize) -> Vec<Span<'static>> {
     let t = app.theme();
     let Some(h) = &i.credential_health else {
-        return vec![Span::styled("-", Style::default().fg(t.graph_text))];
+        return vec![Span::styled(fmt::NONE, Style::default().fg(t.graph_text))];
     };
     let buckets: Vec<(f64, f64)> = h.buckets.iter().map(|b| (b.success, b.failure)).collect();
     let n = buckets.len().max(1);
@@ -293,13 +293,15 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
             let cache = fmt::ratio_pct(cache_r, input);
             let last = i.last_used_at.as_deref().and_then(|s| fmt::since(s, now));
             let kind = crate::app::ident_kind(i);
-            let plan_s = shown_plan(app, i).map(|p| p.0).unwrap_or("—".into());
+            let plan_s = shown_plan(app, i).map(|p| p.0).unwrap_or(fmt::NONE.into());
             TRow::new(i.id.clone())
                 .name(name.clone(), short, Style::default(), text(&name))
                 .text(kind.clone(), text(&kind))
                 .text(plan_s.clone(), text(&plan_s))
                 .text(
-                    i.priority.map(|p| p.to_string()).unwrap_or("-".into()),
+                    i.priority
+                        .map(|p| p.to_string())
+                        .unwrap_or(fmt::NONE.into()),
                     num(i.priority.unwrap_or(i64::MIN) as f64),
                 )
                 .spans(vec![state], text(if i.disabled { "b" } else { "a" }))
@@ -308,12 +310,15 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                     // No requests: a neutral track, not an empty "0%" bar.
                     succ.map(|s| s / 100.0).unwrap_or(f64::NAN),
                     succ.map(|s| t.good_pct(s, 95.0, 80.0)),
-                    format!(" {:>6}", succ.map(|s| fmt::pct(s, 1)).unwrap_or("—".into())),
+                    format!(
+                        " {:>6}",
+                        succ.map(|s| fmt::pct(s, 1)).unwrap_or(fmt::NONE.into())
+                    ),
                     num(succ.unwrap_or(-1.0)),
                 )
                 .text(fmt::compact(tok), num(tok))
                 .text(
-                    cache.map(|c| fmt::pct(c, 0)).unwrap_or("—".into()),
+                    cache.map(|c| fmt::pct(c, 0)).unwrap_or(fmt::NONE.into()),
                     num(cache.unwrap_or(-1.0)),
                 )
                 .spans(
@@ -325,7 +330,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                         .unwrap_or(-1.0)),
                 )
                 .text(
-                    last.map(fmt::age).unwrap_or("-".into()),
+                    last.map(fmt::age).unwrap_or(fmt::NONE.into()),
                     num(-(last.map(|x| x as f64).unwrap_or(f64::MAX))),
                 )
                 .filter(format!("{name} {} {} {plan_s}", i.kind, i.provider))

@@ -10,7 +10,7 @@ use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
 use crate::theme::Theme;
-use crate::ui::table::{Align, Col, TRow, col, flex, grow, num, text};
+use crate::ui::table::{self, Align, Col, TRow, col, flex, grow, num, text};
 use crate::ui::widgets::{self, flow, meter, stat};
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -52,6 +52,39 @@ fn inspection_items(app: &App) -> Vec<Vec<Span<'static>>> {
     } else {
         Span::styled("cache only", Style::default().fg(t.graph_text))
     };
+    if compact(app) {
+        // A short terminal: counts as glyphs, so the quota table below
+        // keeps its rows (the full form is in the row popup and help).
+        let bad = q.unauthorized_401 + q.payment_required_402 + q.other_failed;
+        let n = |glyph: &str, v: f64, c| {
+            vec![Span::styled(
+                format!("{glyph}{}", fmt::int(v)),
+                Style::default()
+                    .fg(if v > 0.0 { c } else { t.graph_text })
+                    .add_modifier(Modifier::BOLD),
+            )]
+        };
+        let mut counts = n("✓", q.normal, t.ok);
+        counts.push(Span::raw(" "));
+        counts.extend(n("⚠", q.limit_reached, t.warn));
+        counts.push(Span::raw(" "));
+        counts.extend(n("✗", bad, t.err));
+        if q.unknown > 0.0 {
+            counts.push(Span::raw(" "));
+            counts.extend(n("?", q.unknown, t.graph_text));
+        }
+        return vec![
+            stat(t, "accounts", fmt::int(q.total), None),
+            counts,
+            stat(
+                t,
+                "checked",
+                format!("{}/{}", fmt::int(q.cached), fmt::int(q.total)),
+                None,
+            ),
+            vec![state],
+        ];
+    }
     let items = vec![
         stat(t, "accounts", fmt::int(q.total), None),
         stat(
@@ -69,6 +102,11 @@ fn inspection_items(app: &App) -> Vec<Vec<Span<'static>>> {
         vec![state],
     ];
     items
+}
+
+/// Whether the pane area is too short for the full inspection summary.
+fn compact(app: &App) -> bool {
+    app.body_rows.get() < 16
 }
 
 /// Lines the inspection summary needs at an inner width.
@@ -110,6 +148,20 @@ const QUOTA_COLS: [Col; 8] = [
     col("tokens", 7, Align::Right, 3),
     col("cost", 8, Align::Right, 4),
     col("status", 6, Align::Left, 0),
+];
+
+/// [`QUOTA_COLS`] for a table too narrow for every always-shown column:
+/// the status keeps one cell for its glyph (✓ ⚠ ✗) rather than being the
+/// column that gives way.
+const QUOTA_COLS_NARROW: [Col; 8] = [
+    flex("credential", 14),
+    col("plan", 4, Align::Left, 0),
+    col("window", 10, Align::Left, 0),
+    grow("left", 12, 0),
+    col("resets in", 8, Align::Right, 1),
+    col("tokens", 7, Align::Right, 3),
+    col("cost", 8, Align::Right, 4),
+    col("", 1, Align::Left, 0),
 ];
 
 /// Status cell: the words, or a glyph when the column is narrow.
@@ -361,7 +413,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
         };
         let plan_s = quota_plan(app, i)
             .or_else(|| known_plan(plan(i)))
-            .unwrap_or_else(|| "—".to_string());
+            .unwrap_or_else(|| fmt::NONE.to_string());
         let filter = format!("{name} {} {plan_s}", i.kind);
         if quota_rows.is_empty() {
             let msg = match task {
@@ -477,7 +529,9 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                         num(left),
                     )
                     .text(
-                        reset.map(|s| fmt::secs(s as f64)).unwrap_or("-".into()),
+                        reset
+                            .map(|s| fmt::secs(s as f64))
+                            .unwrap_or(fmt::NONE.into()),
                         num(reset.unwrap_or(0) as f64),
                     )
                     .text(tok, num(r.window_usage_tokens.unwrap_or(0.0)))
@@ -526,6 +580,11 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
             place: None,
         })
     };
+    let cols: &[Col] = if table::min_width(&QUOTA_COLS) > inner.width {
+        &QUOTA_COLS_NARROW
+    } else {
+        &QUOTA_COLS
+    };
     table_with_chart(
         f,
         app,
@@ -533,7 +592,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
         PaneId::QuList,
         inner,
         focused,
-        &QUOTA_COLS,
+        cols,
         rows,
         "no credentials with quota",
         &chart_for,
@@ -813,7 +872,7 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
             let left = match (c.first_remaining_percent, c.last_remaining_percent) {
                 (Some(a), Some(b)) => format!("{a:.0}→{b:.0}%"),
                 (_, Some(b)) => format!("{b:.0}%"),
-                _ => "-".into(),
+                _ => fmt::NONE.into(),
             };
             let status = if c.status == "current" {
                 "● current"
@@ -850,12 +909,12 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
                     if c.usage.cost_available {
                         fmt::usd(c.usage.total_cost_usd)
                     } else {
-                        "—".into()
+                        fmt::NONE.into()
                     },
                     num(c.usage.total_cost_usd),
                 )
                 .text(
-                    median.map(fmt::compact).unwrap_or("-".into()),
+                    median.map(fmt::compact).unwrap_or(fmt::NONE.into()),
                     num(median.unwrap_or(-1.0)),
                 )
                 .filter(c.status.clone())

@@ -821,8 +821,20 @@ pub fn compute(
         }
         heights = h2;
     }
+    // Rows sized exactly to their content never take blank rows: with
+    // every other row collapsed, what is left stays below the last row
+    // instead of inside a complete box.
+    let collapsed: Vec<bool> = rows.iter().map(|r| r.collapsed).collect();
+    for (r, rg) in rows.iter_mut().zip(&rigid) {
+        r.collapsed |= *rg;
+    }
     grow_pass(&rows, &mut heights, &mut spare, false, false, false);
+    let last_grows = rows.last().is_some_and(|r| !r.collapsed);
+    for (r, c) in rows.iter_mut().zip(collapsed) {
+        r.collapsed = c;
+    }
     if spare > 0
+        && last_grows
         && let Some(last) = heights.last_mut()
     {
         *last += spare;

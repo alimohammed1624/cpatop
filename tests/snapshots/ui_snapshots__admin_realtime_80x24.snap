@@ -1,12 +1,13 @@
 ---
 source: tests/ui_snapshots.rs
+assertion_line: 251
 expression: s
 ---
- cpatop ⌂ localhost:8318 │ admin │ ◷ window 15m │ ⟳ 10s │ ↻ 0s │ ● ok    ? help
+ cpatop ⌂ localhost:8318 │ admin │ ◷ 15m │ ⟳ 10s │ ↻ 0s │ ● ok           ? help
 ─ Overview  Realtime  Analysis  Requests  Credentials  Quota  Models  Keys ─────
 ╭─¹ window ────────────────────────────────────────────────────────────── 15m ─╮
 │ requests 351   failures 0 (0.0%)   tokens 25.1M   in 24.9M   out 152k        │
-│ cache reach ■■■■■■■■ 98.86%   cost $15.30   p95 ttft 2.39s                   │
+│ cache-hit req ■■■■■■■■ 98.86%   cost $15.30   p95 ttft 2.39s                 │
 │ p95 latency 11.1s                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─² throughput ────────────────────────── 15m ─╮╭─³ outcomes ──────────── 15m ─╮

@@ -1,5 +1,6 @@
 ---
 source: tests/ui_snapshots.rs
+assertion_line: 262
 expression: s
 ---
  cpatop ⌂ localhost:8318 │ key #1 dem… │ ◷ today │ ⟳ 1m │ ↻ 0s │ ● ok    ? help
@@ -20,9 +21,9 @@ expression: s
 ╰─ ↑↓ select · ⏎ row · s/S sort · / filter ──────────────────────────── 1-2/3 ─╯
 ╭─³ latency ─ p95 ttft 9.61s… ─╮╭─⁴ speed ─────────────────────────────────────╮
 │↑9.77s                        ││model                mean  samples per bucket │
-│┈┈┈┈┈┈┈┈┈┈┈┈┈⠈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈⠠││claude-o…s-5-5          -      716            │
-│                             ┊││claude-f…e-5-2          -      272            │
-│⠁ ⠐ ⢀                        ┊││gpt-6.1-sol             -       79            │
+│┈┈┈┈┈┈┈┈┈┈┈┈┈⠈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈⠠││claude-o…s-5-5          —      716            │
+│                             ┊││claude-f…e-5-2          —      272            │
+│⠁ ⠐ ⢀                        ┊││gpt-6.1-sol             —       79            │
 │ 2.64s                        ││                                              │
 ╰─ ttft 1.12s → ─────── 2.18s ─╯╰──────────────────────────────────────────────╯
 ─⁵ efficiency  ▸ claude-opus-5-5 57% · claude-fable-5-2 36% · gpt-6.1-sol 6% ───

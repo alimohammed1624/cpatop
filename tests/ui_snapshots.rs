@@ -1527,3 +1527,40 @@ fn graph_cursor_stops_at_now() {
     }));
     assert_eq!(app.cursor.get(&PaneId::OvTrend), Some(&now_idx));
 }
+
+/// 50×12: the quota table keeps its status glyph and gets the rows a
+/// compact inspection summary leaves (L1, L2); the Realtime header keeps
+/// `? help` and the window pane is sized to its content (L3, L4).
+#[test]
+fn small_terminal_quota_and_realtime() {
+    let mut app = populated(Role::Admin);
+    let s = render_tab(&mut app, Tab::Quota, 50, 12);
+    let lines: Vec<&str> = s.lines().collect();
+    let table_top = lines
+        .iter()
+        .position(|l| l.contains("² quota"))
+        .expect("quota table shown");
+    assert!(table_top <= 6, "inspection too tall:\n{s}");
+    let body: Vec<&&str> = lines[table_top + 2..]
+        .iter()
+        .take_while(|l| !l.starts_with('╰'))
+        .collect();
+    assert!(body.len() >= 2, "quota table rows:\n{s}");
+    assert!(
+        body.iter()
+            .any(|l| l.contains('✓') || l.contains('⚠') || l.contains('✗')),
+        "status glyph:\n{s}"
+    );
+    let s = render_tab(&mut app, Tab::Realtime, 50, 12);
+    let head = s.lines().next().unwrap();
+    assert!(head.trim_end().ends_with("? help"), "{head}");
+    assert!(!head.contains("window"), "{head}");
+    let lines: Vec<&str> = s.lines().collect();
+    let bottom = lines.iter().position(|l| l.starts_with('╰')).unwrap();
+    assert!(
+        !lines[bottom - 1]
+            .trim_matches(|c| c == '│' || c == ' ')
+            .is_empty(),
+        "blank row in the window pane:\n{s}"
+    );
+}

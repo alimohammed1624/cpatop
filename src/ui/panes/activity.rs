@@ -261,13 +261,32 @@ fn plan_with(b: &Blocks, w: u16, h: u16, max_rh: u16) -> Plan {
     })
 }
 
+/// `rolling 7×24h` for a window that is not a whole local day: the grid
+/// counts the last N×24 hours, not calendar days, so its Σ differs from
+/// the totals and trend panes (see help, "reading the numbers").
+fn rolling_label(a: &Activity, off: chrono::FixedOffset) -> Option<String> {
+    let parse = |s: &str| fmt::parse_ts(s).map(|d| d.with_timezone(&off));
+    let (s, e) = (parse(&a.window_start)?, parse(&a.window_end)?);
+    let secs = (e - s).num_seconds();
+    if secs <= 0 || (secs == D && s.time() == chrono::NaiveTime::MIN) {
+        return None;
+    }
+    let half = (a.bucket_seconds / 2.0).max(1.0) as i64;
+    let days = (secs + half) / D;
+    Some(if days >= 2 && (secs - days * D).abs() <= half {
+        format!("rolling {days}×24h")
+    } else {
+        format!("rolling {}h", (secs + 1800) / 3600)
+    })
+}
+
 fn activity_head(app: &App, a: &Activity) -> Vec<Vec<Span<'static>>> {
     let t = app.theme();
     let any = a.total_success + a.total_failure > 0.0;
     let rate = if any {
         fmt::pct(a.success_rate, 1)
     } else {
-        "--".into()
+        fmt::NONE.into()
     };
     vec![
         vec![
@@ -297,7 +316,16 @@ fn activity_head(app: &App, a: &Activity) -> Vec<Vec<Span<'static>>> {
                 }),
             ),
         ],
-        stat(t, "Σ tokens", fmt::compact(a.total_tokens), None),
+        {
+            let mut v = stat(t, "Σ tokens", fmt::compact(a.total_tokens), None);
+            if let Some(r) = rolling_label(a, *app.server_now().offset()) {
+                v.push(Span::styled(
+                    format!(" · {r}"),
+                    Style::default().fg(t.graph_text),
+                ));
+            }
+            v
+        },
     ]
 }
 

@@ -246,6 +246,20 @@ pub fn clip_first(labels: &mut [String], start: DateTime<FixedOffset>) {
     }
 }
 
+/// The first whole UTC hour at or after `t`, in `t`'s offset, when `t` is
+/// not on one: where the server's first hourly bucket of a range starting
+/// at `t` begins (00:30 for local midnight at +05:30). Its daily buckets
+/// are cut there too.
+pub fn utc_hour_cut(t: DateTime<FixedOffset>) -> Option<DateTime<FixedOffset>> {
+    let s = t.timestamp();
+    let r = s.rem_euclid(3600);
+    if r == 0 && t.timestamp_subsec_nanos() == 0 {
+        return None;
+    }
+    let cut = Utc.timestamp_opt(s - r + 3600, 0).single()?;
+    Some(cut.with_timezone(t.offset()))
+}
+
 /// Where the buckets of an hourly series sit on a time axis `[start, end)`,
 /// as fractions of its width. Each bucket covers its real span: the server
 /// cuts hourly buckets on UTC hours, so in a +05:30 zone they run `HH:30` to
@@ -798,5 +812,15 @@ mod tests {
         assert!(close(p.spans[0], (0.0, 0.25)));
         assert!(close(p.spans[1], (0.25, 0.75)));
         assert!(close(p.spans[2], (0.75, 1.0)));
+    }
+
+    #[test]
+    fn utc_hour_cuts() {
+        let t = |s: &str| DateTime::parse_from_rfc3339(s).unwrap();
+        let cut = utc_hour_cut(t("2026-11-14T00:00:00+05:30")).unwrap();
+        assert_eq!(cut.format("%H:%M").to_string(), "00:30");
+        let cut = utc_hour_cut(t("2026-11-14T00:00:00+05:45")).unwrap();
+        assert_eq!(cut.format("%H:%M").to_string(), "00:45");
+        assert_eq!(utc_hour_cut(t("2026-11-14T00:00:00+01:00")), None);
     }
 }

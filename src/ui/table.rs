@@ -492,6 +492,13 @@ pub fn natural_width(cols: &[Col], rows: &[TRow]) -> u16 {
     (w + cols.len().saturating_sub(1) * 3).min(u16::MAX as usize) as u16
 }
 
+/// Width the always-shown (priority 0) columns need at their minimum
+/// widths, gaps included.
+pub fn min_width(cols: &[Col]) -> u16 {
+    let keep: Vec<&Col> = cols.iter().filter(|c| c.prio == 0).collect();
+    keep.iter().map(|c| c.width).sum::<u16>() + keep.len().saturating_sub(1) as u16
+}
+
 /// A placed column: index, x offset within the table, width.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Placed {
@@ -635,14 +642,22 @@ fn allocate(cols: &[Col], content: &[usize], width: u16, keep: &[usize]) -> Vec<
     // A wide pane is filled to its right edge, in this order: meters up to
     // a long bar, columns spread apart (gaps of up to eight cells), the
     // name columns (numbers stay near the names they describe until
-    // nothing else can use the width), and last the gaps without limit.
+    // nothing else can use the width) or else the bars, and last the gaps
+    // without limit.
     const MAX_FILL: u16 = 72;
-    const MAX_GAP_EXTRA: u16 = 7;
+    // A table whose bar can take the width keeps its columns closer.
+    let has_names = (0..keep.len()).any(|k| cols[keep[k]].mid);
+    let max_gap_extra: u16 = if !meters.is_empty() && !has_names {
+        3
+    } else {
+        7
+    };
+    let extra = extra.min(max_gap_extra);
     grow(&meters, MAX_FILL, &mut spare);
     let mut gap_extra = vec![extra; keep.len()];
     if spare > 0 && gaps > 0 {
-        let more = (spare / gaps).min(MAX_GAP_EXTRA - extra);
-        let rem = if more == MAX_GAP_EXTRA - extra {
+        let more = (spare / gaps).min(max_gap_extra - extra);
+        let rem = if more == max_gap_extra - extra {
             0
         } else {
             spare % gaps
@@ -656,6 +671,13 @@ fn allocate(cols: &[Col], content: &[usize], width: u16, keep: &[usize]) -> Vec<
     if spare > 0 && !names.is_empty() {
         let n = names.len() as u16;
         for (j, k) in names.iter().enumerate() {
+            widths[*k] += spare / n + u16::from((j as u16) < spare % n);
+        }
+    } else if spare > 0 && !meters.is_empty() {
+        // Without names to widen, a bar takes the rest: columns spread
+        // further apart only scatter a row across the screen.
+        let n = meters.len() as u16;
+        for (j, k) in meters.iter().enumerate() {
             widths[*k] += spare / n + u16::from((j as u16) < spare % n);
         }
     } else if spare > 0 && gaps > 0 {
@@ -1037,11 +1059,12 @@ mod tests {
         assert_eq!(f[1].x - f[0].width, 8);
         assert_eq!(f[2].x - (f[1].x + f[1].width), 8);
         assert_eq!(f.last().map(|p| p.x + p.width), Some(200));
-        // Without a name column the meter stops at a long bar and the
-        // columns spread.
+        // Without a name column the columns stay close (gaps of up to
+        // four cells) and the meter takes the rest.
         let cols = [grow("share", 12, 1), col("req", 5, Align::Right, 0)];
         let f = fit(&cols, &[12, 4], 200);
-        assert_eq!(f[0].width, 72);
+        assert_eq!(f[1].x - f[0].width, 4);
+        assert_eq!(f[0].width, 200 - 5 - 4);
         assert_eq!(f.last().map(|p| p.x + p.width), Some(200));
     }
 

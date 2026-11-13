@@ -136,8 +136,23 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("x", "privacy: hide e-mails, API keys, IPs"),
             ("", "also typed filters and searches"),
             ("X X", "log out on the server (twice in 3 s)"),
-            ("b · ^S", "change server URL (offline · login)"),
             ("?", "this help"),
+        ],
+    ),
+    (
+        "offline / login screen",
+        &[("b · ^S", "change the server URL")],
+    ),
+    (
+        "reading the numbers",
+        &[
+            ("buckets", "the server cuts hours at UTC hours:"),
+            ("", "at +05:30 Overview counts today from"),
+            ("", "00:00, Analysis from 00:30; Overview"),
+            ("", "days run 00:30 → 00:30"),
+            ("Σ rolling", "activity grid: last N×24 h, not days"),
+            ("cache-hit req", "requests that read cached tokens"),
+            ("cache read", "input tokens read from the cache"),
         ],
     ),
 ];
@@ -740,6 +755,19 @@ mod tests {
         ] {
             assert!(admin.contains(k), "{k}");
         }
+    }
+
+    #[test]
+    fn server_url_change_has_its_own_heading() {
+        let h = help_for(true, 8);
+        let has = |sec: &str, key: &str| {
+            h.iter()
+                .any(|(n, rows)| *n == sec && rows.iter().any(|(k, _)| k == key))
+        };
+        assert!(has("offline / login screen", "b · ^S"));
+        assert!(!has("display & session", "b · ^S"));
+        assert!(has("display & session", "b"));
+        assert!(has("reading the numbers", "cache-hit req"));
     }
 
     #[test]

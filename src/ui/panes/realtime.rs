@@ -109,7 +109,9 @@ fn summary_items(app: &App, width: u16) -> Vec<Vec<Span<'static>>> {
                 format!(
                     "{} ({})",
                     fmt::int(s.failures),
-                    fail_rate.map(|p| fmt::pct(p, 1)).unwrap_or("-".into())
+                    fail_rate
+                        .map(|p| fmt::pct(p, 1))
+                        .unwrap_or(fmt::NONE.into())
                 ),
                 Style::default()
                     .fg(if s.failures > 0.0 { t.err } else { t.title })
@@ -120,8 +122,14 @@ fn summary_items(app: &App, width: u16) -> Vec<Vec<Span<'static>>> {
         stat(t, "in", fmt::compact(s.input_tokens), Some(t.fg)),
         stat(t, "out", fmt::compact(s.output_tokens), Some(t.fg)),
         {
+            // Requests that read any cached tokens (not the share of tokens
+            // read from cache, which the cache chart shows).
             let mut v = vec![Span::styled(
-                "cache reach ",
+                if width >= 200 {
+                    "cache-hit requests "
+                } else {
+                    "cache-hit req "
+                },
                 Style::default().fg(t.graph_text),
             )];
             v.extend(meter(
@@ -131,7 +139,10 @@ fn summary_items(app: &App, width: u16) -> Vec<Vec<Span<'static>>> {
                 reach.map(|r| t.good_pct(r, 80.0, 50.0)),
             ));
             v.push(Span::styled(
-                format!(" {}", reach.map(|p| fmt::pct(p, 2)).unwrap_or("-".into())),
+                format!(
+                    " {}",
+                    reach.map(|p| fmt::pct(p, 2)).unwrap_or(fmt::NONE.into())
+                ),
                 Style::default().fg(t.title).add_modifier(Modifier::BOLD),
             ));
             v
@@ -348,7 +359,7 @@ pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
             {
                 let rate = fmt::ratio_pct(tf, tr)
                     .map(|p| fmt::pct(p, 1))
-                    .unwrap_or("-".into());
+                    .unwrap_or(fmt::NONE.into());
                 // Narrow panes: `fail 0 (0.0%)` so the rate is not cut.
                 if inner.width >= 40 {
                     format!("  fail rate {rate}")

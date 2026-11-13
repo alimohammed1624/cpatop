@@ -48,7 +48,10 @@ fn totals_items(app: &App, width: u16) -> Vec<Vec<Span<'static>>> {
                 Some(t.good_pct(pct, 95.0, 80.0)),
             ));
             v.push(Span::styled(
-                format!(" {}", success.map(|p| fmt::pct(p, 2)).unwrap_or("-".into())),
+                format!(
+                    " {}",
+                    success.map(|p| fmt::pct(p, 2)).unwrap_or(fmt::NONE.into())
+                ),
                 Style::default().fg(t.title).add_modifier(Modifier::BOLD),
             ));
             v
@@ -88,7 +91,10 @@ fn totals_items(app: &App, width: u16) -> Vec<Vec<Span<'static>>> {
                 cache.map(|c| t.good_pct(c, 80.0, 50.0)),
             ));
             v.push(Span::styled(
-                format!(" {}", cache.map(|p| fmt::pct(p, 1)).unwrap_or("-".into())),
+                format!(
+                    " {}",
+                    cache.map(|p| fmt::pct(p, 1)).unwrap_or(fmt::NONE.into())
+                ),
                 Style::default().fg(t.title).add_modifier(Modifier::BOLD),
             ));
             v
@@ -218,9 +224,20 @@ pub fn trend(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool)
         Some((b, tok, _, daily, _)) if !b.is_empty() => {
             let peak = tok.iter().copied().fold(0.0, f64::max);
             let unit = if *daily { "/day" } else { "/h" };
+            // The server cuts its daily buckets at the first whole UTC hour
+            // of the day (00:30 at +05:30; see help, "reading the numbers").
+            let cut = (*daily)
+                .then(|| {
+                    let (start, _) = app.range.bounds(app.server_now());
+                    crate::series::utc_hour_cut(start)
+                })
+                .flatten()
+                .filter(|_| area.width >= 70)
+                .map(|c| format!(" · days from {}", c.format("%H:%M")))
+                .unwrap_or_default();
             vec![Span::styled(
                 format!(
-                    "{} · peak {}{unit} · Σ {}",
+                    "{} · peak {}{unit} · Σ {}{cut}",
                     app.range.label(),
                     fmt::compact(peak),
                     fmt::compact(total(tok))
@@ -454,7 +471,7 @@ pub fn distribution(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused
                 )
                 .text(fmt::usd_opt(i.cost), num(i.cost.unwrap_or(-1.0)))
                 .text(
-                    cache.map(|c| fmt::pct(c, 1)).unwrap_or("-".into()),
+                    cache.map(|c| fmt::pct(c, 1)).unwrap_or(fmt::NONE.into()),
                     num(cache.unwrap_or(-1.0)),
                 )
                 .spark_on(

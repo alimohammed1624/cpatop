@@ -49,10 +49,24 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
     if let Some(a) = an(app)
         && right.is_empty()
     {
-        right.push(Span::styled(
-            format!("{} · {}", app.range.label(), a.granularity),
-            Style::default().fg(t.graph_text),
-        ));
+        // The server's hourly buckets start at the first whole UTC hour of
+        // the range: at +05:30 Analysis counts `today` from 00:30, Overview
+        // from 00:00 (see help, "reading the numbers").
+        let cut = (!daily(a))
+            .then(|| a.range_start.as_deref().and_then(fmt::parse_ts))
+            .flatten()
+            .and_then(crate::series::utc_hour_cut)
+            .map(|c| c.format("%H:%M").to_string());
+        let text = match cut {
+            Some(c) if area.width >= 90 => format!(
+                "{} · {} · server buckets from {c}",
+                app.range.label(),
+                a.granularity
+            ),
+            Some(c) if area.width >= 50 => format!("{} · from {c}", app.range.label()),
+            _ => format!("{} · {}", app.range.label(), a.granularity),
+        };
+        right.push(Span::styled(text, Style::default().fg(t.graph_text)));
     }
     let inner = frame(f, app, PaneId::AnTokens, area, focused, right, None);
     if placeholder(f, app, inner, l) {
@@ -91,7 +105,7 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
                     if b.cost_available {
                         fmt::usd(b.cost_usd)
                     } else {
-                        "—".into()
+                        fmt::NONE.into()
                     },
                     Some(t.accent),
                 ),
@@ -288,17 +302,17 @@ pub fn composition(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused:
                     num(c.cost_usd),
                 )
                 .text(
-                    cache.map(|x| fmt::pct(x, 1)).unwrap_or("--".into()),
+                    cache.map(|x| fmt::pct(x, 1)).unwrap_or(fmt::NONE.into()),
                     num(cache.unwrap_or(-1.0)),
                 )
                 .text(
                     mins.map(|m| fmt::per_minute(c.requests / m))
-                        .unwrap_or("--".into()),
+                        .unwrap_or(fmt::NONE.into()),
                     num(c.requests),
                 )
                 .text(
                     mins.map(|m| fmt::compact(c.total_tokens / m))
-                        .unwrap_or("--".into()),
+                        .unwrap_or(fmt::NONE.into()),
                     num(c.total_tokens),
                 )
                 .filter(name)
@@ -407,7 +421,8 @@ pub fn models(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
                 .meter(share / 100.0, None, format!(" {:>5.1}%", share), num(share))
                 .text(fmt::count(req), num(req))
                 .text(
-                    comp.map(|c| fmt::usd(c.cost_usd)).unwrap_or("—".into()),
+                    comp.map(|c| fmt::usd(c.cost_usd))
+                        .unwrap_or(fmt::NONE.into()),
                     num(comp.map(|c| c.cost_usd).unwrap_or(-1.0)),
                 )
                 .spark_on(trend, t.accent, axis.clone(), num(tok))
@@ -512,7 +527,7 @@ fn speed_rows(app: &App, a: &Analysis) -> Vec<TRow> {
                 .collect();
             let known: Vec<f64> = per.iter().copied().filter(|v| v.is_finite()).collect();
             let range = if known.is_empty() {
-                "-".to_string()
+                fmt::NONE.to_string()
             } else {
                 let lo = known.iter().copied().fold(f64::MAX, f64::min);
                 let hi = known.iter().copied().fold(0.0, f64::max);
@@ -526,7 +541,7 @@ fn speed_rows(app: &App, a: &Analysis) -> Vec<TRow> {
             TRow::new(s.model.clone())
                 .text(model.clone(), text(&model))
                 .styled(
-                    mean.map(fmt::tps).unwrap_or("-".into()),
+                    mean.map(fmt::tps).unwrap_or(fmt::NONE.into()),
                     Style::default().fg(t.title),
                     num(mean.unwrap_or(-1.0)),
                 )
@@ -581,7 +596,7 @@ pub fn efficiency(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: 
                 .text(fmt::count(m.requests), num(m.requests))
                 .styled(fmt::usd(m.cost_usd), cost_style, num(m.cost_usd))
                 .text(
-                    per_m.map(fmt::usd).unwrap_or("--".into()),
+                    per_m.map(fmt::usd).unwrap_or(fmt::NONE.into()),
                     num(per_m.unwrap_or(-1.0)),
                 )
                 .text(

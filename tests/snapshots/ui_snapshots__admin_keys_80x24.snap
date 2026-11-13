@@ -1,5 +1,6 @@
 ---
 source: tests/ui_snapshots.rs
+assertion_line: 251
 expression: s
 ---
  cpatop ⌂ localhost:8318 │ admin │ ◷ today │ ⟳ 1m │ ↻ 0s ago │ ● ok      ? help
@@ -7,8 +8,8 @@ expression: s
 ╭─¹ api keys ◆ ────────────────────────────── 3 active · usage today · 0s ago ─╮
 │  id key     type     tokens share                        req     cost  synced│
 │  #1 dem…    native     131M ■■■■■■■■■■■■■■■■■ 100.0%   1,265   $93.02     22h│
-│  #2 dem…    native        - ■■■■■■■■■■■■■■■■■   0.0%       -        -     22h│
-│  #3 tst…    native        - ■■■■■■■■■■■■■■■■■   0.0%       -        -     22h│
+│  #2 dem…    native        — ■■■■■■■■■■■■■■■■■   0.0%       —        —     22h│
+│  #3 tst…    native        — ■■■■■■■■■■■■■■■■■   0.0%       —        —     22h│
 │                                                                              │
 │                                                                              │
 │                                                                              │

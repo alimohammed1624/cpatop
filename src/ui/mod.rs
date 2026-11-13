@@ -69,6 +69,7 @@ fn dashboard(f: &mut Frame, app: &App, hit: &mut Hit) {
     header(f, app, Rect::new(area.x, area.y, area.width, 1));
     tab_bar(f, app, hit, Rect::new(area.x, area.y + 1, area.width, 1));
     let body = Rect::new(area.x, area.y + 2, area.width, area.height - 2);
+    app.body_rows.set(body.height);
     let hidden = app.effective_hidden(app.tab);
     let size = |id: PaneId, w: u16| panes::size(app, id, w);
     let mut placed = layout::compute(app.tab, app.preset(app.tab), &hidden, body, &size);
@@ -158,7 +159,7 @@ fn header_segments(app: &App, level: u8) -> Vec<Vec<Span<'static>>> {
         Some(Role::KeyViewer) if level >= 5 => format!("key #{key_id}"),
         Some(Role::KeyViewer) if app.settings.privacy => app.session_key_name(),
         Some(Role::KeyViewer) => format!("key {}", app.session_key_name()),
-        None => "-".into(),
+        None => fmt::NONE.into(),
     };
     if level < 8 {
         segs.push(vec![Span::styled(
@@ -167,6 +168,8 @@ fn header_segments(app: &App, level: u8) -> Vec<Vec<Span<'static>>> {
         )]);
     }
     let range = match app.tab {
+        // Squeezed, the clock glyph alone says it is a window.
+        layout::Tab::Realtime if level >= 1 => app.window.param().to_string(),
         layout::Tab::Realtime => format!("window {}", app.window.param()),
         layout::Tab::Credentials | layout::Tab::Quota | layout::Tab::Models => "all time".into(),
         _ => app.range.label(),
@@ -204,7 +207,7 @@ fn header_segments(app: &App, level: u8) -> Vec<Vec<Span<'static>>> {
             let a = fmt::age(app.now().saturating_duration_since(at).as_secs());
             if level < 1 { a + " ago" } else { a }
         })
-        .unwrap_or_else(|| "—".into());
+        .unwrap_or_else(|| fmt::NONE.into());
     let age_style = if app.is_stale(at).is_some() {
         Style::default().fg(t.warn).add_modifier(Modifier::BOLD)
     } else {

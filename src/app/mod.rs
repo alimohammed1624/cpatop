@@ -318,6 +318,9 @@ pub struct App {
     pub config_path: Option<std::path::PathBuf>,
     /// Where `settings.base_url` came from (flag, env, config, default).
     pub base_url_source: crate::server::BaseUrlSource,
+    /// Rows of the pane area in the frame being drawn (short terminals get
+    /// compact summaries).
+    pub body_rows: Cell<u16>,
 }
 
 /// Dimensions of multi-dimension tables (`d` cycles them).
@@ -411,6 +414,7 @@ impl App {
             probe_seq: 0,
             config_path: None,
             base_url_source: Default::default(),
+            body_rows: Cell::new(u16::MAX),
         };
         app.restore_ui(ui);
         app

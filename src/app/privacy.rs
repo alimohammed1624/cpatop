@@ -156,7 +156,7 @@ impl App {
 
     /// An IP address field (`‹ip›` in privacy mode).
     pub fn ip(&self, s: &str) -> String {
-        if self.settings.privacy && !s.is_empty() && s != "-" {
+        if self.settings.privacy && !s.is_empty() && !is_none_mark(s) {
             IP_MASK.into()
         } else {
             s.to_string()
@@ -169,7 +169,7 @@ impl App {
     /// anything else becomes `…` — comments and free tokens can carry host
     /// names, accounts or ids.
     pub fn user_agent(&self, s: &str) -> String {
-        if !self.settings.privacy || s.is_empty() || s == "-" {
+        if !self.settings.privacy || s.is_empty() || is_none_mark(s) {
             return s.to_string();
         }
         let mut out: Vec<String> = Vec::new();
@@ -220,7 +220,7 @@ impl App {
     /// well-known API routes are shown, never with their query string or
     /// fragment (`/v1/messages?…`); anything else is hidden.
     pub fn endpoint(&self, s: &str) -> String {
-        if !self.settings.privacy || s.is_empty() || s == "-" {
+        if !self.settings.privacy || s.is_empty() || is_none_mark(s) {
             return s.to_string();
         }
         let (method, target) = match s.trim().split_once(' ') {
@@ -242,7 +242,7 @@ impl App {
 
     /// An opaque id (request id): hidden in privacy mode.
     pub fn opaque_id(&self, s: &str) -> String {
-        if self.settings.privacy && !s.is_empty() && s != "-" {
+        if self.settings.privacy && !s.is_empty() && !is_none_mark(s) {
             HIDDEN.into()
         } else {
             s.to_string()
@@ -338,7 +338,9 @@ impl App {
     pub fn credential_labels(&self, key: &str, label: &str) -> (String, String) {
         match self.identity_for(key) {
             Some(i) => self.ident_labels(i),
-            None if label.is_empty() || label == "-" => (label.to_string(), label.to_string()),
+            None if label.is_empty() || is_none_mark(label) => {
+                (label.to_string(), label.to_string())
+            }
             None => {
                 let n = self.account(label);
                 (n.clone(), n)
@@ -1386,6 +1388,12 @@ pub fn guard_buffer(buf: &mut Buffer) -> usize {
         }
     }
     hits
+}
+
+/// A placeholder for a missing value (`—`, or `-` from older data), never
+/// an identifier.
+fn is_none_mark(s: &str) -> bool {
+    matches!(s, "-" | crate::fmt::NONE)
 }
 
 #[cfg(test)]

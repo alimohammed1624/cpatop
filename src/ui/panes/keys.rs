@@ -63,13 +63,13 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
         .iter()
         .map(|k| {
             let masked = if k.source_type == "plugin" || app.settings.privacy {
-                "—".to_string()
+                fmt::NONE.to_string()
             } else {
                 fmt::redact_key(&k.display_key)
             };
             // Aliases are chosen names: privacy mode replaces them.
             let name = if k.key_alias.is_empty() || app.settings.privacy {
-                "—".to_string()
+                fmt::NONE.to_string()
             } else {
                 k.key_alias.clone()
             };
@@ -93,20 +93,23 @@ pub fn api_keys(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
                 .text(kind.clone(), text(&kind))
                 .text(
                     u.map(|u| fmt::compact(u.total_tokens))
-                        .unwrap_or("-".into()),
+                        .unwrap_or(fmt::NONE.into()),
                     num(u.map(|u| u.total_tokens).unwrap_or(-1.0)),
                 )
                 .meter(share / 100.0, None, format!(" {:>5.1}%", share), num(share))
                 .text(
-                    u.map(|u| fmt::count(u.requests)).unwrap_or("-".into()),
+                    u.map(|u| fmt::count(u.requests))
+                        .unwrap_or(fmt::NONE.into()),
                     num(u.map(|u| u.requests).unwrap_or(-1.0)),
                 )
                 .text(
-                    u.and_then(|u| u.cost).map(fmt::usd).unwrap_or("-".into()),
+                    u.and_then(|u| u.cost)
+                        .map(fmt::usd)
+                        .unwrap_or(fmt::NONE.into()),
                     num(u.and_then(|u| u.cost).unwrap_or(-1.0)),
                 )
                 .text(
-                    synced.map(fmt::age).unwrap_or("-".into()),
+                    synced.map(fmt::age).unwrap_or(fmt::NONE.into()),
                     num(synced.map(|s| s as f64).unwrap_or(f64::MAX)),
                 )
                 .filter(format!("#{} {name} {masked} {kind}", k.id))
@@ -214,7 +217,7 @@ pub fn sessions(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
     let short = |s: &Option<String>| {
         s.as_deref()
             .map(|v| v.get(5..16).unwrap_or(v).to_string())
-            .unwrap_or("-".into())
+            .unwrap_or(fmt::NONE.into())
     };
     let rows = s
         .items
@@ -245,7 +248,7 @@ pub fn sessions(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
                 .last_seen_ip
                 .clone()
                 .or(it.login_ip.clone())
-                .unwrap_or("-".into()));
+                .unwrap_or(fmt::NONE.into()));
             let ua = app.user_agent(&it.user_agent.clone().unwrap_or_default());
             TRow::new(format!("{n}"))
                 .styled(

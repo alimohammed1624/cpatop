@@ -57,7 +57,7 @@ fn rules_label(branches: usize, conditions: usize) -> String {
         parts.push(fmt::plural(conditions, "condition", "conditions"));
     }
     if parts.is_empty() {
-        "—".into()
+        fmt::NONE.into()
     } else {
         parts.join(" · ")
     }

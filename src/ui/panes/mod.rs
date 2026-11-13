@@ -296,7 +296,10 @@ fn collapsed_summary(app: &App, hit: &Hit, id: PaneId) -> Option<String> {
                 format!(
                     "{} {}",
                     fmt::trunc(&app.privacy(&s.model), 18),
-                    s.second_half.mean_tps.map(fmt::tps).unwrap_or("-".into())
+                    s.second_half
+                        .mean_tps
+                        .map(fmt::tps)
+                        .unwrap_or(fmt::NONE.into())
                 )
             })
             .collect::<Vec<_>>()
@@ -310,7 +313,9 @@ fn collapsed_summary(app: &App, hit: &Hit, id: PaneId) -> Option<String> {
                 .collect();
             format!(
                 "cache read {} now · avg {}",
-                v.last().map(|x| fmt::pct(*x, 1)).unwrap_or("-".into()),
+                v.last()
+                    .map(|x| fmt::pct(*x, 1))
+                    .unwrap_or(fmt::NONE.into()),
                 fmt::pct(v.iter().sum::<f64>() / v.len().max(1) as f64, 1)
             )
         }
@@ -356,7 +361,7 @@ fn collapsed_summary(app: &App, hit: &Hit, id: PaneId) -> Option<String> {
                     format!(
                         "{} {}",
                         fmt::trunc(&app.privacy(&s.model), 18),
-                        mean.map(fmt::tps).unwrap_or("-".into())
+                        mean.map(fmt::tps).unwrap_or(fmt::NONE.into())
                     )
                 })
                 .collect::<Vec<_>>()
@@ -378,7 +383,7 @@ fn collapsed_summary(app: &App, hit: &Hit, id: PaneId) -> Option<String> {
                 fmt::int(u.total_requests),
                 fmt::ratio_pct(u.success_count, u.total_requests)
                     .map(|p| fmt::pct(p, 1))
-                    .unwrap_or("-".into()),
+                    .unwrap_or(fmt::NONE.into()),
                 fmt::compact(u.total_tokens),
                 fmt::usd(o.summary.total_cost)
             )
@@ -413,7 +418,9 @@ fn collapsed_summary(app: &App, hit: &Hit, id: PaneId) -> Option<String> {
                 .collect();
             format!(
                 "tokens/min {} now · avg {}",
-                v.last().map(|x| fmt::compact(*x)).unwrap_or("-".into()),
+                v.last()
+                    .map(|x| fmt::compact(*x))
+                    .unwrap_or(fmt::NONE.into()),
                 fmt::compact(v.iter().sum::<f64>() / v.len().max(1) as f64)
             )
         }

@@ -309,7 +309,7 @@ pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
                 .api_key
                 .as_deref()
                 .map(|k| app.key_name_by_label(k))
-                .unwrap_or("-".into());
+                .unwrap_or(fmt::NONE.into());
             let (source, source_short) =
                 app.credential_labels(e.auth_index.as_deref().unwrap_or(""), &e.source);
             let result = if e.failed {
@@ -347,7 +347,7 @@ pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
                 )
                 .text(model.clone(), text(&model))
                 .text(
-                    e.reasoning_effort.clone().unwrap_or("-".into()),
+                    e.reasoning_effort.clone().unwrap_or(fmt::NONE.into()),
                     text(e.reasoning_effort.as_deref().unwrap_or("")),
                 )
                 .spans(vec![result], num(if e.failed { 1.0 } else { 0.0 }))
@@ -356,11 +356,11 @@ pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
                     e.ttft_ms
                         .filter(|v| *v > 0.0)
                         .map(fmt::ms)
-                        .unwrap_or("-".into()),
+                        .unwrap_or(fmt::NONE.into()),
                     num(e.ttft_ms.unwrap_or(-1.0)),
                 )
                 .text(
-                    e.speed_tps.map(fmt::tps).unwrap_or("-".into()),
+                    e.speed_tps.map(fmt::tps).unwrap_or(fmt::NONE.into()),
                     num(e.speed_tps.unwrap_or(-1.0)),
                 )
                 .styled(
@@ -369,14 +369,14 @@ pub fn log(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
                     num(e.tokens.total_tokens),
                 )
                 .text(
-                    cache.map(|c| fmt::pct(c, 1)).unwrap_or("-".into()),
+                    cache.map(|c| fmt::pct(c, 1)).unwrap_or(fmt::NONE.into()),
                     num(cache.unwrap_or(-1.0)),
                 )
                 .text(
                     if e.cost_available {
                         fmt::usd(e.cost_usd)
                     } else {
-                        "-".into()
+                        fmt::NONE.into()
                     },
                     num(e.cost_usd),
                 )
@@ -432,7 +432,11 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
     let k = |s: &str| Span::styled(format!("{s} "), Style::default().fg(t.graph_text));
     let v = |s: String| Span::styled(s, Style::default().fg(t.title));
     let sep = || Span::styled("  ", Style::default());
-    let opt = |o: &Option<String>| o.clone().filter(|s| !s.is_empty()).unwrap_or("-".into());
+    let opt = |o: &Option<String>| {
+        o.clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(fmt::NONE.into())
+    };
     let tier = e
         .effective_service_tier
         .clone()
@@ -474,17 +478,17 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             v(app.endpoint(&opt(&e.endpoint))),
             sep(),
             k("stream"),
-            v(e.stream.map(|s| s.to_string()).unwrap_or("-".into())),
+            v(e.stream.map(|s| s.to_string()).unwrap_or(fmt::NONE.into())),
         ]),
         Line::from(vec![
             k("latency"),
             v(fmt::ms(e.latency_ms)),
             sep(),
             k("ttft"),
-            v(e.ttft_ms.map(fmt::ms).unwrap_or("-".into())),
+            v(e.ttft_ms.map(fmt::ms).unwrap_or(fmt::NONE.into())),
             sep(),
             k("speed"),
-            v(e.speed_tps.map(fmt::tps).unwrap_or("-".into())),
+            v(e.speed_tps.map(fmt::tps).unwrap_or(fmt::NONE.into())),
             sep(),
             k("effort"),
             v(opt(&e.reasoning_effort)),
@@ -537,7 +541,7 @@ pub fn detail(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
             v(e.api_key
                 .as_deref()
                 .map(|k| app.key_name_by_label(k))
-                .unwrap_or("-".into())),
+                .unwrap_or(fmt::NONE.into())),
             if e.is_delete {
                 Span::styled("  (identity deleted)", Style::default().fg(t.warn))
             } else {

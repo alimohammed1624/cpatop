@@ -2,6 +2,10 @@
 
 use chrono::{DateTime, FixedOffset, Utc};
 
+/// What every table cell and readout shows for a value that is missing or
+/// unknown (no cost, no cache rate, no priority, no samples).
+pub const NONE: &str = "—";
+
 /// Format `x` (>= 0) with three significant digits, choosing the number of
 /// decimals from the *rounded* value so carries are handled: `9.996` → `10.0`,
 /// `99.96` → `100`. Returns the text and the rounded value.
@@ -104,7 +108,7 @@ pub fn usd(v: f64) -> String {
 
 /// Optional USD; `—` when the cost is unknown.
 pub fn usd_opt(v: Option<f64>) -> String {
-    v.map(usd).unwrap_or_else(|| "—".into())
+    v.map(usd).unwrap_or_else(|| NONE.into())
 }
 
 /// Percentage with the given number of decimals.
@@ -185,7 +189,7 @@ pub fn age(secs: u64) -> String {
 /// Tokens per second.
 pub fn tps(v: f64) -> String {
     if !v.is_finite() || v <= 0.0 {
-        return "-".into();
+        return NONE.into();
     }
     format!("{v:.1} t/s")
 }
