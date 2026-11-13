@@ -72,6 +72,11 @@ pub fn count(v: f64) -> String {
     }
 }
 
+/// A count with its noun: `1 key`, `6 models`, `1,204 rows`.
+pub fn plural(n: usize, one: &str, many: &str) -> String {
+    format!("{} {}", int(n as f64), if n == 1 { one } else { many })
+}
+
 /// USD: `$0.0123` below one dollar, `$3.41`, `$1,234.56`, `$123k` for very large values.
 ///
 /// The amount is rounded as a whole before it is split into dollars and cents,
@@ -335,6 +340,13 @@ pub fn superscript(n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plurals() {
+        assert_eq!(plural(1, "key", "keys"), "1 key");
+        assert_eq!(plural(0, "key", "keys"), "0 keys");
+        assert_eq!(plural(1204, "row", "rows"), "1,204 rows");
+    }
 
     #[test]
     fn middle_truncation_keeps_the_tail() {

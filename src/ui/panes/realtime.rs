@@ -342,7 +342,7 @@ pub fn outcomes(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bo
         ),
         Span::styled(
             format!(
-                "  rate {}",
+                "  fail rate {}",
                 fmt::ratio_pct(tf, tr)
                     .map(|p| fmt::pct(p, 1))
                     .unwrap_or("-".into())

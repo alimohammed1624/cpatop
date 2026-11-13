@@ -318,11 +318,15 @@ fn collapsed_summary(app: &App, id: PaneId) -> Option<String> {
         }
         AnHeatmap => {
             let h = &d.analysis.get()?.heatmap;
-            format!("{} keys × {} models", h.api_keys.len(), h.models.len())
+            format!(
+                "{} × {}",
+                fmt::plural(h.api_keys.len(), "key", "keys"),
+                fmt::plural(h.models.len(), "model", "models")
+            )
         }
         _ if layout::pane_def(id).2.table => {
             let n = app.table(id).len.get();
-            format!("{n} rows")
+            fmt::plural(n, "row", "rows")
         }
         _ => return None,
     })

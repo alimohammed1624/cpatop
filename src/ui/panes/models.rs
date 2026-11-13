@@ -62,10 +62,12 @@ pub fn pricing(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
                 .text(price(b.cache_write), num(b.cache_write))
                 .text(format!("×{}", m.model_multiplier), num(m.model_multiplier))
                 .text(
+                    // Price branches and conditional multipliers, as the
+                    // web UI's "<b> branches · <c> conditions".
                     format!(
-                        "{}b · {}c",
-                        m.branches.len(),
-                        m.conditional_multipliers.len()
+                        "{} · {}",
+                        fmt::plural(m.branches.len(), "branch", "branches"),
+                        fmt::plural(m.conditional_multipliers.len(), "condition", "conditions")
                     ),
                     num((m.branches.len() + m.conditional_multipliers.len()) as f64),
                 )
@@ -131,7 +133,7 @@ pub fn catalog(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
     let mut right = stale_marker(app, l);
     if let Some(c) = l.get() {
         right.push(Span::styled(
-            format!("{} models", c.data.len()),
+            fmt::plural(c.data.len(), "model", "models"),
             Style::default().fg(t.graph_text),
         ));
     }

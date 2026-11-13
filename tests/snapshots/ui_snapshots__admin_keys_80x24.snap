@@ -10,7 +10,7 @@ expression: s
 │  #2  —             dem…           -        - ││ running     yes  syncing yes │
 │  #3  —             tst…           -        - ││ timezone    Asia/Kolkata     │
 │                                              ││ request log no               │
-│                                              ││ poller      empty            │
+│                                              ││ last pull   no new usage     │
 │                                              ││ polling     10s / 60s        │
 │                                              ││                              │
 ╰─ ↑↓ select · s/S sort · / filter ────────────╯╰──────────────────────────────╯
