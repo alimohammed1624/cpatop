@@ -358,6 +358,12 @@ fn run() -> Result<(), CliError> {
         ui_state_path: paths.ui_state_file(),
         update_check,
         update_cache_path: paths.update_cache_file(),
+        config_path,
+        base_url_source: cpatop::server::BaseUrlSource::detect(
+            cli.base_url.as_deref(),
+            file_cfg.base_url.is_some(),
+        ),
+        use_keyring,
     }))?;
     Ok(())
 }

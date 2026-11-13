@@ -443,11 +443,17 @@ async fn poll_loop(
     }
 }
 
-/// Spawn every poller.
-pub fn spawn_pollers(c: &Client, rx: &watch::Receiver<Query>, tx: &mpsc::UnboundedSender<Msg>) {
-    for g in POLLED {
-        tokio::spawn(poll_loop(g, c.clone(), rx.clone(), tx.clone()));
-    }
+/// Spawn every poller. They end when `rx`'s sender or `tx`'s receiver is
+/// dropped; the handles allow stopping them at once (switching servers).
+pub fn spawn_pollers(
+    c: &Client,
+    rx: &watch::Receiver<Query>,
+    tx: &mpsc::UnboundedSender<Msg>,
+) -> Vec<tokio::task::JoinHandle<()>> {
+    POLLED
+        .into_iter()
+        .map(|g| tokio::spawn(poll_loop(g, c.clone(), rx.clone(), tx.clone())))
+        .collect()
 }
 
 /// Serve on-demand fetches.

@@ -14,6 +14,7 @@ pub mod poller;
 pub mod range;
 pub mod secrets;
 pub mod series;
+pub mod server;
 pub mod session_store;
 pub mod theme;
 pub mod tui;

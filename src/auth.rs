@@ -45,6 +45,12 @@ pub enum AuthCmd {
     /// The server answered `503 migration_in_progress`: wait for the
     /// startup gate again, then resume the session.
     Gate,
+    /// The app switched to another server: stop. With `logout`, end the
+    /// session held on this server first (`--logout-on-exit`); otherwise it
+    /// stays in the session store for the next start.
+    Shutdown {
+        logout: bool,
+    },
 }
 
 pub struct AuthManager {
@@ -63,6 +69,8 @@ pub struct AuthManager {
     auto_disabled: bool,
     /// Server role of the current session (`admin`, `api_key_viewer`).
     role: Option<String>,
+    /// Set by [`AuthCmd::Shutdown`] (its `logout` flag).
+    stopping: Option<bool>,
 }
 
 /// Server role string for a login mode.
@@ -112,6 +120,7 @@ impl AuthManager {
             quick_expiries: 0,
             auto_disabled: false,
             role: None,
+            stopping: None,
         }
     }
 
@@ -130,6 +139,10 @@ impl AuthManager {
                     None => return Wait::Closed,
                     Some(AuthCmd::RetryNow) => return Wait::Retry,
                     Some(AuthCmd::Login(m, s)) => return Wait::Login(m, s),
+                    Some(AuthCmd::Shutdown { logout }) => {
+                        self.stopping = Some(logout);
+                        return Wait::Closed;
+                    }
                     Some(_) => {}
                 }
             }
@@ -138,8 +151,12 @@ impl AuthManager {
 
     pub async fn run(mut self) {
         self.establish(true, None).await;
-        while let Some(cmd) = self.rx.recv().await {
+        while self.stopping.is_none() {
+            let Some(cmd) = self.rx.recv().await else {
+                break;
+            };
             match cmd {
+                AuthCmd::Shutdown { logout } => self.stopping = Some(logout),
                 AuthCmd::Login(mode, secret) => self.interactive_login(mode, secret).await,
                 AuthCmd::Expired(epoch) => {
                     if epoch != self.epoch {
@@ -188,6 +205,23 @@ impl AuthManager {
                 }
             }
         }
+        if self.stopping == Some(true) {
+            self.end_session().await;
+        }
+    }
+
+    /// Log the held session out on this server. The stored copy is only
+    /// forgotten once the server confirmed, so an unreachable server's
+    /// session can still be ended later (`cpatop logout`).
+    async fn end_session(&mut self) {
+        let Some(tok) = self.client.token() else {
+            return;
+        };
+        let r = tokio::time::timeout(Duration::from_secs(5), self.client.logout()).await;
+        if matches!(r, Ok(Ok(()))) {
+            let _ = self.store.remove_token(self.client.base_url(), &tok);
+        }
+        self.client.set_token(None);
     }
 
     async fn interactive_login(&mut self, mode: LoginMode, secret: Secret) {
