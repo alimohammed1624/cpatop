@@ -26,6 +26,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     hit.graph_last.clear();
     hit.selected.clear();
     hit.picker.clear();
+    hit.row_fields.clear();
     render(f, app, &mut hit);
     app.hit = hit;
     // Privacy mode: the last line of defence runs on the finished frame.
@@ -88,6 +89,7 @@ fn dashboard(f: &mut Frame, app: &App, hit: &mut Hit) {
         Some(Overlay::Help) => overlay::help(f, app),
         Some(Overlay::Picker(p)) => overlay::picker(f, app, hit, p),
         Some(Overlay::Range(ed)) => overlay::range_editor(f, app, ed),
+        Some(Overlay::Row(id)) => overlay::row_detail(f, app, hit, *id),
         None => {}
     }
 }

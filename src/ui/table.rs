@@ -146,6 +146,17 @@ pub enum Cell {
 }
 
 impl Cell {
+    /// The cell's full text (no truncation); sparklines have none.
+    pub fn text(&self) -> Option<String> {
+        let join = |v: &[Span<'static>]| v.iter().map(|s| s.content.as_ref()).collect::<String>();
+        match self {
+            Cell::Spans(s) => Some(join(s)),
+            Cell::Choice(alts) => alts.first().map(|a| join(a)),
+            Cell::Spark { .. } => None,
+            Cell::Meter { label, .. } => Some(label.trim().to_string()),
+        }
+    }
+
     /// Width this cell would like.
     fn want(&self) -> usize {
         match self {

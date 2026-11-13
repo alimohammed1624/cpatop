@@ -144,6 +144,16 @@ impl App {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let now = self.server_now();
         match self.overlay.as_mut() {
+            // Row details follow the table's selection.
+            Some(Overlay::Row(id)) => {
+                let id = *id;
+                match k.code {
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') => self.overlay = None,
+                    KeyCode::Down | KeyCode::Char('j') => self.move_sel(id, 1),
+                    KeyCode::Up | KeyCode::Char('k') => self.move_sel(id, -1),
+                    _ => {}
+                }
+            }
             // Help scrolls; only Esc, ? and q close it (q never quits here).
             Some(Overlay::Help) => {
                 let page = self.help_page.get().max(1) as isize;
@@ -587,6 +597,9 @@ impl App {
             KeyCode::Char('?') | KeyCode::F(1) => {
                 self.help_scroll = 0;
                 self.overlay = Some(Overlay::Help)
+            }
+            KeyCode::Enter if focused.is_some_and(|f| self.hit.row_fields.contains_key(&f)) => {
+                self.overlay = focused.map(Overlay::Row);
             }
             KeyCode::Left if graph_focus.is_some() => {
                 self.move_cursor(graph_focus.unwrap_or(PaneId::OvTrend), -1)

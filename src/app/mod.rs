@@ -159,6 +159,9 @@ pub struct Hit {
     pub selected: HashMap<PaneId, String>,
     /// Picker rows (item index → screen row) for mouse selection.
     pub picker: Vec<(usize, Rect)>,
+    /// Every field (column title, full text) of the selected row per
+    /// table, for the row detail popup.
+    pub row_fields: HashMap<PaneId, Vec<(String, String)>>,
 }
 
 /// Side effects requested by the UI.

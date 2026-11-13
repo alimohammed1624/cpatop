@@ -714,3 +714,38 @@ fn privacy_survives_planted_identifiers() {
         assert!(s.contains("http://‹ip›:8318"), "{s}");
     }
 }
+
+/// Enter opens every field of the selected row, untruncated, at 80x24;
+/// ↑↓ follow the table and Esc closes it.
+#[test]
+fn row_popup_shows_full_fields() {
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+    let key = |c: KeyCode| Event::Key(KeyEvent::new(c, KeyModifiers::NONE));
+    let mut app = populated(Role::Admin);
+    for tab in [
+        Tab::Events,
+        Tab::Credentials,
+        Tab::Analysis,
+        Tab::Quota,
+        Tab::Settings,
+    ] {
+        render_tab(&mut app, tab, 80, 24);
+        app.on_event(key(KeyCode::Enter));
+        let s = render(&mut app, 80, 24);
+        assert!(s.contains("· row"), "{tab:?} popup missing:\n{s}");
+        app.on_event(key(KeyCode::Down));
+        let s2 = render(&mut app, 80, 24);
+        assert!(s2.contains("· row"), "{s2}");
+        app.on_event(key(KeyCode::Esc));
+        let s3 = render(&mut app, 80, 24);
+        assert!(!s3.contains("· row"), "{s3}");
+    }
+    // A name cut in the table is whole in the popup.
+    render_tab(&mut app, Tab::Events, 80, 24);
+    app.on_event(key(KeyCode::Enter));
+    let s = render(&mut app, 80, 24);
+    assert!(
+        s.contains("user1@example.com") && s.contains("claude-opus-5-5"),
+        "{s}"
+    );
+}

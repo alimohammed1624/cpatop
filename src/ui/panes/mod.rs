@@ -118,11 +118,11 @@ fn hints(app: &App, id: PaneId) -> &'static str {
             "←→ cursor · g/G ends · Esc clear · Tab next tab"
         }
         OvDist | AnComposition | RtShare if crate::app::dims_for(id, app.role).len() > 1 => {
-            "d dimension · s/S sort · / filter · ↑↓ select"
+            "d dimension · s/S sort · / filter · ↑↓ select · ⏎ row"
         }
         EvLog if admin => "e result · m model · o source · a key · c clear · / find",
-        CrList | QuList => "↑↓ select · s/S sort · / filter · f focus",
-        _ if layout::pane_def(id).2.table => "↑↓ select · s/S sort · / filter",
+        CrList | QuList => "↑↓ select · ⏎ row · s/S sort · / filter · f focus",
+        _ if layout::pane_def(id).2.table => "↑↓ select · ⏎ row · s/S sort · / filter",
         _ => "",
     }
 }
@@ -432,6 +432,20 @@ pub fn table_in(
     hit.bodies.push((id, body));
     let sel = st.selected.min(rows.len() - 1);
     hit.selected.insert(id, rows[sel].id.clone());
+    let fields = cols
+        .iter()
+        .zip(&rows[sel].cells)
+        .filter_map(|(c, cell)| {
+            let v = cell.text()?;
+            let v = v.trim();
+            let title = match c.title.trim() {
+                "" => "·".to_string(),
+                t => t.to_string(),
+            };
+            (!v.is_empty()).then(|| (title, v.to_string()))
+        })
+        .collect();
+    hit.row_fields.insert(id, fields);
 }
 
 /// A chart of the selected table row, drawn under the table when the pane

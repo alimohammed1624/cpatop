@@ -80,6 +80,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
         "tables",
         &[
             ("↑↓ j k", "move selection (mouse wheel too)"),
+            ("Enter", "every field of the selected row"),
             ("PgUp PgDn g G", "page / top / bottom"),
             ("/", "find in the focused table"),
             ("s / S", "sort by next column / reverse"),
@@ -402,4 +403,86 @@ mod tests {
         assert!(out.contains("quit and log out on the server"));
         assert!(!out.contains("session is kept"));
     }
+}
+
+/// Every field of a table's selected row, untruncated (wrapped).
+pub fn row_detail(f: &mut Frame, app: &App, hit: &Hit, id: crate::layout::PaneId) {
+    let t = app.theme();
+    let area = f.area();
+    let Some(fields) = hit.row_fields.get(&id) else {
+        return;
+    };
+    let name = crate::layout::pane_def(id).2.name;
+    let key_w = fields
+        .iter()
+        .map(|(k, _)| fmt::width(k))
+        .max()
+        .unwrap_or(4)
+        .max(4);
+    let val_w = fields
+        .iter()
+        .map(|(_, v)| fmt::width(v))
+        .max()
+        .unwrap_or(10);
+    let w = (key_w + val_w + 5).clamp(30, area.width.saturating_sub(4) as usize) as u16;
+    let text_w = (w as usize).saturating_sub(key_w + 5).max(8);
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for (k, v) in fields {
+        let chunks = wrap_chars(v, text_w);
+        for (i, c) in chunks.into_iter().enumerate() {
+            let key = if i == 0 { k.clone() } else { String::new() };
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("{key:<key_w$}  "),
+                    Style::default().fg(t.graph_text),
+                ),
+                Span::styled(c, Style::default().fg(t.title)),
+            ]));
+        }
+    }
+    let h = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let r = centered(area, w, h);
+    let inner = boxed(f, t, r, &format!("{name} · row"), "↑↓ row · Esc close");
+    f.render_widget(
+        Paragraph::new(lines),
+        Rect::new(
+            inner.x + 1,
+            inner.y,
+            inner.width.saturating_sub(1),
+            inner.height,
+        ),
+    );
+}
+
+/// Split `s` into pieces of at most `w` columns, at spaces when possible.
+fn wrap_chars(s: &str, w: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    for word in s.split(' ') {
+        let candidate = if cur.is_empty() {
+            word.to_string()
+        } else {
+            format!("{cur} {word}")
+        };
+        if fmt::width(&candidate) <= w {
+            cur = candidate;
+            continue;
+        }
+        if !cur.is_empty() {
+            out.push(std::mem::take(&mut cur));
+        }
+        // A word longer than a line is split.
+        let mut piece = String::new();
+        for ch in word.chars() {
+            if fmt::width(&piece) + fmt::width(&ch.to_string()) > w {
+                out.push(std::mem::take(&mut piece));
+            }
+            piece.push(ch);
+        }
+        cur = piece;
+    }
+    if !cur.is_empty() || out.is_empty() {
+        out.push(cur);
+    }
+    out
 }

@@ -17,7 +17,7 @@ expression: s
 │model             tokens share                          req      cost trend   │
 │claude-opus-5-5    67.4M ■■■■■■■■■■■■■■■■■■■■  57.2%    718    $39.95 ▁▁▁▁▁▁▁█│
 │claude-fable-5-2   42.9M ■■■■■■■■■■■■■■■■■■■■  36.5%    307    $46.96 ▁▁▁▁▁▁▁█│
-╰─ ↑↓ select · s/S sort · / filter ──────────────────────────────────── 1-2/3 ─╯
+╰─ ↑↓ select · ⏎ row · s/S sort · / filter ──────────────────────────── 1-2/3 ─╯
 ╭─⁴ latency ─ p95 ttft 9.61s… ─╮╭─⁵ speed ─────────────────────────────────────╮
 │↑9.77s                        ││model                mean  samples per bucket │
 │┈┈┈┈┈┈┈┈┈┈┈┈┈⠈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈⠠││claude-o…s-5-5          -      716            │

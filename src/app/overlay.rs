@@ -190,6 +190,8 @@ pub enum Overlay {
     Help,
     Picker(Picker),
     Range(RangeEditor),
+    /// Every field of the selected row of a table, untruncated.
+    Row(crate::layout::PaneId),
 }
 
 #[cfg(test)]
