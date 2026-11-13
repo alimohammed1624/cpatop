@@ -847,9 +847,9 @@ pub fn cursor_time(bucket: &str, daily: bool) -> String {
     if daily {
         fmt::ts_fmt(bucket, "%a %m-%d")
     } else {
-        fmt::ts_fmt(bucket, "%m-%d %H:%M:%S")
-            .trim_end_matches(":00")
-            .to_string()
+        // Seconds only when they are not zero (`11-13 00:00`, not `11-13 00`).
+        let full = fmt::ts_fmt(bucket, "%m-%d %H:%M:%S");
+        full.strip_suffix(":00").map(str::to_string).unwrap_or(full)
     }
 }
 
