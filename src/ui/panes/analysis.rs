@@ -52,14 +52,8 @@ pub fn tokens(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool
         // The server's hourly buckets start at the first whole UTC hour of
         // the range: at +05:30 Analysis counts `today` from 00:30, Overview
         // from 00:00 (see help, "reading the numbers").
-        let cut = (!daily(a))
-            .then(|| a.range_start.as_deref().and_then(fmt::parse_ts))
-            .flatten()
-            // Only for ranges that start at local midnight (today,
-            // yesterday, custom days): verified against the live server.
-            .filter(|s| s.time() == chrono::NaiveTime::MIN)
-            .and_then(crate::series::utc_hour_cut)
-            .map(|c| c.format("%H:%M").to_string());
+        // The summary's averages are taken over the same span.
+        let cut = crate::series::analysis_bucket_cut(a).map(|c| c.format("%H:%M").to_string());
         let text = match cut {
             Some(c) if area.width >= 90 => format!(
                 "{} · {} · server buckets from {c}",

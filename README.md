@@ -342,7 +342,7 @@ complete starting point. A user theme with a built-in name replaces it.
   ticks sit on whole local hours. cpatop shows the server's numbers as they
   are, so in such a zone `today` differs between tabs: Overview counts from
   00:00, Analysis from the first UTC hour (its title reads `server buckets
-  from 00:30`), and Overview's daily buckets run 00:30 → 00:30 (`days from
+  from 00:30`, and its averages are taken over `00:30 → now`), and Overview's daily buckets run 00:30 → 00:30 (`days from
   00:30`). The activity grid's Σ covers the last N×24 hours (`rolling
   7×24h`), not calendar days. `?` help has these under "reading the
   numbers".

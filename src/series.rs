@@ -246,6 +246,22 @@ pub fn clip_first(labels: &mut [String], start: DateTime<FixedOffset>) {
     }
 }
 
+/// Where an hourly Analysis response's server buckets begin, when that is
+/// later than its range start: ranges starting at local midnight (today,
+/// yesterday, custom days) in a zone off whole UTC hours are counted from
+/// the first UTC hour (00:30 at +05:30; verified against the live server).
+/// Rolling ranges and daily series are counted from their start.
+pub fn analysis_bucket_cut(a: &Analysis) -> Option<DateTime<FixedOffset>> {
+    if a.granularity == "daily" {
+        return None;
+    }
+    a.range_start
+        .as_deref()
+        .and_then(parse_ts)
+        .filter(|s| s.time() == chrono::NaiveTime::MIN)
+        .and_then(utc_hour_cut)
+}
+
 /// The first whole UTC hour at or after `t`, in `t`'s offset, when `t` is
 /// not on one: where the server's first hourly bucket of a range starting
 /// at `t` begins (00:30 for local midnight at +05:30). Its daily buckets
@@ -355,10 +371,12 @@ pub struct Window {
 }
 
 impl Window {
-    /// Window of an analysis response; `None` without bounds or when the
-    /// range starts in the future.
+    /// Window of an analysis response: from where the server's buckets
+    /// begin (see [`analysis_bucket_cut`]) to the range end or now. `None`
+    /// without bounds or when the range starts in the future.
     pub fn of(a: &Analysis, now: DateTime<Utc>) -> Option<Window> {
         let start = a.range_start.as_deref().and_then(parse_ts)?;
+        let start = analysis_bucket_cut(a).map_or(start, |c| c.max(start));
         let end = a.range_end.as_deref().and_then(parse_ts)?;
         let off = *start.offset();
         let now = now.with_timezone(&off);
@@ -598,6 +616,7 @@ mod tests {
         let a = Analysis {
             range_start: Some("2026-10-14T00:00:00+05:30".into()),
             range_end: Some("2026-11-14T00:00:00+05:30".into()),
+            granularity: "daily".into(),
             ..Default::default()
         };
         let w = Window::of(&a, now("2026-11-13T13:50:00Z")).unwrap();
@@ -609,21 +628,59 @@ mod tests {
         let past = Analysis {
             range_start: Some("2026-11-01T00:00:00+05:30".into()),
             range_end: Some("2026-11-08T00:00:00+05:30".into()),
+            granularity: "daily".into(),
             ..Default::default()
         };
         let w = Window::of(&past, now("2026-11-13T13:50:00Z")).unwrap();
         assert!(!w.to_now);
         assert_eq!(w.minutes(), 7.0 * 1440.0);
         assert_eq!(w.bounds(), "Nov 1 → Nov 8");
-        // today: hours since local midnight.
-        let today = Analysis {
+        // today, daily: hours since local midnight.
+        let mut today = Analysis {
             range_start: Some("2026-11-13T00:00:00+05:30".into()),
             range_end: Some("2026-11-13T23:59:59.999999999+05:30".into()),
+            granularity: "daily".into(),
             ..Default::default()
         };
         let w = Window::of(&today, now("2026-11-13T13:50:00Z")).unwrap();
         assert_eq!(w.length(), "19.3h");
         assert_eq!(w.bounds(), "00:00 → now");
+        // today, hourly at +05:30: the server's buckets start at 00:30, so
+        // the span (and every average over it) does too.
+        today.granularity = "hourly".into();
+        let w = Window::of(&today, now("2026-11-13T13:50:00Z")).unwrap();
+        assert_eq!(w.minutes(), 18.0 * 60.0 + 50.0);
+        assert_eq!(w.length(), "18.8h");
+        assert_eq!(w.bounds(), "00:30 → now");
+        // A whole-hour offset has no cut.
+        let utc1 = Analysis {
+            range_start: Some("2026-11-13T00:00:00+01:00".into()),
+            range_end: Some("2026-11-13T23:59:59.999999999+01:00".into()),
+            granularity: "hourly".into(),
+            ..Default::default()
+        };
+        let w = Window::of(&utc1, now("2026-11-13T13:50:00Z")).unwrap();
+        assert_eq!(w.bounds(), "00:00 → now");
+        // Yesterday (a past day): 00:30 to its own end.
+        let yesterday = Analysis {
+            range_start: Some("2026-11-12T00:00:00+05:30".into()),
+            range_end: Some("2026-11-13T00:00:00+05:30".into()),
+            granularity: "hourly".into(),
+            ..Default::default()
+        };
+        let w = Window::of(&yesterday, now("2026-11-13T13:50:00Z")).unwrap();
+        assert_eq!(w.minutes(), 23.5 * 60.0);
+        assert_eq!(w.bounds(), "00:30 → 00:00");
+        // Rolling hours start mid-hour and are counted from their start.
+        let rolling = Analysis {
+            range_start: Some("2026-11-13T07:20:00+05:30".into()),
+            range_end: Some("2026-11-13T19:20:00+05:30".into()),
+            granularity: "hourly".into(),
+            ..Default::default()
+        };
+        let w = Window::of(&rolling, now("2026-11-13T13:50:00Z")).unwrap();
+        assert_eq!(w.minutes(), 12.0 * 60.0);
+        assert_eq!(w.bounds(), "07:20 → 19:20");
         assert!(Window::of(&Analysis::default(), now("2026-11-13T13:50:00Z")).is_none());
     }
 
