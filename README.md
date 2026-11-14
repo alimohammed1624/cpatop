@@ -187,7 +187,8 @@ only logs in again when it is no longer valid. **`q` keeps the server session**
 for next time; `cpatop logout` (or `X X` in the app) ends it, and
 `--logout-on-exit` (config `logout_on_exit = true`) ends it whenever you quit —
 also when cpatop is stopped by `SIGTERM`, `SIGHUP` (terminal closed) or
-`SIGINT`, which restore the terminal like `q`. A credential given explicitly
+`SIGINT`, which restore the terminal like `q` and then exit with 128 + the
+signal number (143, 129, 130; `q` exits 0). A credential given explicitly
 for this run (`--password-file`, `--api-key-file`, `CPATOP_PASSWORD`,
 `CPATOP_API_KEY`) decides the role, so `--api-key-file` always opens the
 per-key dashboard even when an admin session is stored.

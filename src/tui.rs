@@ -156,7 +156,27 @@ enum Aux {
     },
 }
 
-pub async fn run(args: RunArgs) -> Result<()> {
+/// How a dashboard run ended (after the full teardown).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Exit {
+    /// `q`, or the terminal's input closed.
+    Quit,
+    /// A termination signal, by number (TERM 15, HUP 1, INT 2).
+    Signal(u8),
+}
+
+impl Exit {
+    /// The process exit status: 0, or 128 + the signal number as shells
+    /// report it (143 TERM, 129 HUP, 130 INT).
+    pub fn code(self) -> u8 {
+        match self {
+            Exit::Quit => 0,
+            Exit::Signal(n) => 128u8.saturating_add(n),
+        }
+    }
+}
+
+pub async fn run(args: RunArgs) -> Result<Exit> {
     let RunArgs {
         mut app,
         creds,
@@ -196,8 +216,10 @@ pub async fn run(args: RunArgs) -> Result<()> {
         prev(info);
     }));
     // TERM / HUP / INT end the run like `q`: the terminal is restored and
-    // `--logout-on-exit` honoured below.
+    // `--logout-on-exit` honoured below; the exit status then names the
+    // signal (128 + its number).
     let mut signals = Signals::new();
+    let mut caught: Option<u8> = None;
     let mouse_on = if mouse {
         crossterm::execute!(std::io::stdout(), EnableMouseCapture).map_err(color_eyre::Report::from)
     } else {
@@ -286,7 +308,10 @@ pub async fn run(args: RunArgs) -> Result<()> {
                     Aux::Probe { id, url, result } => app.on_server_probe(id, url, result),
                 },
                 _ = tick.tick() => app.on_tick(),
-                _ = signals.recv() => break Ok(()),
+                n = signals.recv() => {
+                    caught = Some(n);
+                    break Ok(());
+                }
             }
         }
     };
@@ -333,17 +358,25 @@ pub async fn run(args: RunArgs) -> Result<()> {
     };
     tokio::select! {
         _ = ending => {}
-        _ = signals.recv() => {}
+        n = signals.recv() => {
+            caught.get_or_insert(n);
+        }
     }
-    result
+    result.map(|()| caught.map_or(Exit::Quit, Exit::Signal))
 }
 
 /// Termination signals: SIGTERM, SIGHUP and SIGINT on Unix (Ctrl-C in the
 /// app arrives as a key, but `kill -INT` does not), Ctrl-C elsewhere.
 struct Signals {
     #[cfg(unix)]
-    streams: Vec<(&'static str, tokio::signal::unix::Signal)>,
+    streams: Vec<(u8, tokio::signal::unix::Signal)>,
 }
+
+/// POSIX signal numbers (the same on every Unix).
+const SIGHUP: u8 = 1;
+const SIGINT: u8 = 2;
+#[cfg(unix)]
+const SIGTERM: u8 = 15;
 
 impl Signals {
     fn new() -> Signals {
@@ -351,9 +384,9 @@ impl Signals {
         {
             use tokio::signal::unix::{SignalKind, signal};
             let streams = [
-                ("SIGTERM", SignalKind::terminate()),
-                ("SIGHUP", SignalKind::hangup()),
-                ("SIGINT", SignalKind::interrupt()),
+                (SIGTERM, SignalKind::terminate()),
+                (SIGHUP, SignalKind::hangup()),
+                (SIGINT, SignalKind::interrupt()),
             ]
             .into_iter()
             .filter_map(|(n, k)| signal(k).ok().map(|s| (n, s)))
@@ -364,8 +397,8 @@ impl Signals {
         Signals {}
     }
 
-    /// Wait for the next signal; returns its name.
-    async fn recv(&mut self) -> &'static str {
+    /// Wait for the next signal; returns its number.
+    async fn recv(&mut self) -> u8 {
         #[cfg(unix)]
         {
             if self.streams.is_empty() {
@@ -383,7 +416,40 @@ impl Signals {
         #[cfg(not(unix))]
         {
             let _ = tokio::signal::ctrl_c().await;
-            "Ctrl-C"
+            SIGINT
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exit_status_is_128_plus_the_signal() {
+        assert_eq!(Exit::Quit.code(), 0);
+        assert_eq!(Exit::Signal(SIGHUP).code(), 129);
+        assert_eq!(Exit::Signal(SIGINT).code(), 130);
+        #[cfg(unix)]
+        assert_eq!(Exit::Signal(SIGTERM).code(), 143);
+    }
+
+    /// Real signals sent to this process come back as their numbers (the
+    /// handlers replace the default action, so the test process survives).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn signals_report_their_number() {
+        let mut signals = Signals::new();
+        let pid = std::process::id().to_string();
+        for (flag, n) in [("-TERM", SIGTERM), ("-HUP", SIGHUP), ("-INT", SIGINT)] {
+            let ok = std::process::Command::new("kill")
+                .args([flag, &pid])
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok, "kill {flag}");
+            let got = tokio::time::timeout(Duration::from_secs(5), signals.recv()).await;
+            assert_eq!(got, Ok(n), "{flag}");
         }
     }
 }

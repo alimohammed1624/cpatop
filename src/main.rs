@@ -89,7 +89,7 @@ fn main() -> ExitCode {
     install_hooks();
     let _ = rustls::crypto::ring::default_provider().install_default();
     match run() {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(e) => {
             e.print();
             ExitCode::from(e.code)
@@ -214,7 +214,9 @@ fn logout_stored(store: &SessionStore, base_url: &str) -> Result<Vec<RoleLogout>
     Ok(out)
 }
 
-fn run() -> Result<(), CliError> {
+/// The process exit status on success: 0, or 128 + the signal that ended
+/// the dashboard.
+fn run() -> Result<ExitCode, CliError> {
     let cli = parse_cli();
     let paths = Paths::discover();
 
@@ -273,7 +275,7 @@ fn run() -> Result<(), CliError> {
                     eprintln!("warning: {}", scrub_output(&e));
                 }
             }
-            return Ok(());
+            return Ok(ExitCode::SUCCESS);
         }
         Some(Command::Paths) => {
             // In privacy mode each path is masked segment by segment
@@ -289,7 +291,7 @@ fn run() -> Result<(), CliError> {
             println!("themes dir  : {}", show(paths.themes_dir()));
             println!("session     : {}", show(paths.session_file()));
             println!("update cache: {}", show(paths.update_cache_file()));
-            return Ok(());
+            return Ok(ExitCode::SUCCESS);
         }
         Some(Command::CheckUpdate) => {
             // Explicit: ignores the opt-outs and the cache (and refreshes it).
@@ -297,10 +299,10 @@ fn run() -> Result<(), CliError> {
             let cache = paths.update_cache_file();
             let r = rt.block_on(update::check_and_cache(cache.as_deref()));
             out(update::report(&r, update::CURRENT));
-            return Ok(());
+            return Ok(ExitCode::SUCCESS);
         }
         Some(Command::Keyring { action }) => {
-            return match action {
+            let done: Result<(), CliError> = match action {
                 KeyringAction::Set { mode } => {
                     let label = match mode {
                         LoginMode::Admin => "Admin password",
@@ -331,6 +333,8 @@ fn run() -> Result<(), CliError> {
                     Ok(())
                 }
             };
+            done?;
+            return Ok(ExitCode::SUCCESS);
         }
         Some(Command::Logout) => {
             let store = SessionStore::new(paths.session_file());
@@ -344,7 +348,7 @@ fn run() -> Result<(), CliError> {
                     Err(e) => out(format!("forgot the local {role} session ({e})")),
                 }
             }
-            return Ok(());
+            return Ok(ExitCode::SUCCESS);
         }
         None => {}
     }
@@ -452,7 +456,7 @@ fn run() -> Result<(), CliError> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    rt.block_on(cpatop::tui::run(cpatop::tui::RunArgs {
+    let exit = rt.block_on(cpatop::tui::run(cpatop::tui::RunArgs {
         app,
         creds,
         store,
@@ -466,7 +470,7 @@ fn run() -> Result<(), CliError> {
         ),
         use_keyring,
     }))?;
-    Ok(())
+    Ok(ExitCode::from(exit.code()))
 }
 
 #[cfg(test)]
