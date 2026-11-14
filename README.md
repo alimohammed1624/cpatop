@@ -222,7 +222,7 @@ The focused pane lists its own keys in its bottom border; `?` shows them all.
 | `t` / `T` | Next / previous theme |
 | `b` | Graph symbols: braille / block / ascii |
 | `b` (offline screen), `Ctrl-S` (login screen) | Change the server URL |
-| `x` | Privacy mode: hide e-mails, API keys and IP addresses, and what you type into `/` and picker searches (remembered) |
+| `x` | Privacy mode: hide e-mails, API keys and IP addresses, and what you type into `/` and picker searches (remembered; the header shows `◐ private` while it is on) |
 | `X` `X` | Log out on the server (press twice within 3 s) |
 | `Esc` | Close the overlay / clear the filter or cursor — never quits |
 | `?` | Help (scrolls with `↑↓` `j`/`k` `PgUp`/`PgDn` `g`/`G` or the wheel; `Esc`, `?` or `q` close it) |
@@ -354,6 +354,8 @@ complete starting point. A user theme with a built-in name replaces it.
 - `--privacy` (or `x`) hides every e-mail address, every part of an API
   key and every IP address, in tables, details, pickers, error text and the
   login and offline screens — handy for screenshots and screen sharing.
+  While it is on the header shows `◐ private` (just `◐` when the terminal
+  is narrow).
   Accounts are shown as `account-N` (N is the server's credential id, so
   labels are the same in every run), keys as `key #id` (aliases hidden),
   IPs as `‹ip›`; the server is shown as scheme, host and port only (an IP

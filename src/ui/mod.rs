@@ -132,16 +132,30 @@ const HEADER_LEVELS: u8 = 10;
 const MANUAL: &str = "manual (R)";
 const MANUAL_SHORT: &str = "manual";
 
+/// Privacy-mode badge in the header, and its squeezed form.
+const PRIVATE: &str = "◐ private";
+const PRIVATE_SHORT: &str = "◐";
+
 /// The header's segments at a squeeze level: 0 is everything in full; then
 /// the age loses "ago", `manual (R)` shortens to `manual`, the refresh
 /// cadence goes, the host goes, a key viewer's key is named by its number
-/// only, the age goes, the update badge shrinks to `↑` (it never goes),
-/// then the role, the range and the key filter.
+/// only, the age goes, the update badge shrinks to `↑` and the privacy
+/// badge to `◐` (neither ever goes), then the role, the range and the key
+/// filter.
 fn header_segments(app: &App, level: u8) -> Vec<Vec<Span<'static>>> {
     let t = app.theme();
     let dim = Style::default().fg(t.graph_text);
     let val = Style::default().fg(t.title);
     let mut segs: Vec<Vec<Span<'static>>> = Vec::new();
+    // Privacy mode is on (`x`, `--privacy`, or saved from last time):
+    // shortened when space is short, never hidden.
+    if app.settings.privacy {
+        let badge = Style::default().fg(t.accent).add_modifier(Modifier::BOLD);
+        segs.push(vec![Span::styled(
+            if level < 7 { PRIVATE } else { PRIVATE_SHORT },
+            badge,
+        )]);
+    }
     if level < 4 {
         segs.push(vec![
             Span::styled("⌂ ", dim),
@@ -262,9 +276,9 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
     };
 
     // A message must not push the title, the role, the refresh age, the
-    // status and the update badge off the line: it is cut instead.
-    // (Everything the header keeps at squeeze level 5: role, range, key
-    // filter, the age — measured with three digits — and the badge.)
+    // status and the privacy and update badges off the line: it is cut
+    // instead. (Everything the header keeps at squeeze level 5: role, range,
+    // key filter, the age — measured with three digits — and the badges.)
     let status_w0: usize = status.iter().map(|s| s.width()).sum();
     let essentials = header_segments(app, 5)
         .iter()
@@ -332,9 +346,9 @@ fn header(f: &mut Frame, app: &App, area: Rect) {
         .map(|l| header_segments(app, l))
         .find(|s| 8 + width_of(s) + slack(s) + status_w <= budget)
         .unwrap_or_else(|| header_segments(app, HEADER_LEVELS));
-    // Still too wide (a long error): keep only the update badge.
+    // Still too wide (a long error): keep only the privacy and update badges.
     if 8 + width_of(&segs) + status_w > budget {
-        segs.retain(|s| s.first().is_some_and(|x| x.content.starts_with('↑')));
+        segs.retain(|s| s.first().is_some_and(|x| x.content.starts_with(['↑', '◐'])));
     }
     let mut spans = title;
     for s in segs {

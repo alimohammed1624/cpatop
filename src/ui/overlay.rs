@@ -135,6 +135,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("b", "graph symbols braille / block / ascii"),
             ("x", "privacy: hide e-mails, API keys, IPs"),
             ("", "also typed filters and searches"),
+            ("", "header shows ◐ private while on"),
             ("X X", "log out on the server (twice in 3 s)"),
             ("?", "this help"),
         ],

@@ -1162,6 +1162,54 @@ fn update_badge_never_disappears() {
     }
 }
 
+/// Privacy mode shows a header badge (`◐ private`, `◐` when squeezed) that
+/// `x` toggles; like the update badge it outlasts the other header fields
+/// and is not pushed off by a toast.
+#[test]
+fn privacy_badge_shows_while_private() {
+    use crossterm::event::KeyCode;
+    for role in [Role::Admin, Role::KeyViewer] {
+        for no_color in [false, true] {
+            let mut app = populated(role);
+            for t in &mut app.themes {
+                t.no_color = no_color;
+            }
+            app.update_available = Some("v9.9.9".into());
+            let head = |app: &mut App, w, h| render(app, w, h).lines().next().unwrap().to_string();
+            render_tab(&mut app, Tab::Overview, 80, 24);
+            assert!(
+                !head(&mut app, 80, 24).contains('◐'),
+                "{role:?}: badge while public"
+            );
+            press(&mut app, KeyCode::Char('x'));
+            assert!(app.settings.privacy);
+            app.flash = None;
+            for (w, h, full) in [(50, 12, false), (80, 24, true), (160, 48, true)] {
+                let s = head(&mut app, w, h);
+                assert!(s.contains('◐') && s.contains('↑'), "{role:?} {w}: {s}");
+                if full {
+                    assert!(s.contains("◐ private"), "{role:?} {w}: {s}");
+                }
+                assert!(s.contains("● ok"), "{s}");
+                app.flash("a fairly long message about something that just happened");
+                let s = head(&mut app, w, h);
+                assert!(s.contains('◐'), "{role:?} {w} with toast: {s}");
+                app.flash = None;
+            }
+            // At 50 columns it gives way only after the host and cadence.
+            let s = head(&mut app, 50, 12);
+            assert!(!s.contains('⌂') && !s.contains('⟳'), "{s}");
+            press(&mut app, KeyCode::Char('x'));
+            assert!(!app.settings.privacy);
+            app.flash = None;
+            assert!(
+                !head(&mut app, 80, 24).contains('◐'),
+                "{role:?}: badge after x"
+            );
+        }
+    }
+}
+
 /// A key viewer pressing an admin tab's key is told why nothing happens,
 /// and the header keeps its refresh age.
 #[test]
