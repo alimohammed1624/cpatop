@@ -17,7 +17,7 @@ expression: s
 │                                                                              │
 │                                                                              │
 ╰─ ↑↓ select · ⏎ row · s/S sort · / filter ────────────────────────────────────╯
-╭─² sessions ───────────────────── 4 sessions ─╮╭─³ server ───── cpatop 0.2.0 ─╮
+╭─² sessions ───────────────────── 4 sessions ─╮╭─³ server ───── cpatop 0.2.1 ─╮
 │kind    name       last seen   expires        ││ server      localhost:8318   │
 │admin   admin      11-13 16:39 11-20 16:33 ●  ││ version     v2.1.0           │
 │api key #1 dem…    11-13 16:39 11-20 16:33    ││ running     yes  syncing yes │
