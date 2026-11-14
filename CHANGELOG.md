@@ -6,6 +6,27 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-14
+
+A small fix release.
+
+### Added
+- The header shows `◐ private` while privacy mode is on (`◐` when the
+  terminal is narrow; it stays after less important header fields have
+  gone). Privacy mode is remembered across restarts, so this shows when it
+  is still on from last time.
+
+### Fixed
+- Analysis averages for ranges counted from the first UTC hour (`today`
+  at +05:30, whose title reads `server buckets from 00:30`) divided by the
+  time since 00:00 and read `00:00 → now`; they now cover the span the
+  server's buckets do (`avg/hour … over 9.4h (00:30 → now)`). The
+  composition pane's rates use the same span. Rolling hours and daily
+  ranges are unchanged.
+- After being stopped by `SIGTERM`, `SIGHUP` or `SIGINT`, cpatop still
+  restores the terminal and honours `--logout-on-exit`, but now exits with
+  143, 129 or 130 (128 + the signal number) instead of 0. `q` exits 0.
+
 ## [0.2.0] - 2026-11-14
 
 A polish and hardening release. Privacy mode now covers everything cpatop
