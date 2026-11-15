@@ -6,6 +6,23 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-11-16
+
+Update prompt.
+
+### Added
+- When a newer release is out, the dashboard asks whether to update:
+  `u` downloads this platform's release, checks it against the release's
+  `SHA256SUMS` and replaces the binary, then `r` restarts into it (the
+  server session is kept); `l` asks again next start; `s` skips that
+  release. Where the binary cannot be replaced, or there is no prebuilt
+  binary for the platform, the prompt shows the install command instead.
+
+### Fixed
+- The update check runs on every start. It reused a cached answer for
+  24 hours, so a release published after a check went unnoticed until the
+  next day.
+
 ## [0.2.3] - 2026-11-16
 
 Quota history fix.
