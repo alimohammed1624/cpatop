@@ -1,6 +1,6 @@
 //! Overlays: help, pickers and the custom range editor.
 
-use crate::app::{App, Hit, Picker, RangeEditor, Unit};
+use crate::app::{App, Hit, Picker, RangeEditor, Unit, UpdatePrompt, UpdateState};
 use crate::fmt;
 use crate::theme::Theme;
 use ratatui::Frame;
@@ -550,6 +550,93 @@ pub fn range_editor(f: &mut Frame, app: &App, ed: &RangeEditor) {
     Paragraph::new(lines)
         .wrap(ratatui::widgets::Wrap { trim: false })
         .render(inner, f.buffer_mut());
+}
+
+/// The update prompt: the offer (update now, later, skip), the progress
+/// of the update, then restart — or why it failed and how to update by
+/// hand.
+pub fn update_prompt(f: &mut Frame, app: &App, p: &UpdatePrompt) {
+    use crate::update::{CURRENT, UPGRADE_CMD, display_version};
+    let t = app.theme();
+    let new = display_version(&p.tag);
+    let dim = Style::default().fg(t.graph_text);
+    let key = Style::default().fg(t.hi).add_modifier(Modifier::BOLD);
+    let ok = Style::default().fg(t.ok).add_modifier(Modifier::BOLD);
+    let choice = |k: &str, what: &str| {
+        Line::from(vec![
+            Span::styled(format!(" {k:<4}"), key),
+            Span::styled(what.to_string(), Style::default().fg(t.fg)),
+        ])
+    };
+    let w = 66u16;
+    let text_w = w.min(f.area().width.saturating_sub(2)).saturating_sub(3) as usize;
+    let headline = Line::from(vec![
+        Span::styled(format!(" cpatop {new}"), ok),
+        Span::styled(
+            format!(" is available (you have {CURRENT})"),
+            Style::default().fg(t.fg),
+        ),
+    ]);
+    let (title, bottom, lines) = match &p.state {
+        UpdateState::Offer => (
+            "update available",
+            "u update · l later · s skip",
+            vec![
+                headline,
+                Line::from(""),
+                choice("u", "update now: download, verify and replace this binary"),
+                choice("l", "later: ask again next start"),
+                choice("s", "skip this version"),
+            ],
+        ),
+        UpdateState::Working(step) => (
+            "updating",
+            "Ctrl-C quit",
+            vec![
+                headline,
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!(" updating to {new}: {}", step.label()),
+                    Style::default().fg(t.warn),
+                )),
+            ],
+        ),
+        UpdateState::Done => (
+            "updated",
+            "r restart · Esc later",
+            vec![
+                Line::from(Span::styled(format!(" ✓ updated to cpatop {new}"), ok)),
+                Line::from(""),
+                choice("r", "restart now (keeps the session)"),
+                choice("Esc", "later: the new version runs from the next start"),
+            ],
+        ),
+        UpdateState::Failed(e) => {
+            let mut v = vec![Line::from(Span::styled(
+                format!(" ✗ update to {new} failed"),
+                Style::default().fg(t.err).add_modifier(Modifier::BOLD),
+            ))];
+            for l in wrap_command(e, text_w.saturating_sub(1)) {
+                v.push(Line::from(Span::styled(
+                    format!(" {l}"),
+                    Style::default().fg(t.fg),
+                )));
+            }
+            v.push(Line::from(""));
+            v.push(Line::from(Span::styled(" update by hand:", dim)));
+            for l in wrap_command(UPGRADE_CMD, text_w.saturating_sub(1)) {
+                v.push(Line::from(Span::styled(
+                    format!(" {l}"),
+                    Style::default().fg(t.hi),
+                )));
+            }
+            ("update failed", "Esc close", v)
+        }
+    };
+    // Long text is wrapped above, so every line fits the box.
+    let r = centered(f.area(), w, lines.len() as u16 + 2);
+    let inner = boxed(f, t, r, title, bottom);
+    Paragraph::new(lines).render(inner, f.buffer_mut());
 }
 
 /// Every field of a table's selected row, untruncated (wrapped). Longer

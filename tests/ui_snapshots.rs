@@ -1695,3 +1695,105 @@ fn quota_history_follows_the_selected_window() {
         "{seen:?}"
     );
 }
+
+/// A newer release opens the update prompt once the dashboard is up
+/// (never over the login screen); `u` starts the update, its steps show,
+/// and `r` restarts once it is installed.
+#[test]
+fn update_prompt_offers_and_restarts() {
+    use cpatop::app::{Effect, Overlay};
+    use cpatop::update::Step;
+    use crossterm::event::KeyCode;
+    let mut app = new_app();
+    app.on_msg(Msg::Auth(AuthEvent::NeedLogin {
+        error: None,
+        mode: cpatop::api::LoginMode::Admin,
+    }));
+    app.on_update_available("v9.9.9".into(), true);
+    let s = render(&mut app, 100, 30);
+    app.after_draw();
+    assert!(app.overlay.is_none(), "not over the login screen:\n{s}");
+
+    let mut app = populated(Role::Admin);
+    app.on_update_available("v9.9.9".into(), true);
+    render_tab(&mut app, Tab::Overview, 100, 30);
+    app.after_draw();
+    let s = render(&mut app, 100, 30);
+    let current = env!("CARGO_PKG_VERSION");
+    assert!(
+        s.contains(&format!("cpatop 9.9.9 is available (you have {current})")),
+        "{s}"
+    );
+    assert!(s.contains("u update · l later · s skip"), "{s}");
+    for l in ["u   update now", "l   later", "s   skip this version"] {
+        assert!(s.contains(l), "{l}:\n{s}");
+    }
+    app.drain_effects();
+    press(&mut app, KeyCode::Char('u'));
+    assert!(
+        app.drain_effects()
+            .iter()
+            .any(|e| matches!(e, Effect::SelfUpdate(t) if t == "v9.9.9"))
+    );
+    app.on_update_step(Step::Verifying);
+    assert!(render(&mut app, 100, 30).contains("updating to 9.9.9: verifying…"));
+    // Keys wait while it works.
+    press(&mut app, KeyCode::Esc);
+    assert!(matches!(app.overlay, Some(Overlay::Update(_))));
+    app.on_update_result("v9.9.9".into(), Ok(()));
+    let s = render(&mut app, 100, 30);
+    assert!(
+        s.contains("updated to cpatop 9.9.9") && s.contains("r restart"),
+        "{s}"
+    );
+    press(&mut app, KeyCode::Char('r'));
+    assert!(app.restart && app.should_quit);
+
+    // A failure says why and how to update by hand.
+    let mut app = populated(Role::Admin);
+    app.on_update_result("v9.9.9".into(), Err("download failed: HTTP 404".into()));
+    let s = render(&mut app, 100, 30);
+    assert!(
+        s.contains("update to 9.9.9 failed") && s.contains("HTTP 404"),
+        "{s}"
+    );
+    assert!(s.contains("install.sh"), "{s}");
+    press(&mut app, KeyCode::Esc);
+    assert!(app.overlay.is_none());
+}
+
+/// `l` closes the prompt for this run (the header badge stays); `s` skips
+/// the release for good; a skipped release is never offered.
+#[test]
+fn update_prompt_later_and_skip() {
+    use cpatop::app::Effect;
+    use crossterm::event::KeyCode;
+    let offered = |offer: bool| {
+        let mut app = populated(Role::Admin);
+        app.on_update_available("v9.9.9".into(), offer);
+        render_tab(&mut app, Tab::Overview, 100, 30);
+        app.after_draw();
+        app
+    };
+    let mut app = offered(true);
+    press(&mut app, KeyCode::Char('l'));
+    assert!(app.overlay.is_none());
+    assert!(
+        render(&mut app, 100, 30).contains("↑ v9.9.9"),
+        "badge stays"
+    );
+
+    let mut app = offered(true);
+    app.drain_effects();
+    press(&mut app, KeyCode::Char('s'));
+    assert!(app.overlay.is_none());
+    assert!(
+        app.drain_effects()
+            .iter()
+            .any(|e| matches!(e, Effect::SkipUpdate(t) if t == "v9.9.9"))
+    );
+
+    let app = offered(false);
+    assert!(app.overlay.is_none(), "a skipped release is not offered");
+    assert_eq!(app.update_available.as_deref(), Some("v9.9.9"));
+}

@@ -10,7 +10,9 @@ mod privacy;
 pub mod server_edit;
 
 pub use live::{EventFilters, LiveState, LiveStatus, ResultFilter, match_error};
-pub use overlay::{Overlay, PickItem, PickKind, Picker, RangeEditor, Unit};
+pub use overlay::{
+    Overlay, PickItem, PickKind, Picker, RangeEditor, Unit, UpdatePrompt, UpdateState,
+};
 pub use privacy::{
     HIDDEN, IP_MASK, PATH_MASK, PROVIDER_ABBREVS, Sensitive, contains_ip, guard_buffer, ident_kind,
     ident_kind_short, is_identifier, is_ip, is_sensitive, looks_like_key, mask_ips, output_privacy,
@@ -197,6 +199,12 @@ pub enum Effect {
     /// Switch every request to this (probed) server and save it to the
     /// config file; the runner answers with [`App::on_server_saved`].
     SwitchServer(String),
+    /// Download and install cpatop release `tag` in place of this binary;
+    /// the runner reports with [`App::on_update_step`] and
+    /// [`App::on_update_result`].
+    SelfUpdate(String),
+    /// Never offer release `tag` again.
+    SkipUpdate(String),
 }
 
 #[derive(Debug)]
@@ -308,6 +316,10 @@ pub struct App {
     pub saved_ui: UiState,
     /// Tag of a newer cpatop release, from the background update check.
     pub update_available: Option<String>,
+    /// A release to offer once the dashboard is up and nothing else is open.
+    pub update_offer: Option<String>,
+    /// Quit to restart into the updated binary (the session is kept).
+    pub restart: bool,
     /// The "change server URL" field (offline, login and connecting screens).
     pub server_edit: Option<ServerEdit>,
     /// Outcome of the last server change, shown until the dashboard loads.
@@ -409,6 +421,8 @@ impl App {
             touched: Touched::default(),
             saved_ui: ui.clone(),
             update_available: None,
+            update_offer: None,
+            restart: false,
             server_edit: None,
             server_notice: None,
             probe_seq: 0,
@@ -772,8 +786,56 @@ impl App {
         Some(left.as_secs_f64().ceil().max(1.0) as u64)
     }
 
+    /// A newer release from the background check: the header badge, and
+    /// (when `offer`, i.e. not skipped) the update prompt.
+    pub fn on_update_available(&mut self, tag: String, offer: bool) {
+        self.update_available = Some(tag.clone());
+        if !offer {
+            return;
+        }
+        match &mut self.overlay {
+            // A newer tag replaces the one being offered.
+            Some(Overlay::Update(p)) if p.state == UpdateState::Offer => p.tag = tag,
+            // An update under way (or done) is not interrupted.
+            Some(Overlay::Update(_)) => {}
+            _ => self.update_offer = Some(tag),
+        }
+    }
+
+    pub fn on_update_step(&mut self, step: crate::update::Step) {
+        if let Some(Overlay::Update(p)) = &mut self.overlay {
+            p.state = UpdateState::Working(step);
+        }
+    }
+
+    /// The self-update ended; reopens the prompt if it was closed meanwhile.
+    pub fn on_update_result(&mut self, tag: String, r: Result<(), String>) {
+        let state = match r {
+            Ok(()) => UpdateState::Done,
+            Err(e) => UpdateState::Failed(e),
+        };
+        self.overlay = Some(Overlay::Update(UpdatePrompt { tag, state }));
+    }
+
+    /// Open a pending update offer when the dashboard has nothing else open.
+    fn show_update_offer(&mut self) {
+        if self.update_offer.is_some()
+            && matches!(self.screen, Screen::Dashboard)
+            && self.overlay.is_none()
+            && matches!(self.mode, InputMode::Normal)
+            && self.server_edit.is_none()
+            && let Some(tag) = self.update_offer.take()
+        {
+            self.overlay = Some(Overlay::Update(UpdatePrompt {
+                tag,
+                state: UpdateState::Offer,
+            }));
+        }
+    }
+
     /// Called after each draw: react to selection changes.
     pub fn after_draw(&mut self) {
+        self.show_update_offer();
         if self.role != Some(Role::Admin) || !matches!(self.screen, Screen::Dashboard) {
             return;
         }

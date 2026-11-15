@@ -76,8 +76,9 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub no_mouse: bool,
 
-    /// Do not check GitHub for a newer cpatop release on start
-    /// (also CPATOP_NO_UPDATE_CHECK=1 or config `update_check = false`)
+    /// Do not check GitHub for a newer cpatop release on start, nor offer
+    /// to update (also CPATOP_NO_UPDATE_CHECK=1 or config
+    /// `update_check = false`)
     #[arg(long, global = true)]
     pub no_update_check: bool,
 

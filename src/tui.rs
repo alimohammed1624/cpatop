@@ -148,7 +148,10 @@ impl Backend {
 
 /// Results from tasks that outlive a backend.
 enum Aux {
-    Update(String),
+    /// A newer release, and whether to offer it.
+    Update(String, bool),
+    UpdateStep(crate::update::Step),
+    Updated(String, Result<(), String>),
     Probe {
         id: u64,
         url: String,
@@ -163,6 +166,8 @@ pub enum Exit {
     Quit,
     /// A termination signal, by number (TERM 15, HUP 1, INT 2).
     Signal(u8),
+    /// Restart into the updated binary (the server session is kept).
+    Restart,
 }
 
 impl Exit {
@@ -170,7 +175,7 @@ impl Exit {
     /// report it (143 TERM, 129 HUP, 130 INT).
     pub fn code(self) -> u8 {
         match self {
-            Exit::Quit => 0,
+            Exit::Quit | Exit::Restart => 0,
             Exit::Signal(n) => 128u8.saturating_add(n),
         }
     }
@@ -229,8 +234,9 @@ pub async fn run(args: RunArgs) -> Result<Exit> {
     // means no badge.
     if update_check {
         let tx = aux_tx.clone();
-        tokio::spawn(crate::update::background(update_cache_path, move |tag| {
-            let _ = tx.send(Aux::Update(tag));
+        let path = update_cache_path.clone();
+        tokio::spawn(crate::update::background(path, move |tag, offer| {
+            let _ = tx.send(Aux::Update(tag, offer));
         }));
     }
 
@@ -264,6 +270,22 @@ pub async fn run(args: RunArgs) -> Result<Exit> {
                             let result = server::probe(&url, server::PROBE_TIMEOUT).await;
                             let _ = tx.send(Aux::Probe { id, url, result });
                         });
+                    }
+                    Effect::SelfUpdate(tag) => {
+                        let tx = aux_tx.clone();
+                        tokio::spawn(async move {
+                            let step_tx = tx.clone();
+                            let r = crate::update::self_update(&tag, move |s| {
+                                let _ = step_tx.send(Aux::UpdateStep(s));
+                            })
+                            .await;
+                            let _ = tx.send(Aux::Updated(tag, r));
+                        });
+                    }
+                    Effect::SkipUpdate(tag) => {
+                        if let Some(p) = &update_cache_path {
+                            let _ = crate::update::skip(p, &tag);
+                        }
                     }
                     Effect::SwitchServer(url) => {
                         match Backend::spawn(&url, &creds, false, use_keyring, store.clone()) {
@@ -304,7 +326,9 @@ pub async fn run(args: RunArgs) -> Result<Exit> {
                     }
                 }
                 Some(aux) = aux_rx.recv() => match aux {
-                    Aux::Update(tag) => app.on_msg(Msg::UpdateAvailable(tag)),
+                    Aux::Update(tag, offer) => app.on_update_available(tag, offer),
+                    Aux::UpdateStep(s) => app.on_update_step(s),
+                    Aux::Updated(tag, r) => app.on_update_result(tag, r),
                     Aux::Probe { id, url, result } => app.on_server_probe(id, url, result),
                 },
                 _ = tick.tick() => app.on_tick(),
@@ -329,9 +353,11 @@ pub async fn run(args: RunArgs) -> Result<Exit> {
     let _ = ratatui::try_restore();
     save(&app);
     // `--logout-on-exit`: end the server session too (q alone keeps it for
-    // the next start). Wait briefly for the auth task to confirm; another
-    // signal (Ctrl-C now that the terminal is restored) stops waiting.
-    let logout = app.settings.logout_on_exit;
+    // the next start), except when restarting into an update, which reuses
+    // it. Wait briefly for the auth task to confirm; another signal (Ctrl-C
+    // now that the terminal is restored) stops waiting.
+    let restart = app.restart && caught.is_none() && result.is_ok();
+    let logout = app.settings.logout_on_exit && !restart;
     let role = app.role.is_some();
     let ending = async move {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
@@ -362,7 +388,11 @@ pub async fn run(args: RunArgs) -> Result<Exit> {
             caught.get_or_insert(n);
         }
     }
-    result.map(|()| caught.map_or(Exit::Quit, Exit::Signal))
+    result.map(|()| match caught {
+        Some(n) => Exit::Signal(n),
+        None if restart => Exit::Restart,
+        None => Exit::Quit,
+    })
 }
 
 /// Termination signals: SIGTERM, SIGHUP and SIGINT on Unix (Ctrl-C in the

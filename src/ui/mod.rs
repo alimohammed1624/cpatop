@@ -107,6 +107,7 @@ fn dashboard(f: &mut Frame, app: &App, hit: &mut Hit) {
         Some(Overlay::Picker(p)) => overlay::picker(f, app, hit, p),
         Some(Overlay::Range(ed)) => overlay::range_editor(f, app, ed),
         Some(Overlay::Row(id)) => overlay::row_detail(f, app, hit, *id),
+        Some(Overlay::Update(p)) => overlay::update_prompt(f, app, p),
         None => {}
     }
 }

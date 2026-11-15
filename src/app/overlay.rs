@@ -192,6 +192,27 @@ pub enum Overlay {
     Range(RangeEditor),
     /// Every field of the selected row of a table, untruncated.
     Row(crate::layout::PaneId),
+    /// A newer cpatop release: the offer to update, then its progress.
+    Update(UpdatePrompt),
+}
+
+/// The update prompt for release `tag`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UpdatePrompt {
+    pub tag: String,
+    pub state: UpdateState,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UpdateState {
+    /// Update now, later or skip this release.
+    Offer,
+    /// Updating; the current step.
+    Working(crate::update::Step),
+    /// Installed: restart to run it.
+    Done,
+    /// The update failed, and why.
+    Failed(String),
 }
 
 #[cfg(test)]

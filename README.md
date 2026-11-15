@@ -322,7 +322,7 @@ complete starting point. A user theme with a built-in name replaces it.
   `/auth/api-key-login` and `/auth/logout`. It never changes Keeper settings
   or data, never triggers quota refreshes and never calls Keeper's
   GitHub-backed update check (`/update/check`).
-- **Update check (cpatop's own).** At most once a day, in the background
+- **Update check (cpatop's own).** On every start, in the background
   after the dashboard is up, cpatop asks GitHub for its own latest release:
   `GET https://github.com/alimohammed1624/cpatop/releases/latest` (the tag
   is read from the redirect, which is not followed), falling back to
@@ -330,8 +330,15 @@ complete starting point. A user theme with a built-in name replaces it.
   The request carries only a `cpatop/<version>` User-Agent — no Keeper
   URL, credentials or other identifiers. The answer is cached in
   `update-check.json` in the state directory; a newer stable release shows
-  `↑ vX.Y.Z` in the header and the upgrade command in `?` help. Failures are
-  silent and never delay startup (3 s timeout). Turn it off with
+  `↑ vX.Y.Z` in the header and the upgrade command in `?` help, and the
+  dashboard offers to update: `u` downloads this platform's archive from
+  `https://github.com/alimohammed1624/cpatop/releases/download/<tag>/`,
+  checks it against that release's `SHA256SUMS` and replaces the running
+  binary (then `r` restarts into it, keeping the session); `l` asks again
+  next start, `s` never asks about that release again. Where no prebuilt
+  binary exists, or the binary's folder is not writable, the prompt shows
+  the upgrade command instead. Failures are silent and never delay startup
+  (3 s timeout). Turn it off with
   `--no-update-check`, `update_check = false` in the config file or
   `CPATOP_NO_UPDATE_CHECK=1`; it is also skipped when `CI` is set.
   `cpatop check-update` checks on demand (ignoring the cache and the

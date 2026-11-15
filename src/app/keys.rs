@@ -4,7 +4,7 @@
 //! closes the innermost thing — an overlay, a filter prompt, a graph cursor,
 //! a table filter — and does nothing at the top level.
 
-use super::overlay::{Overlay, PickItem, PickKind, Picker, RangeEditor, Unit};
+use super::overlay::{Overlay, PickItem, PickKind, Picker, RangeEditor, Unit, UpdateState};
 use super::{App, Effect, InputMode, LoginForm, Screen};
 use crate::api::models::ApiKeyOption;
 use crate::api::{LoginMode, Role};
@@ -155,6 +155,40 @@ impl App {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let now = self.server_now();
         match self.overlay.as_mut() {
+            // A newer release: update now, later or skip; then restart.
+            Some(Overlay::Update(p)) => {
+                let tag = p.tag.clone();
+                let shown = crate::update::display_version(&tag).to_string();
+                match (&p.state, k.code) {
+                    (UpdateState::Offer, KeyCode::Char('u') | KeyCode::Enter) => {
+                        p.state = UpdateState::Working(crate::update::Step::Downloading);
+                        self.effects.push(Effect::SelfUpdate(tag));
+                    }
+                    (UpdateState::Offer, KeyCode::Char('s')) => {
+                        self.overlay = None;
+                        self.effects.push(Effect::SkipUpdate(tag));
+                        self.flash(format!("cpatop {shown} skipped: not offered again"));
+                    }
+                    (
+                        UpdateState::Offer,
+                        KeyCode::Char('l') | KeyCode::Esc | KeyCode::Char('q'),
+                    ) => self.overlay = None,
+                    (UpdateState::Done, KeyCode::Char('r') | KeyCode::Enter) => {
+                        self.restart = true;
+                        self.should_quit = true;
+                    }
+                    (UpdateState::Done, KeyCode::Esc | KeyCode::Char('l') | KeyCode::Char('q')) => {
+                        self.overlay = None;
+                        self.flash(format!("cpatop {shown} runs from the next start"));
+                    }
+                    (
+                        UpdateState::Failed(_),
+                        KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q'),
+                    ) => self.overlay = None,
+                    // While updating, keys wait (Ctrl-C still quits).
+                    _ => {}
+                }
+            }
             // Row details scroll like the help; `[` `]` (or Shift+↑↓) step
             // through the table's rows underneath.
             Some(Overlay::Row(id)) => {

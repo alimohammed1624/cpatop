@@ -453,6 +453,9 @@ fn run() -> Result<ExitCode, CliError> {
     app.cli_overrides = cli_overrides;
     app.warnings = warnings;
 
+    // Found now: once an update has replaced the binary, the running one's
+    // path no longer resolves.
+    let exe = update::current_exe();
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -470,7 +473,44 @@ fn run() -> Result<ExitCode, CliError> {
         ),
         use_keyring,
     }))?;
+    if exit == cpatop::tui::Exit::Restart {
+        drop(rt);
+        return restart(exe);
+    }
     Ok(ExitCode::from(exit.code()))
+}
+
+/// Run the updated binary in place of this one, with the same arguments.
+fn restart(exe: Result<std::path::PathBuf, String>) -> Result<ExitCode, CliError> {
+    let exe = exe.map_err(|e| {
+        CliError::runtime(format!("cpatop was updated but cannot restart: {e}"))
+            .hint("start cpatop again to run the new version")
+    })?;
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.args(std::env::args_os().skip(1));
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        if let Some(arg0) = std::env::args_os().next() {
+            cmd.arg0(arg0);
+        }
+        // Only returns on failure.
+        let e = cmd.exec();
+        Err(
+            CliError::runtime(format!("cpatop was updated but cannot restart: {e}"))
+                .hint("start cpatop again to run the new version"),
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        let status = cmd.status().map_err(|e| {
+            CliError::runtime(format!("cpatop was updated but cannot restart: {e}"))
+                .hint("start cpatop again to run the new version")
+        })?;
+        Ok(ExitCode::from(
+            status.code().unwrap_or(1).clamp(0, 255) as u8
+        ))
+    }
 }
 
 #[cfg(test)]
