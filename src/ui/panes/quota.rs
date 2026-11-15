@@ -5,7 +5,9 @@ use super::{
     RowChart, frame, placeholder, stale_marker, table_with_chart, time_labels, token_details, when,
     yes_no,
 };
-use crate::api::models::{Identity, InspectionResult, QuotaRefreshTask, QuotaRow};
+use crate::api::models::{
+    Identity, InspectionResult, QuotaRefreshTask, QuotaRow, window_kind_label,
+};
 use crate::app::{App, Hit};
 use crate::fmt;
 use crate::layout::PaneId;
@@ -237,6 +239,96 @@ fn flag_cell(app: &App, age: Option<u64>) -> Vec<Vec<Span<'static>>> {
     ]
 }
 
+/// Windows a credential always has, as (window seconds, row key), by kind
+/// and plan; empty when unknown. Codex free plans have one monthly window.
+fn expected_windows(
+    kind: &str,
+    plan: Option<&str>,
+    rows: &[QuotaRow],
+) -> &'static [(f64, &'static str)] {
+    let secs = |r: &QuotaRow| r.window.as_ref().and_then(|w| w.seconds);
+    match kind {
+        "claude" => &[(18_000.0, "five_hour"), (604_800.0, "seven_day")],
+        "codex" if plan == Some("free") || rows.iter().any(|r| secs(r) == Some(2_592_000.0)) => {
+            &[(2_592_000.0, "rate_limit.primary_window")]
+        }
+        "codex" if plan.is_some() || !rows.is_empty() => &[
+            (18_000.0, "rate_limit.primary_window"),
+            (604_800.0, "rate_limit.secondary_window"),
+        ],
+        _ => &[],
+    }
+}
+
+/// A credential's quota windows as the table shows them, each with whether
+/// it is idle: no requests since it last reset. The server leaves a window
+/// out until a request starts it again, and a cached window whose reset has
+/// passed describes a cycle that is over; both show as idle and unused.
+fn quota_windows(
+    app: &App,
+    i: &Identity,
+    task: Option<&Result<QuotaRefreshTask, String>>,
+) -> Vec<(QuotaRow, bool)> {
+    let Some(Ok(QuotaRefreshTask { quota: Some(q), .. })) = task else {
+        return vec![];
+    };
+    let now = app.clock.utc();
+    let idle_row = |r: &QuotaRow| QuotaRow {
+        key: r.key.clone(),
+        label: r.label.clone(),
+        scope: r.scope.clone(),
+        metric: r.metric.clone(),
+        group_key: r.group_key.clone(),
+        group_label: r.group_label.clone(),
+        window: r.window.clone(),
+        used_percent: Some(0.0),
+        used: r.limit.map(|_| 0.0),
+        limit: r.limit,
+        ..Default::default()
+    };
+    let mut rows: Vec<(QuotaRow, bool)> = q
+        .quota
+        .iter()
+        .filter(|r| r.used_pct().is_some())
+        .map(|r| {
+            let over = r
+                .reset_at
+                .as_deref()
+                .and_then(|s| fmt::until(s, now))
+                .is_some_and(|s| s == 0);
+            if over {
+                (idle_row(r), true)
+            } else {
+                (r.clone(), false)
+            }
+        })
+        .collect();
+    let plain: Vec<QuotaRow> = rows.iter().map(|(r, _)| r.clone()).collect();
+    let plan = quota_plan(app, i);
+    let secs = |r: &QuotaRow| r.window.as_ref().and_then(|w| w.seconds);
+    for &(len, key) in expected_windows(&i.kind, plan.as_deref(), &plain) {
+        if rows.iter().any(|(r, _)| secs(r) == Some(len)) {
+            continue;
+        }
+        let row = idle_row(&QuotaRow {
+            key: key.into(),
+            scope: Some("window".into()),
+            window: Some(crate::api::models::QuotaWindow {
+                seconds: Some(len),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        // Keep the windows shortest first, as the server lists them.
+        let at = rows
+            .iter()
+            .position(|(r, _)| secs(r).is_none_or(|s| s > len))
+            .unwrap_or(rows.len());
+        rows.insert(at, (row, true));
+    }
+    rows
+}
+
 /// Every field of a quota row for the popup: the window, the cached check,
 /// the inspection result and the credential, through the privacy helpers.
 fn quota_fields(
@@ -245,6 +337,7 @@ fn quota_fields(
     task: Option<&Result<QuotaRefreshTask, String>>,
     insp: Option<&InspectionResult>,
     r: Option<&QuotaRow>,
+    idle: bool,
     status: &str,
 ) -> Vec<(&'static str, String)> {
     let opt = |o: &Option<String>| o.clone().unwrap_or_default();
@@ -270,7 +363,14 @@ fn quota_fields(
             ),
             ("remaining", amount(r.remaining)),
             ("metric", app.privacy(&opt(&r.metric))),
-            ("resets in", when(app, r.reset_at.as_deref())),
+            (
+                "resets in",
+                if idle {
+                    "idle: no requests since the window last reset".into()
+                } else {
+                    when(app, r.reset_at.as_deref())
+                },
+            ),
             (
                 "window length",
                 r.window
@@ -403,14 +503,8 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
         let st_text = insp.map(|r| r.status.replace('_', " ")).unwrap_or_default();
         let st_cell = status_cell(app, insp.map(|r| r.status.as_str()));
         let task = tasks.get(&i.identity);
-        let quota_rows: Vec<&QuotaRow> = match task {
-            Some(Ok(task)) => task
-                .quota
-                .as_ref()
-                .map(|q| q.quota.iter().filter(|r| r.used_pct().is_some()).collect())
-                .unwrap_or_default(),
-            _ => vec![],
-        };
+        let windows = quota_windows(app, i, task);
+        let quota_rows: Vec<&QuotaRow> = windows.iter().map(|(r, _)| r).collect();
         let plan_s = quota_plan(app, i)
             .or_else(|| known_plan(plan(i)))
             .unwrap_or_else(|| fmt::NONE.to_string());
@@ -451,7 +545,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                     .detail("plan", plan_s.clone())
                     .detail("window", "—")
                     .detail("quota left", "—")
-                    .details(quota_fields(app, i, task, insp, None, &st_text)),
+                    .details(quota_fields(app, i, task, insp, None, false, &st_text)),
             );
             continue;
         }
@@ -474,10 +568,14 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
             WindowStatus::Ok => ("normal".to_string(), status_cell(app, Some("normal"))),
             WindowStatus::Flagged(a) => ("limit flag".to_string(), flag_cell(app, *a)),
         };
-        for (k, r) in quota_rows.iter().enumerate() {
+        for (k, (r, idle)) in windows.iter().enumerate() {
             let used = r.used_pct().unwrap_or(0.0);
             let left = 100.0 - used;
-            let color = left_color(t, left);
+            let color = if *idle {
+                t.graph_text
+            } else {
+                left_color(t, left)
+            };
             let cell = match &wst {
                 WindowStatus::Exhausted(ix) if ix.contains(&k) => {
                     status_cell(app, Some("limit_reached"))
@@ -528,10 +626,17 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                         format!(" {left:>3.0}%"),
                         num(left),
                     )
-                    .text(
-                        reset
-                            .map(|s| fmt::secs(s as f64))
-                            .unwrap_or(fmt::NONE.into()),
+                    .styled(
+                        match reset {
+                            _ if *idle => "idle".into(),
+                            Some(s) => fmt::secs(s as f64),
+                            None => fmt::NONE.into(),
+                        },
+                        if *idle {
+                            Style::default().fg(t.graph_text)
+                        } else {
+                            Style::default()
+                        },
                         num(reset.unwrap_or(0) as f64),
                     )
                     .text(tok, num(r.window_usage_tokens.unwrap_or(0.0)))
@@ -539,7 +644,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                     .choice(cell, text(&st_text))
                     .filter(filter.clone())
                     .detail("plan", plan_s.clone())
-                    .details(quota_fields(app, i, task, insp, Some(r), &st_text)),
+                    .details(quota_fields(app, i, task, insp, Some(r), *idle, &st_text)),
             );
         }
     }
@@ -680,15 +785,7 @@ pub fn list_len(app: &App) -> Option<usize> {
         ids.identities
             .iter()
             .filter(|i| i.auth_type == 1 && !i.is_deleted)
-            .map(|i| match tasks.get(&i.identity) {
-                Some(Ok(t)) => t
-                    .quota
-                    .as_ref()
-                    .map(|q| q.quota.iter().filter(|r| r.used_pct().is_some()).count())
-                    .unwrap_or(0)
-                    .max(1),
-                _ => 1,
-            })
+            .map(|i| quota_windows(app, i, tasks.get(&i.identity)).len().max(1))
             .sum(),
     )
 }
@@ -706,18 +803,14 @@ pub fn list_summary(app: &App) -> Option<String> {
     let n = fmt::plural(creds.len(), "credential", "credentials");
     let lowest = creds
         .iter()
-        .filter_map(|i| match tasks.get(&i.identity) {
-            Some(Ok(t)) => Some((i, t.quota.as_ref()?)),
-            _ => None,
+        .flat_map(|i| {
+            quota_windows(app, i, tasks.get(&i.identity))
+                .into_iter()
+                .filter_map(move |(r, _)| Some((i, 100.0 - r.used_pct()?, r)))
         })
-        .flat_map(|(i, q)| {
-            q.quota
-                .iter()
-                .filter_map(move |r| Some((i, r, 100.0 - r.used_pct()?)))
-        })
-        .min_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     Some(match lowest {
-        Some((i, r, left)) => format!(
+        Some((i, left, r)) => format!(
             "{n} · least left {} {} {}",
             ident_name(app, i),
             app.privacy(&r.display_label()),
@@ -856,12 +949,6 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         return;
     }
     let Some(h) = l.get() else { return };
-    let kind = h
-        .selected_window
-        .as_ref()
-        .and_then(|w| w.window_kind.clone())
-        .unwrap_or_default()
-        .replace("five_hour", "5h");
     let rows = h
         .cycles
         .iter()
@@ -879,6 +966,7 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
             } else {
                 "ended"
             };
+            let kind = window_kind_label(c.window_seconds);
             TRow::new(c.id.clone())
                 .styled(
                     status,
@@ -921,27 +1009,28 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
                 .details(cycle_fields(app, c, median))
         })
         .collect();
-    // Spare rows chart the tokens each window allowed, oldest first.
-    let mut cycles: Vec<_> = h.cycles.iter().collect();
-    cycles.sort_by(|a, b| a.window_started_at.cmp(&b.window_started_at));
-    let per_window = RowChart {
-        title: format!("tokens per {kind} window"),
-        labels: cycles
+    // Spare rows chart the tokens each cycle of the selected row's window
+    // (5h, weekly…) allowed, oldest first; one or two cycles make a
+    // meaningless chart.
+    let chart_for = |id: &str| -> Option<RowChart> {
+        let secs = h.cycles.iter().find(|c| c.id == id)?.window_seconds;
+        let mut cycles: Vec<_> = h
+            .cycles
             .iter()
-            .map(|c| fmt::ts_fmt(&c.window_started_at, "%m-%d %H:%M"))
-            .collect(),
-        values: cycles.iter().map(|c| c.usage.total_tokens).collect(),
-        fmt: fmt::compact,
-        color: None,
-        place: None,
-    };
-    // One or two windows make a meaningless chart.
-    let chart_for = |_: &str| -> Option<RowChart> {
-        (per_window.values.len() >= 3).then(|| RowChart {
-            title: per_window.title.clone(),
-            labels: per_window.labels.clone(),
-            values: per_window.values.clone(),
-            fmt: per_window.fmt,
+            .filter(|c| c.window_seconds == secs)
+            .collect();
+        if cycles.len() < 3 {
+            return None;
+        }
+        cycles.sort_by(|a, b| a.window_started_at.cmp(&b.window_started_at));
+        Some(RowChart {
+            title: format!("tokens per {} window", window_kind_label(secs)),
+            labels: cycles
+                .iter()
+                .map(|c| fmt::ts_fmt(&c.window_started_at, "%m-%d %H:%M"))
+                .collect(),
+            values: cycles.iter().map(|c| c.usage.total_tokens).collect(),
+            fmt: fmt::compact,
             color: None,
             place: None,
         })
@@ -989,6 +1078,64 @@ mod tests {
         );
         let (a, b) = (row(7.0, Some(false)), row(23.0, None));
         assert_eq!(window_status(&[&a, &b], false, None), WindowStatus::Ok);
+    }
+
+    fn win(secs: f64, used: f64) -> QuotaRow {
+        QuotaRow {
+            used_percent: Some(used),
+            window: Some(crate::api::models::QuotaWindow {
+                seconds: Some(secs),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn expected_windows_by_kind_and_plan() {
+        let five = win(18_000.0, 10.0);
+        let month = win(2_592_000.0, 10.0);
+        assert_eq!(expected_windows("claude", None, &[]).len(), 2);
+        assert_eq!(expected_windows("codex", Some("plus"), &[]).len(), 2);
+        assert_eq!(expected_windows("codex", None, &[five]).len(), 2);
+        // Free plans have one monthly window.
+        assert_eq!(
+            expected_windows("codex", None, &[month]),
+            &[(2_592_000.0, "rate_limit.primary_window")]
+        );
+        assert_eq!(expected_windows("codex", Some("free"), &[]).len(), 1);
+        // Unknown: guess nothing.
+        assert!(expected_windows("codex", None, &[]).is_empty());
+        assert!(expected_windows("antigravity", None, &[]).is_empty());
+    }
+
+    #[test]
+    fn history_merges_windows_current_first() {
+        use crate::api::models::{QuotaCycle, QuotaHistory};
+        let cyc = |id: &str, status: &str, start: &str| QuotaCycle {
+            id: id.into(),
+            status: status.into(),
+            window_started_at: start.into(),
+            ..Default::default()
+        };
+        let mut a = QuotaHistory {
+            cycles: vec![
+                cyc("1", "current", "2026-11-13T12:00"),
+                cyc("2", "completed", "2026-11-13T07:00"),
+            ],
+            ..Default::default()
+        };
+        let b = QuotaHistory {
+            cycles: vec![
+                cyc("9", "current", "2026-11-10T00:00"),
+                cyc("8", "completed", "2026-11-03T00:00"),
+            ],
+            ..Default::default()
+        };
+        a.merge(b.clone());
+        a.merge(b); // a repeat adds nothing
+        let ids: Vec<&str> = a.cycles.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, ["1", "9", "2", "8"]);
     }
 
     #[test]

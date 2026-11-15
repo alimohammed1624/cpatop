@@ -1300,6 +1300,33 @@ pub struct QuotaHistory {
     pub cycles: Vec<QuotaCycle>,
 }
 
+impl QuotaHistory {
+    /// Add another window's cycles (the server returns one window per
+    /// request), current cycles first, then newest first.
+    pub fn merge(&mut self, other: QuotaHistory) {
+        for c in other.cycles {
+            if !self.cycles.iter().any(|x| x.id == c.id) {
+                self.cycles.push(c);
+            }
+        }
+        self.cycles.sort_by(|a, b| {
+            (a.status != "current")
+                .cmp(&(b.status != "current"))
+                .then_with(|| b.window_started_at.cmp(&a.window_started_at))
+        });
+    }
+}
+
+/// Short label for a quota window length: `5h`, `weekly`, `monthly`.
+pub fn window_kind_label(secs: f64) -> String {
+    match secs as i64 {
+        18_000 => "5h".into(),
+        604_800 => "weekly".into(),
+        2_592_000 | 2_628_000 => "monthly".into(),
+        s => crate::fmt::secs(s as f64).replace(" 00m", ""),
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct QuotaHistoryWindow {

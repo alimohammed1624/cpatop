@@ -6,6 +6,17 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Quota history shows every window a credential has (5h and weekly
+  together) instead of the one the server picks by default, which hid the
+  weekly cycles of a claude credential and the 5h cycles of a codex one
+  whose 5h window had no current cycle. Each row names its window, and the
+  chart shows the cycles of the selected row's window.
+- A quota window with no requests since it last reset no longer
+  disappears from the quota table: a window the server leaves out, or a
+  cached one whose reset time has passed, shows as `idle` with all its
+  quota left (and no longer as a reached limit from the ended cycle).
+
 ## [0.2.1] - 2026-11-14
 
 A small fix release.

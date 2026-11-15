@@ -485,7 +485,30 @@ pub async fn run_commands(
                 }
                 Command::QuotaHistory { auth_index } => {
                     let path = format!("/quota/history/{}", path_segment(&auth_index));
-                    let r = c.get(&path, &vec![]).await;
+                    // The server returns one window's cycles per request:
+                    // fetch the others it lists and show them together.
+                    let r = match c.get::<QuotaHistory>(&path, &vec![]).await {
+                        Ok(mut h) => {
+                            let selected =
+                                h.selected_window.as_ref().map(|w| w.window_role.clone());
+                            let futs = h
+                                .windows
+                                .iter()
+                                .map(|w| w.window_role.clone())
+                                .filter(|role| Some(role) != selected.as_ref())
+                                .map(|role| {
+                                    let q: Params = vec![("window_role", role)];
+                                    let (path, c) = (path.clone(), c.clone());
+                                    async move { c.get::<QuotaHistory>(&path, &q).await }
+                                });
+                            let others = futures_util::future::join_all(futs).await;
+                            others
+                                .into_iter()
+                                .try_for_each(|o| o.map(|o| h.merge(o)))
+                                .map(|()| h)
+                        }
+                        Err(e) => Err(e),
+                    };
                     (String::new(), Payload::QuotaHistory(auth_index, r))
                 }
             };

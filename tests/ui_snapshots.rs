@@ -1612,3 +1612,41 @@ fn small_terminal_quota_and_realtime() {
         "blank row in the window pane:\n{s}"
     );
 }
+
+/// A window the server leaves out (no requests since it reset) and a cached
+/// window whose reset has passed both show as idle with all quota left,
+/// instead of disappearing or keeping the old cycle's usage.
+#[test]
+fn idle_quota_windows_are_shown() {
+    let mut app = populated(Role::Admin);
+    let mut claude: QuotaRefreshTask = load("quota-refresh-task-claude.json");
+    let q = claude.quota.as_mut().unwrap();
+    // Drop the 5h window and move the weekly reset into the past.
+    q.quota.retain(|r| r.key != "five_hour");
+    let week = q.quota.iter_mut().find(|r| r.key == "seven_day").unwrap();
+    week.reset_at = Some("2026-11-13T10:00:00+00:00".into());
+    week.used_percent = Some(100.0);
+    data(
+        &mut app,
+        Group::Quota,
+        Payload::QuotaTasks(vec![(claude.auth_index.clone(), Ok(claude))]),
+    );
+    let s = render_tab(&mut app, Tab::Quota, 160, 48);
+    let rows: Vec<&str> = s
+        .lines()
+        .take_while(|l| !l.contains("³ history"))
+        .filter(|l| l.contains(" 5h ") || l.contains("Weekly"))
+        .collect();
+    assert_eq!(rows.len(), 2, "both windows listed, 5h first:\n{s}");
+    assert!(rows[0].contains(" 5h "), "5h first:\n{s}");
+    for r in &rows {
+        assert!(
+            r.contains("100%") && r.contains("idle"),
+            "idle row: {r}\n{s}"
+        );
+        assert!(
+            !r.contains("limit reached"),
+            "an ended cycle is no limit: {r}"
+        );
+    }
+}
