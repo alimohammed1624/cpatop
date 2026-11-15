@@ -6,6 +6,10 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-16
+
+Quota tab fixes.
+
 ### Fixed
 - Quota history shows every window a credential has (5h and weekly
   together) instead of the one the server picks by default, which hid the
