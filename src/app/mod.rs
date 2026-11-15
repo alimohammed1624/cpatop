@@ -788,7 +788,11 @@ impl App {
             }
         }
         if self.tab == Tab::Quota
-            && let Some(idx) = self.hit.selected.get(&PaneId::QuList).cloned()
+            && let Some(idx) = self
+                .hit
+                .selected
+                .get(&PaneId::QuList)
+                .map(|id| quota_row_identity(id).to_string())
         {
             let current = self.data.quota_history.as_ref().map(|(i, _)| i.clone());
             if current.as_deref() != Some(idx.as_str()) {
@@ -956,4 +960,26 @@ impl GraphSymbols {
     pub fn braille(self) -> bool {
         self == GraphSymbols::Braille
     }
+}
+
+/// Separates the credential from the window length in a quota table row id.
+const QUOTA_ROW_SEP: char = '\u{1f}';
+
+/// Id of a quota table row: the credential, then the window length for a
+/// window row, so the history pane can follow the selected window.
+pub fn quota_row_id(identity: &str, window_secs: Option<f64>) -> String {
+    match window_secs {
+        Some(s) => format!("{identity}{QUOTA_ROW_SEP}{s}"),
+        None => identity.to_string(),
+    }
+}
+
+/// The credential of a quota table row id.
+pub fn quota_row_identity(id: &str) -> &str {
+    id.split(QUOTA_ROW_SEP).next().unwrap_or(id)
+}
+
+/// The window length (seconds) of a quota table row id, for a window row.
+pub fn quota_row_window(id: &str) -> Option<f64> {
+    id.split_once(QUOTA_ROW_SEP)?.1.parse().ok()
 }

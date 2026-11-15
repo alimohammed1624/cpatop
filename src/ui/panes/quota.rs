@@ -6,9 +6,9 @@ use super::{
     yes_no,
 };
 use crate::api::models::{
-    Identity, InspectionResult, QuotaRefreshTask, QuotaRow, window_kind_label,
+    Identity, InspectionResult, QuotaCycle, QuotaRefreshTask, QuotaRow, window_kind_label,
 };
-use crate::app::{App, Hit};
+use crate::app::{App, Hit, quota_row_id, quota_row_identity, quota_row_window};
 use crate::fmt;
 use crate::layout::PaneId;
 use crate::theme::Theme;
@@ -610,8 +610,9 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
                     r.window_usage_cost.map(fmt::usd).unwrap_or_default(),
                 )
             };
+            let secs = r.window.as_ref().and_then(|w| w.seconds);
             rows.push(
-                TRow::new(i.identity.clone())
+                TRow::new(quota_row_id(&i.identity, secs))
                     .name(
                         cell_name,
                         cell_short,
@@ -654,6 +655,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
     // instead, titled as such.
     let chart_for = |id: &str| -> Option<RowChart> {
         let ids = &app.data.identities.get()?.identities;
+        let id = quota_row_identity(id);
         let i = ids.iter().find(|i| i.identity == id)?;
         let h = i
             .credential_health
@@ -830,15 +832,17 @@ pub fn history_summary(app: &App, hit: &Hit) -> Option<String> {
         .get()?
         .identities
         .iter()
-        .find(|i| &i.identity == sel)?;
+        .find(|i| i.identity == quota_row_identity(sel))?;
     if i.kind != "codex" && i.kind != "claude" {
         return Some("codex and claude credentials only".into());
     }
-    let (idx, l) = app.data.quota_history.as_ref()?;
-    let n = l.get().filter(|_| idx == sel)?.cycles.len();
+    let n = history_cycles(app, sel)?.len();
+    let what = quota_row_window(sel)
+        .map(|s| format!("{} ", window_kind_label(s)))
+        .unwrap_or_default();
     Some(format!(
-        "{} · {}",
-        fmt::plural(n, "window", "windows"),
+        "{n} {what}{} · {}",
+        if n == 1 { "window" } else { "windows" },
         ident_name(app, i)
     ))
 }
@@ -897,29 +901,55 @@ pub fn history_size(app: &App) -> crate::layout::Size {
     }
 }
 
+/// Rows the history pane may need: the cycles of the credential's window
+/// with the most, so the pane keeps its height as the selection moves
+/// between that credential's windows.
 pub fn history_len(app: &App) -> Option<usize> {
-    app.data
-        .quota_history
-        .as_ref()
-        .and_then(|(_, l)| l.get())
-        .map(|h| h.cycles.len())
+    let h = app.data.quota_history.as_ref()?.1.get()?;
+    let mut lens: Vec<f64> = h.cycles.iter().map(|c| c.window_seconds).collect();
+    lens.sort_by(f64::total_cmp);
+    lens.dedup();
+    lens.iter()
+        .map(|w| h.cycles.iter().filter(|c| c.window_seconds == *w).count())
+        .max()
+        .or(Some(0))
+}
+
+/// The selected quota row's history cycles: those of its window (all of
+/// the credential's for a row without one), once they are loaded.
+fn history_cycles<'a>(app: &'a App, sel: &str) -> Option<Vec<&'a QuotaCycle>> {
+    let (idx, l) = app.data.quota_history.as_ref()?;
+    let h = l.get().filter(|_| idx == quota_row_identity(sel))?;
+    let window = quota_row_window(sel);
+    Some(
+        h.cycles
+            .iter()
+            .filter(|c| window.is_none_or(|w| c.window_seconds == w))
+            .collect(),
+    )
 }
 
 pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) {
     let t = app.theme();
     let sel = hit.selected.get(&PaneId::QuList).cloned();
-    let ident = sel.as_ref().and_then(|idx| {
-        app.data
-            .identities
-            .get()
-            .and_then(|p| p.identities.iter().find(|i| &i.identity == idx))
+    let ident = sel.as_ref().and_then(|id| {
+        app.data.identities.get().and_then(|p| {
+            p.identities
+                .iter()
+                .find(|i| i.identity == quota_row_identity(id))
+        })
     });
+    // The history follows the selected row's window (5h, weekly…).
+    let window = sel.as_deref().and_then(quota_row_window);
     let right = ident
         .map(|i| {
-            vec![Span::styled(
-                ident_name(app, i),
-                Style::default().fg(t.graph_text),
-            )]
+            let name = match window {
+                Some(s) if i.kind == "codex" || i.kind == "claude" => {
+                    format!("{} · {}", ident_name(app, i), window_kind_label(s))
+                }
+                _ => ident_name(app, i),
+            };
+            vec![Span::styled(name, Style::default().fg(t.graph_text))]
         })
         .unwrap_or_default();
     let inner = frame(f, app, PaneId::QuHistory, area, focused, right, None);
@@ -949,8 +979,12 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         return;
     }
     let Some(h) = l.get() else { return };
-    let rows = h
+    let cycles: Vec<&QuotaCycle> = h
         .cycles
+        .iter()
+        .filter(|c| window.is_none_or(|w| c.window_seconds == w))
+        .collect();
+    let rows = cycles
         .iter()
         .map(|c| {
             let mut tpp: Vec<f64> = c.transitions.iter().map(|x| x.tokens_per_point).collect();
@@ -1013,12 +1047,8 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
     // (5h, weekly…) allowed, oldest first; one or two cycles make a
     // meaningless chart.
     let chart_for = |id: &str| -> Option<RowChart> {
-        let secs = h.cycles.iter().find(|c| c.id == id)?.window_seconds;
-        let mut cycles: Vec<_> = h
-            .cycles
-            .iter()
-            .filter(|c| c.window_seconds == secs)
-            .collect();
+        let secs = cycles.iter().find(|c| c.id == id)?.window_seconds;
+        let mut cycles: Vec<_> = cycles.iter().filter(|c| c.window_seconds == secs).collect();
         if cycles.len() < 3 {
             return None;
         }
@@ -1044,7 +1074,13 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
         focused,
         &HIST_COLS,
         rows,
-        "no quota cycles in the last 30 days",
+        &match window {
+            Some(s) => format!(
+                "no {} quota cycles in the last 30 days",
+                window_kind_label(s)
+            ),
+            None => "no quota cycles in the last 30 days".into(),
+        },
         &chart_for,
     );
 }

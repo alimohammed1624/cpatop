@@ -6,6 +6,12 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Quota history follows the selected quota row's window again: the 5h row
+  lists the 5h cycles and the weekly row the weekly ones (0.2.2 listed
+  every window's cycles together whichever row was selected). The pane
+  title names the window.
+
 ## [0.2.2] - 2026-11-16
 
 Quota tab fixes.

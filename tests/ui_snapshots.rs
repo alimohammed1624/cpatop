@@ -230,7 +230,12 @@ fn render_tab(app: &mut App, tab: Tab, w: u16, h: u16) -> String {
             Payload::IdentityErrors(id, Ok(load("usage-identity-errors.json"))),
         );
     }
-    if let Some(idx) = app.hit.selected.get(&PaneId::QuList).cloned() {
+    if let Some(idx) = app
+        .hit
+        .selected
+        .get(&PaneId::QuList)
+        .map(|id| cpatop::app::quota_row_identity(id).to_string())
+    {
         data(
             app,
             Group::Detail,
@@ -1649,4 +1654,44 @@ fn idle_quota_windows_are_shown() {
             "an ended cycle is no limit: {r}"
         );
     }
+}
+
+/// The history pane follows the window of the selected quota row: the 5h
+/// row lists the 5h cycles, the weekly row the weekly ones.
+#[test]
+fn quota_history_follows_the_selected_window() {
+    let mut app = populated(Role::Admin);
+    app.tab = Tab::Quota;
+    app.focus.insert(Tab::Quota, PaneId::QuList);
+    let history = |s: &str| -> String {
+        s.lines()
+            .skip_while(|l| !l.contains("³ history"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let mut seen = Vec::new();
+    for _ in 0..8 {
+        let s = render_tab(&mut app, Tab::Quota, 160, 48);
+        let sel = app.hit.selected.get(&PaneId::QuList).cloned().unwrap();
+        if let Some(w) = cpatop::app::quota_row_window(&sel) {
+            let h = history(&s);
+            match w as i64 {
+                18_000 => {
+                    assert!(h.contains("· 5h") && h.contains("● current"), "{h}");
+                    assert!(!h.contains("weekly"), "{h}");
+                }
+                604_800 => {
+                    assert!(h.contains("· weekly"), "{h}");
+                    assert!(h.contains("no weekly quota cycles"), "{h}");
+                }
+                _ => {}
+            }
+            seen.push(w as i64);
+        }
+        press(&mut app, crossterm::event::KeyCode::Down);
+    }
+    assert!(
+        seen.contains(&18_000) && seen.contains(&604_800),
+        "{seen:?}"
+    );
 }
