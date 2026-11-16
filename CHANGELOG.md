@@ -6,6 +6,12 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Quota history shows `$/100%`, the API-priced cost of a full quota
+  window (the median cost per 1% drop × 100), in place of `tok/1%`.
+  Dollars weigh cache reads, output and models by price, so cycles
+  compare fairly. Tokens per 1% moved to the row popup.
+
 ## [0.2.4] - 2026-11-16
 
 Update prompt.

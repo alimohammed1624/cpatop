@@ -358,7 +358,7 @@ pub fn long_title(title: &str) -> String {
         "#" => "rank",
         "rpm" => "requests per minute",
         "tpm" => "tokens per minute",
-        "tok/1%" => "tokens per 1% of quota",
+        "$/100%" => "API cost of a full quota window",
         "$/1M" => "cost per 1M tokens",
         "$/req" => "cost per request",
         "out/req" => "output tokens per request",

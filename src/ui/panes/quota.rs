@@ -715,14 +715,48 @@ const HIST_COLS: [Col; 9] = [
     col("req", 6, Align::Right, 5),
     col("tokens", 7, Align::Right, 1),
     col("cost", 8, Align::Right, 1),
-    col("tok/1%", 7, Align::Right, 2),
+    col("$/100%", 8, Align::Right, 2),
 ];
+
+/// Typical usage per 1% of quota in a cycle: the median over its observed
+/// quota drops. A median, not cycle total ÷ points used, so quota spent
+/// outside the proxy or gaps between observations don't skew it.
+struct PerPoint {
+    tokens: Option<f64>,
+    usd: Option<f64>,
+}
+
+impl PerPoint {
+    fn of(c: &crate::api::models::QuotaCycle) -> Self {
+        let t = &c.transitions;
+        Self {
+            tokens: median(t.iter().map(|x| x.tokens_per_point).collect()),
+            usd: median(
+                t.iter()
+                    .filter(|x| x.cost_per_point_available)
+                    .map(|x| x.cost_per_point)
+                    .collect(),
+            ),
+        }
+    }
+
+    /// API-priced value of a whole window (100% of the quota).
+    fn full_window_usd(&self) -> Option<f64> {
+        self.usd.map(|v| v * 100.0)
+    }
+}
+
+/// Upper median; `None` when empty.
+fn median(mut v: Vec<f64>) -> Option<f64> {
+    v.sort_by(|a, b| a.total_cmp(b));
+    v.get(v.len() / 2).copied()
+}
 
 /// Every field of a quota cycle for the row popup.
 fn cycle_fields(
     app: &App,
     c: &crate::api::models::QuotaCycle,
-    median: Option<f64>,
+    per_point: &PerPoint,
 ) -> Vec<(&'static str, String)> {
     let u = &c.usage;
     let pct = |p: Option<f64>| p.map(|p| format!("{p:.1}%")).unwrap_or_default();
@@ -740,8 +774,15 @@ fn cycle_fields(
         ("observations", fmt::int(c.observation_count)),
         ("drops observed", fmt::int(c.transitions.len() as f64)),
         (
+            "API cost of 100% of quota",
+            per_point
+                .full_window_usd()
+                .map(fmt::usd)
+                .unwrap_or_default(),
+        ),
+        (
             "tokens per 1% of quota",
-            median.map(fmt::int).unwrap_or_default(),
+            per_point.tokens.map(fmt::int).unwrap_or_default(),
         ),
         ("requests", fmt::int(u.requests)),
         ("successes", fmt::int(u.successful_requests)),
@@ -987,9 +1028,7 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
     let rows = cycles
         .iter()
         .map(|c| {
-            let mut tpp: Vec<f64> = c.transitions.iter().map(|x| x.tokens_per_point).collect();
-            tpp.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let median = (!tpp.is_empty()).then(|| tpp[tpp.len() / 2]);
+            let per_point = PerPoint::of(c);
             let left = match (c.first_remaining_percent, c.last_remaining_percent) {
                 (Some(a), Some(b)) => format!("{a:.0}→{b:.0}%"),
                 (_, Some(b)) => format!("{b:.0}%"),
@@ -1036,11 +1075,11 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
                     num(c.usage.total_cost_usd),
                 )
                 .text(
-                    median.map(fmt::compact).unwrap_or(fmt::NONE.into()),
-                    num(median.unwrap_or(-1.0)),
+                    fmt::usd_opt(per_point.full_window_usd()),
+                    num(per_point.full_window_usd().unwrap_or(-1.0)),
                 )
                 .filter(c.status.clone())
-                .details(cycle_fields(app, c, median))
+                .details(cycle_fields(app, c, &per_point))
         })
         .collect();
     // Spare rows chart the tokens each cycle of the selected row's window
