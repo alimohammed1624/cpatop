@@ -706,7 +706,7 @@ pub fn list(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: bool) 
     );
 }
 
-const HIST_COLS: [Col; 9] = [
+const HIST_COLS: [Col; 10] = [
     col("cycle", 9, Align::Left, 0),
     col("window", 7, Align::Left, 3),
     col("started", 11, Align::Left, 4),
@@ -715,6 +715,7 @@ const HIST_COLS: [Col; 9] = [
     col("req", 6, Align::Right, 5),
     col("tokens", 7, Align::Right, 1),
     col("cost", 8, Align::Right, 1),
+    col("tok/100%", 8, Align::Right, 3),
     col("$/100%", 8, Align::Right, 2),
 ];
 
@@ -738,6 +739,11 @@ impl PerPoint {
                     .collect(),
             ),
         }
+    }
+
+    /// Tokens a whole window (100% of the quota) allows.
+    fn full_window_tokens(&self) -> Option<f64> {
+        self.tokens.map(|v| v * 100.0)
     }
 
     /// API-priced value of a whole window (100% of the quota).
@@ -1073,6 +1079,13 @@ pub fn history(f: &mut Frame, app: &App, hit: &mut Hit, area: Rect, focused: boo
                         fmt::NONE.into()
                     },
                     num(c.usage.total_cost_usd),
+                )
+                .text(
+                    per_point
+                        .full_window_tokens()
+                        .map(fmt::compact)
+                        .unwrap_or(fmt::NONE.into()),
+                    num(per_point.full_window_tokens().unwrap_or(-1.0)),
                 )
                 .text(
                     fmt::usd_opt(per_point.full_window_usd()),

@@ -6,6 +6,10 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Quota history shows `tok/100%`, the tokens a full quota window
+  allows (the median tokens per 1% drop × 100), next to `$/100%`.
+
 ## [0.2.5] - 2026-11-16
 
 Quota history shows dollars per full window.
