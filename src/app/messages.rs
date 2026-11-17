@@ -324,6 +324,18 @@ impl App {
                     let mut first_err = None;
                     for (k, r) in list {
                         match r {
+                            // Keeper drops a credential's cached quota while
+                            // it is re-checked: keep showing the last one.
+                            Ok(t) if t.quota.is_none() && busy(&t) => {
+                                let prev = d
+                                    .quota
+                                    .get()
+                                    .and_then(|m| m.get(&k))
+                                    .and_then(|p| p.as_ref().ok())
+                                    .filter(|p| p.quota.is_some())
+                                    .cloned();
+                                map.insert(k, Ok(prev.unwrap_or(t)));
+                            }
                             Ok(t) => {
                                 map.insert(k, Ok(t));
                             }
@@ -341,6 +353,52 @@ impl App {
                     match first_err {
                         Some(e) => d.quota.apply(Err(e), now),
                         None => d.quota.apply(Ok(map), now),
+                    }
+                }
+            }
+            Payload::QuotaTaskUpdates(list) => {
+                let mut failed = 0;
+                if let Some(map) = d.quota.data.as_mut() {
+                    for (k, r) in list {
+                        let v = match r {
+                            Ok(t) => {
+                                if t.status == "failed" {
+                                    failed += 1;
+                                }
+                                Ok(t)
+                            }
+                            Err(e) => {
+                                failed += 1;
+                                Err(e.to_string())
+                            }
+                        };
+                        map.insert(k, v);
+                    }
+                }
+                if let Some(f) = d.quota_refresh.as_mut() {
+                    *f += failed;
+                }
+                None
+            }
+            Payload::QuotaRefreshDone {
+                queued,
+                unfinished,
+                rejected,
+                error,
+            } => {
+                let failed = d.quota_refresh.take().unwrap_or(0);
+                match error {
+                    Some(e) => {
+                        if !matches!(e, ApiError::Unauthorized(_)) {
+                            self.flash(format!("quota refresh failed: {e}"));
+                        }
+                        Some(e)
+                    }
+                    None => {
+                        // Re-read the inspection summary and the cache too.
+                        self.manual += 1;
+                        self.flash(quota_refresh_summary(queued, failed, unfinished, &rejected));
+                        None
                     }
                 }
             }
@@ -518,4 +576,39 @@ impl App {
             Tab::Settings => d.key_usage.at.or(d.sessions.at),
         }
     }
+}
+
+/// A quota check Keeper has queued or is running.
+fn busy(t: &QuotaRefreshTask) -> bool {
+    matches!(t.status.as_str(), "queued" | "running")
+}
+
+/// The flash line when a quota refresh ends.
+fn quota_refresh_summary(
+    queued: usize,
+    failed: usize,
+    unfinished: usize,
+    rejected: &[(String, String)],
+) -> String {
+    let done = queued.saturating_sub(failed + unfinished);
+    let mut s = format!("quota refreshed: {done} updated");
+    if failed > 0 {
+        s.push_str(&format!(", {failed} failed"));
+    }
+    if unfinished > 0 {
+        s.push_str(&format!(", {unfinished} still running"));
+    }
+    // Already being re-checked (by Keeper's own schedule or the web
+    // dashboard) is not a failure.
+    let busy = rejected
+        .iter()
+        .filter(|(_, e)| e.starts_with("duplicate"))
+        .count();
+    if busy > 0 {
+        s.push_str(&format!(", {busy} already running"));
+    }
+    if rejected.len() > busy {
+        s.push_str(&format!(", {} skipped", rejected.len() - busy));
+    }
+    s
 }

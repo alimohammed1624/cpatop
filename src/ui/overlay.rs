@@ -104,7 +104,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
             ("[ ]", "previous / next preset range"),
             ("a", "API-key filter picker"),
             ("w", "realtime window 15m / 30m / 60m"),
-            ("R", "refresh now"),
+            ("R", "refresh now · quota tab: re-check quota"),
             ("+ / -", "slower / faster overview refresh"),
         ],
     ),

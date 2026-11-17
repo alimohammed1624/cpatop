@@ -470,3 +470,90 @@ fn a_restored_empty_dimension_falls_back_once_data_shows_it() {
     );
     assert_eq!(app.dim(PaneId::OvDist), 3);
 }
+
+#[test]
+fn r_on_the_quota_tab_refreshes_quota_and_keeps_old_values_meanwhile() {
+    use cpatop::api::models::QuotaRefreshTask;
+    use cpatop::poller::Command;
+    let mut app = admin();
+    app.tab = Tab::Quota;
+    let done: QuotaRefreshTask = load("quota-refresh-task.json");
+    let idx = done.auth_index.clone();
+    data(
+        &mut app,
+        Group::Quota,
+        Payload::QuotaTasks(vec![(idx.clone(), Ok(done.clone()))]),
+    );
+    app.drain_effects();
+    let manual = app.manual;
+
+    press(&mut app, KeyCode::Char('R'));
+    let fx = app.drain_effects();
+    assert!(fx.iter().any(|e| matches!(
+        e,
+        Effect::Fetch(Command::RefreshQuota { auth_indexes }) if *auth_indexes == vec![idx.clone()]
+    )));
+    assert_eq!(
+        app.manual, manual,
+        "the cache is re-read once the checks end"
+    );
+    // A second R while it runs does not start another.
+    press(&mut app, KeyCode::Char('R'));
+    assert!(app.drain_effects().is_empty());
+
+    // Keeper drops the cached quota while it re-checks: keep the old one.
+    let queued = QuotaRefreshTask {
+        auth_index: idx.clone(),
+        status: "queued".into(),
+        ..Default::default()
+    };
+    data(
+        &mut app,
+        Group::Quota,
+        Payload::QuotaTasks(vec![(idx.clone(), Ok(queued))]),
+    );
+    let shown = |app: &App| app.data.quota.get().unwrap()[&idx].clone().unwrap();
+    assert!(shown(&app).quota.is_some());
+
+    let failed = QuotaRefreshTask {
+        auth_index: idx.clone(),
+        status: "failed".into(),
+        http_status_code: Some(401),
+        ..Default::default()
+    };
+    data(
+        &mut app,
+        Group::Detail,
+        Payload::QuotaTaskUpdates(vec![(idx.clone(), Ok(failed))]),
+    );
+    assert_eq!(shown(&app).status, "failed");
+    data(
+        &mut app,
+        Group::Detail,
+        Payload::QuotaRefreshDone {
+            queued: 1,
+            unfinished: 0,
+            rejected: vec![("x".into(), "duplicate".into())],
+            error: None,
+        },
+    );
+    assert!(app.data.quota_refresh.is_none());
+    assert_eq!(app.manual, manual + 1);
+    assert_eq!(
+        app.flash.as_ref().unwrap().0,
+        "quota refreshed: 0 updated, 1 failed, 1 already running"
+    );
+}
+
+#[test]
+fn r_elsewhere_only_re_reads() {
+    let mut app = admin();
+    let manual = app.manual;
+    press(&mut app, KeyCode::Char('R'));
+    assert_eq!(app.manual, manual + 1);
+    assert!(
+        app.drain_effects()
+            .iter()
+            .all(|e| !matches!(e, Effect::Fetch(_)))
+    );
+}

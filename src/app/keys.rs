@@ -481,6 +481,35 @@ impl App {
 
     // ------------------------------------------------------------ dashboard
 
+    /// `R` on the Quota tab: ask Keeper to re-check every credential's quota
+    /// with its provider, like the web dashboard's refresh button. This only
+    /// reads usage; it never spends a reset.
+    fn refresh_quota(&mut self) {
+        if self.data.quota_refresh.is_some() {
+            self.flash("quota refresh already running");
+            return;
+        }
+        let mut auth_indexes: Vec<String> = match self.data.quota.get() {
+            Some(m) => m.keys().filter(|k| !k.is_empty()).cloned().collect(),
+            None => vec![],
+        };
+        if auth_indexes.is_empty() {
+            self.flash("no credentials to refresh yet");
+            return;
+        }
+        auth_indexes.sort();
+        let n = auth_indexes.len();
+        self.data.quota_refresh = Some(0);
+        self.effects
+            .push(Effect::Fetch(crate::poller::Command::RefreshQuota {
+                auth_indexes,
+            }));
+        self.flash(format!(
+            "refreshing quota for {n} credential{}",
+            if n == 1 { "" } else { "s" }
+        ));
+    }
+
     fn step_tab(&mut self, forward: bool) {
         let tabs = self.tabs();
         let i = tabs.iter().position(|t| *t == self.tab).unwrap_or(0);
@@ -883,6 +912,9 @@ impl App {
                     "privacy mode off"
                 });
                 self.effects.push(Effect::SaveState);
+            }
+            KeyCode::Char('R') if self.tab == Tab::Quota && self.role == Some(Role::Admin) => {
+                self.refresh_quota();
             }
             KeyCode::Char('R') => {
                 self.manual += 1;

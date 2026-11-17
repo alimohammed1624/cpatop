@@ -220,6 +220,31 @@ impl Client {
         serde_json::from_slice(&bytes).map_err(|e| ApiError::Decode(format!("{path}: {e}")))
     }
 
+    /// POST a JSON body and decode the JSON answer.
+    pub async fn post<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<T, ApiError> {
+        let resp = self
+            .request(reqwest::Method::POST, &self.url(path))
+            .json(body)
+            .timeout(Duration::from_secs(30))
+            .send()
+            .await
+            .map_err(|e| ApiError::Network(network_message(&e)))?;
+        let status = resp.status();
+        let headers = resp.headers().clone();
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| ApiError::Network(network_message(&e)))?;
+        if !status.is_success() {
+            return Err(error_from(status, &headers, &bytes));
+        }
+        serde_json::from_slice(&bytes).map_err(|e| ApiError::Decode(format!("{path}: {e}")))
+    }
+
     pub async fn startup_status(&self) -> Result<StartupStatus, ApiError> {
         let s: StartupStatus = match self.get("/startup/status", &vec![]).await {
             Err(ApiError::Decode(_)) => {

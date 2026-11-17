@@ -190,6 +190,18 @@ pub enum Payload {
     QuotaTasks(Vec<(String, R<QuotaRefreshTask>)>),
     AutoRefresh(R<AutoRefreshSettings>),
     QuotaHistory(String, R<QuotaHistory>),
+    /// Progress of a refresh started with [`Command::RefreshQuota`]:
+    /// the latest task state of some credentials.
+    QuotaTaskUpdates(Vec<(String, R<QuotaRefreshTask>)>),
+    /// A [`Command::RefreshQuota`] finished: how many checks were queued,
+    /// the credentials Keeper turned down, and whether the request failed.
+    QuotaRefreshDone {
+        queued: usize,
+        /// Checks still queued or running when cpatop stopped following.
+        unfinished: usize,
+        rejected: Vec<(String, String)>,
+        error: Option<ApiError>,
+    },
     IdentityErrors(String, R<IdentityErrors>),
     Catalog(R<ModelCatalog>),
     Pricing(R<PricingModels>),
@@ -239,6 +251,76 @@ pub enum Command {
     QuotaHistory {
         auth_index: String,
     },
+    /// Ask Keeper to re-check these credentials' quota with their
+    /// providers (`POST /quota/refresh`), then follow the checks.
+    RefreshQuota {
+        auth_indexes: Vec<String>,
+    },
+}
+
+/// How often a running quota refresh is polled, and for how long at most.
+const QUOTA_POLL_EVERY: Duration = Duration::from_secs(2);
+const QUOTA_POLL_FOR: Duration = Duration::from_secs(90);
+
+/// Trigger a quota refresh and report each check as it settles.
+async fn refresh_quota(c: &Client, auth_indexes: Vec<String>, send: impl Fn(Payload)) {
+    let body = serde_json::json!({ "auth_indexes": auth_indexes });
+    let start = match c.post::<QuotaRefreshStart>("/quota/refresh", &body).await {
+        Ok(s) => s,
+        Err(e) => {
+            send(Payload::QuotaRefreshDone {
+                queued: 0,
+                unfinished: 0,
+                rejected: vec![],
+                error: Some(e),
+            });
+            return;
+        }
+    };
+    let rejected: Vec<(String, String)> = start
+        .rejected
+        .into_iter()
+        .map(|r| (r.auth_index, r.error.unwrap_or_else(|| "rejected".into())))
+        .collect();
+    let mut pending: Vec<String> = start.tasks.into_iter().map(|t| t.auth_index).collect();
+    let queued = pending.len();
+    let deadline = Instant::now() + QUOTA_POLL_FOR;
+    while !pending.is_empty() && Instant::now() < deadline {
+        tokio::time::sleep(QUOTA_POLL_EVERY).await;
+        let futs = pending.iter().map(|a| {
+            let path = format!("/quota/refresh/{}", path_segment(a));
+            async move { c.get::<QuotaRefreshTask>(&path, &vec![]).await }
+        });
+        let results = futures_util::future::join_all(futs).await;
+        let mut still = Vec::new();
+        let mut settled = Vec::new();
+        for (a, r) in pending.into_iter().zip(results) {
+            match &r {
+                Ok(t) if matches!(t.status.as_str(), "queued" | "running") => still.push(a),
+                // A lost session ends the refresh; the pollers handle it.
+                Err(ApiError::Unauthorized(_)) => {
+                    send(Payload::QuotaRefreshDone {
+                        queued,
+                        unfinished: 0,
+                        rejected,
+                        error: r.err(),
+                    });
+                    return;
+                }
+                _ => settled.push((a, r)),
+            }
+        }
+        if !settled.is_empty() {
+            send(Payload::QuotaTaskUpdates(settled));
+        }
+        pending = still;
+    }
+    send(Payload::QuotaRefreshDone {
+        queued,
+        unfinished: pending.len(),
+        rejected,
+        error: None,
+    });
 }
 
 /// Percent-encode a single path segment.
@@ -466,7 +548,18 @@ pub async fn run_commands(
         let c = c.clone();
         let tx = tx.clone();
         tokio::spawn(async move {
+            let detail = |payload: Payload| {
+                let _ = tx.send(Msg::Data {
+                    group: Group::Detail,
+                    scope: String::new(),
+                    payload,
+                });
+            };
             let (scope, payload) = match cmd {
+                Command::RefreshQuota { auth_indexes } => {
+                    refresh_quota(&c, auth_indexes, detail).await;
+                    return;
+                }
                 Command::LoadMoreEvents {
                     scope,
                     range,

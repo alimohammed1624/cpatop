@@ -92,6 +92,9 @@ pub struct Data {
     pub inspection: Loaded<QuotaInspection>,
     pub auto_refresh: Loaded<AutoRefreshSettings>,
     pub quota: Loaded<HashMap<String, Result<QuotaRefreshTask, String>>>,
+    /// A quota refresh started with `R` on the Quota tab and still running:
+    /// how many of its checks failed so far.
+    pub quota_refresh: Option<usize>,
     pub quota_history: Option<(String, Loaded<QuotaHistory>)>,
     pub identity_errors: Option<(String, Loaded<IdentityErrors>)>,
     pub catalog: Loaded<ModelCatalog>,

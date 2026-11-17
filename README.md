@@ -219,7 +219,7 @@ The focused pane lists its own keys in its bottom border; `?` shows them all.
 | `m` / `o` | Requests: model / source picker (server-side) |
 | `c` | Requests: clear the filters |
 | `+` / `-` | Slower / faster refresh |
-| `R` | Refresh now |
+| `R` | Refresh now. On the Quota tab (admin) it asks Keeper to re-check every credential's quota with its provider, like the web dashboard's refresh button |
 | `t` / `T` | Next / previous theme |
 | `b` | Graph symbols: braille / block / ascii |
 | `b` (offline screen), `Ctrl-S` (login screen) | Change the server URL |
@@ -319,9 +319,12 @@ complete starting point. A user theme with a built-in name replaces it.
   suffix (`abc…x1y2z3`); the raw-key endpoint `/usage/api-keys/settings` is
   never called.
 - cpatop only issues GET requests, plus `POST /auth/login`,
-  `/auth/api-key-login` and `/auth/logout`. It never changes Keeper settings
-  or data, never triggers quota refreshes and never calls Keeper's
-  GitHub-backed update check (`/update/check`).
+  `/auth/api-key-login` and `/auth/logout`, and `POST /quota/refresh` when
+  you press `R` on the Quota tab. That re-reads usage from the providers;
+  it never spends a banked reset (`/quota/reset` is never called). cpatop
+  never changes Keeper settings or data, never triggers quota refreshes on
+  its own and never calls Keeper's GitHub-backed update check
+  (`/update/check`).
 - **Update check (cpatop's own).** On every start, in the background
   after the dashboard is up, cpatop asks GitHub for its own latest release:
   `GET https://github.com/alimohammed1624/cpatop/releases/latest` (the tag

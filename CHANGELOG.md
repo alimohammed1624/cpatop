@@ -6,6 +6,13 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- `R` on the Quota tab re-checks quota: it asks Keeper to re-fetch every
+  credential's usage from its provider (`POST /quota/refresh`, like the
+  web dashboard's refresh button) and shows each result as it lands. It
+  only reads usage and never spends a banked reset. Before, `R` only
+  re-read Keeper's cache, so the numbers did not change.
+
 ## [0.2.7] - 2026-11-17
 
 Quota history fix.

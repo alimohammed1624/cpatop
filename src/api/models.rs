@@ -1095,6 +1095,31 @@ pub struct InspectionResult {
     pub refreshed_at: Option<String>,
 }
 
+/// Answer to `POST /quota/refresh`: which credentials were queued.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct QuotaRefreshStart {
+    #[serde(deserialize_with = "nd")]
+    pub tasks: Vec<QuotaRefreshRef>,
+    #[serde(deserialize_with = "nd")]
+    pub rejected: Vec<QuotaRefreshRejected>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct QuotaRefreshRef {
+    #[serde(rename = "authIndex", alias = "auth_index")]
+    pub auth_index: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct QuotaRefreshRejected {
+    #[serde(rename = "authIndex", alias = "auth_index")]
+    pub auth_index: String,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct QuotaRefreshTask {
