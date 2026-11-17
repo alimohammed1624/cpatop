@@ -732,7 +732,12 @@ impl PerPoint {
     fn of(c: &crate::api::models::QuotaCycle) -> Self {
         let used = match (c.first_remaining_percent, c.last_remaining_percent) {
             (Some(a), Some(b)) if a > b => a - b,
-            _ => return Self { tokens: None, usd: None },
+            _ => {
+                return Self {
+                    tokens: None,
+                    usd: None,
+                };
+            }
         };
         let u = &c.usage;
         Self {
