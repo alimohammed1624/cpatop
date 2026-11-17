@@ -6,6 +6,13 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Quota history's `tok/100%` and `$/100%` agree with the row: they are
+  the cycle's tokens and cost divided by the quota it used, × 100. They
+  were the median of the per-drop figures, which could show `0` or
+  `$0.00` for a cycle that used quota, and a full window (100→0%) whose
+  value differed from its own tokens and cost.
+
 ## [0.2.6] - 2026-11-16
 
 Quota history shows tokens per full window too.

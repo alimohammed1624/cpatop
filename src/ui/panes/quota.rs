@@ -719,9 +719,10 @@ const HIST_COLS: [Col; 10] = [
     col("$/100%", 8, Align::Right, 2),
 ];
 
-/// Typical usage per 1% of quota in a cycle: the median over its observed
-/// quota drops. A median, not cycle total ÷ points used, so quota spent
-/// outside the proxy or gaps between observations don't skew it.
+/// Usage per 1% of quota in a cycle: the cycle's tokens and cost divided by
+/// the points it used (left at start − left at end), so the figures agree
+/// with the row's own `left`, `tokens` and `cost`. `None` when no quota was
+/// used.
 struct PerPoint {
     tokens: Option<f64>,
     usd: Option<f64>,
@@ -729,15 +730,14 @@ struct PerPoint {
 
 impl PerPoint {
     fn of(c: &crate::api::models::QuotaCycle) -> Self {
-        let t = &c.transitions;
+        let used = match (c.first_remaining_percent, c.last_remaining_percent) {
+            (Some(a), Some(b)) if a > b => a - b,
+            _ => return Self { tokens: None, usd: None },
+        };
+        let u = &c.usage;
         Self {
-            tokens: median(t.iter().map(|x| x.tokens_per_point).collect()),
-            usd: median(
-                t.iter()
-                    .filter(|x| x.cost_per_point_available)
-                    .map(|x| x.cost_per_point)
-                    .collect(),
-            ),
+            tokens: Some(u.total_tokens / used),
+            usd: u.cost_available.then(|| u.total_cost_usd / used),
         }
     }
 
@@ -750,12 +750,6 @@ impl PerPoint {
     fn full_window_usd(&self) -> Option<f64> {
         self.usd.map(|v| v * 100.0)
     }
-}
-
-/// Upper median; `None` when empty.
-fn median(mut v: Vec<f64>) -> Option<f64> {
-    v.sort_by(|a, b| a.total_cmp(b));
-    v.get(v.len() / 2).copied()
 }
 
 /// Every field of a quota cycle for the row popup.
