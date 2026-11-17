@@ -6,6 +6,10 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-11-17
+
+Quota refresh.
+
 ### Changed
 - `R` on the Quota tab re-checks quota: it asks Keeper to re-fetch every
   credential's usage from its provider (`POST /quota/refresh`, like the
