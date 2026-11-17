@@ -6,6 +6,10 @@ All notable changes to cpatop are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-11-17
+
+Quota history fix.
+
 ### Fixed
 - Quota history's `tok/100%` and `$/100%` agree with the row: they are
   the cycle's tokens and cost divided by the quota it used, × 100. They
